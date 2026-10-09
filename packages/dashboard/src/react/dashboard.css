@@ -7,14 +7,14 @@
     --cmd-surface: #ffffff;
     --cmd-ink: #14213d;
     --cmd-ink-2: #4a5568;
-    --cmd-ink-3: #6b7685;
+    --cmd-ink-3: #5f6a78;
     --cmd-rule: #d6dce4;
     --cmd-track: #e3e8ee;
     --cmd-elapsed: #c3ccd7;
     --cmd-fill: #2f5bea;
     --cmd-now: #14213d;
     --cmd-ok: #13795b;
-    --cmd-reserve: #9a6700;
+    --cmd-reserve: #8a5c00;
     --cmd-exhausted: #b42318;
     --cmd-series-1: #2a78d6;
     --cmd-series-2: #eb6834;
@@ -103,6 +103,7 @@
   }
 
   .cmd-frame {
+    grid-template-columns: minmax(0, 1fr);
     max-width: 1280px;
     margin: 0 auto;
     display: grid;
@@ -188,11 +189,14 @@
     padding: 14px 16px 16px;
   }
 
-  .cmd-card[data-band="exhausted"] {
+  .cmd-card[data-status="used-up"],
+  .cmd-card[data-status="login"] {
     border-left: 4px solid var(--cmd-exhausted);
   }
 
-  .cmd-card[data-band="reserve"] {
+  .cmd-card[data-status="low"],
+  .cmd-card[data-status="cooling"],
+  .cmd-card[data-status="unknown"] {
     border-left: 4px solid var(--cmd-reserve);
   }
 
@@ -227,19 +231,21 @@
     flex: none;
   }
 
-  .cmd-status[data-band="ok"] {
+  .cmd-status[data-status="ok"] {
     color: var(--cmd-ok);
   }
 
-  .cmd-status[data-band="reserve"] {
+  .cmd-status[data-status="low"],
+  .cmd-status[data-status="cooling"] {
     color: var(--cmd-reserve);
   }
 
-  .cmd-status[data-band="exhausted"] {
+  .cmd-status[data-status="used-up"],
+  .cmd-status[data-status="login"] {
     color: var(--cmd-exhausted);
   }
 
-  .cmd-status[data-band="unknown"] {
+  .cmd-status[data-status="unknown"] {
     color: var(--cmd-ink-3);
   }
 
@@ -296,10 +302,11 @@
     border-radius: 0 3px 3px 0;
   }
 
-  .cmd-card[data-band="exhausted"] .cmd-runway-used {
+  .cmd-card[data-status="used-up"] .cmd-runway-used {
     background: var(--cmd-exhausted);
   }
 
+  /* A ring in the surface color keeps the mark visible over the fill and the track alike. */
   .cmd-runway-now {
     position: absolute;
     top: 0;
@@ -307,6 +314,7 @@
     width: 2px;
     margin-left: -1px;
     background: var(--cmd-now);
+    box-shadow: 0 0 0 1.5px var(--cmd-surface);
   }
 
   .cmd-window-note {
@@ -505,7 +513,7 @@
     flex-wrap: wrap;
     gap: 8px 16px;
     align-items: center;
-    margin-bottom: 12px;
+    margin: 16px 0 12px;
   }
 
   .cmd-segmented {
@@ -513,6 +521,8 @@
     padding: 0;
     min-inline-size: 0;
     display: inline-flex;
+    flex-wrap: wrap;
+    max-width: 100%;
     border: 1px solid var(--cmd-rule);
     border-radius: 6px;
     overflow: hidden;
@@ -604,11 +614,73 @@
     white-space: nowrap;
   }
 
+  /* The readout control lies over the plot; the drawing beneath it is hidden from assistive tech. */
+  .cmd-plot {
+    position: absolute;
+    cursor: crosshair;
+    border-radius: 2px;
+  }
+
+  .cmd-tooltip[data-touch="true"] {
+    top: auto;
+    bottom: calc(100% + 4px);
+  }
+
+  .cmd-end-label {
+    font-size: 12px;
+    fill: var(--cmd-ink-2);
+  }
+
+  .cmd-banner {
+    margin: 0;
+    padding: 10px 14px;
+    border: 1px solid var(--cmd-exhausted);
+    border-radius: 6px;
+    background: var(--cmd-surface);
+  }
+
+  .cmd-banner a {
+    color: inherit;
+    font-weight: 600;
+  }
+
+  .cmd-share-cell {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .cmd-share-cell .cmd-share {
+    flex: 1;
+  }
+
+  .cmd-share-value {
+    min-width: 3.5em;
+    text-align: right;
+    color: var(--cmd-ink-2);
+  }
+
   @media (forced-colors: active) {
+    .cmd-runway,
+    .cmd-share {
+      border: 1px solid CanvasText;
+    }
+
     .cmd-runway-used,
     .cmd-runway-now,
     .cmd-share span {
       background: CanvasText;
+    }
+
+    .cmd-swatch,
+    .cmd-line,
+    .cmd-spark {
+      forced-color-adjust: none;
+    }
+
+    .cmd-segmented button[aria-pressed="true"] {
+      background: Highlight;
+      color: HighlightText;
     }
   }
 }

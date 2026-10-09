@@ -1,7 +1,8 @@
 'use client'
 
+import type { ReactNode } from 'react'
 import {
-  type Band,
+  blocked,
   type EpochMs,
   elapsedFraction,
   formatCountdown,
@@ -12,51 +13,57 @@ import {
   pace,
   projectedExhaustion,
   type QuotaWindow,
-} from '../core/index'
+} from '../core'
+import { useHydrated } from './hooks'
 
-const BAND_LABEL: Record<Band, string> = {
+/** What the card's badge says: the band, overridden by anything that stops work right now. */
+export type CardStatus = 'ok' | 'low' | 'used-up' | 'cooling' | 'login' | 'unknown'
+
+const STATUS_LABEL: Record<CardStatus, string> = {
   ok: 'Has headroom',
-  reserve: 'In reserve',
-  exhausted: 'Used up',
+  low: 'Running low',
+  'used-up': 'Used up',
+  cooling: 'Cooling down',
+  login: 'Login expired',
   unknown: 'No reading',
 }
 
-function BandIcon({ band }: { band: Band }) {
-  // Shape as well as color: a check, a half-full circle, a cross, a dash.
-  switch (band) {
-    case 'ok':
-      return (
-        <svg viewBox="0 0 16 16" aria-hidden="true">
-          <path d="M3 8.5l3 3 7-7" fill="none" stroke="currentColor" strokeWidth="2" />
-        </svg>
-      )
-    case 'reserve':
-      return (
-        <svg viewBox="0 0 16 16" aria-hidden="true">
-          <circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" strokeWidth="2" />
-          <path d="M8 2a6 6 0 0 1 0 12z" fill="currentColor" />
-        </svg>
-      )
-    case 'exhausted':
-      return (
-        <svg viewBox="0 0 16 16" aria-hidden="true">
-          <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="2" />
-        </svg>
-      )
-    case 'unknown':
-      return (
-        <svg viewBox="0 0 16 16" aria-hidden="true">
-          <path d="M4 8h8" stroke="currentColor" strokeWidth="2" />
-        </svg>
-      )
-  }
+export function cardStatus(profile: ProfileStatus, now: EpochMs): CardStatus {
+  const b = blocked(profile, now)
+  if (b?.reason === 'no-reading') return 'unknown'
+  if (b?.reason === 'login-expired') return 'login'
+  if (b?.reason === 'used-up') return 'used-up'
+  if (b?.reason === 'cooling-down') return 'cooling'
+  return profile.band === 'reserve' ? 'low' : 'ok'
 }
 
-export function StatusBadge({ band }: { band: Band }) {
+// Shape as well as color: check, half-full circle, cross, pause, key, dash.
+const ICON: Record<CardStatus, ReactNode> = {
+  ok: <path d="M3 8.5l3 3 7-7" fill="none" stroke="currentColor" strokeWidth="2" />,
+  low: (
+    <>
+      <circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" strokeWidth="2" />
+      <path d="M8 2a6 6 0 0 1 0 12z" fill="currentColor" />
+    </>
+  ),
+  'used-up': <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="2" />,
+  cooling: <path d="M5.5 3.5v9M10.5 3.5v9" stroke="currentColor" strokeWidth="2" />,
+  login: (
+    <>
+      <circle cx="5.5" cy="8" r="3" fill="none" stroke="currentColor" strokeWidth="2" />
+      <path d="M8.5 8h6M12.5 8v3" stroke="currentColor" strokeWidth="2" />
+    </>
+  ),
+  unknown: <path d="M4 8h8" stroke="currentColor" strokeWidth="2" />,
+}
+
+export function StatusBadge({ status }: { status: CardStatus }) {
   return (
-    <span className="cmd-status" data-band={band}>
-      <BandIcon band={band} />
-      {BAND_LABEL[band]}
+    <span className="cmd-status" data-status={status}>
+      <svg viewBox="0 0 16 16" aria-hidden="true">
+        {ICON[status]}
+      </svg>
+      {STATUS_LABEL[status]}
     </span>
   )
 }
@@ -70,14 +77,17 @@ function paceNote(window: QuotaWindow, now: EpochMs): string | null {
 
 function WindowRow(props: { name: string; window: QuotaWindow; now: EpochMs }) {
   const { name, window, now } = props
+  const hydrated = useHydrated()
   const elapsed = elapsedFraction(window, now)
   const used = window.usedFraction === null ? null : Math.min(1, Math.max(0, window.usedFraction))
   const p = pace(window, now)
   const note = paceNote(window, now)
+  const resetsAt = window.resetsAt
+  // The wall-clock time depends on the viewer's time zone, so it appears after hydration.
   const reset =
-    window.resetsAt === null
+    resetsAt === null || resetsAt <= now
       ? 'Reset time unknown'
-      : `Resets in ${formatCountdown(window.resetsAt - now)}, ${formatWhen(window.resetsAt, now)}`
+      : `Resets in ${formatCountdown(resetsAt - now)}${hydrated ? `, ${formatWhen(resetsAt, now)}` : ''}`
   const description = `${name}: ${formatPercent(used)} used, ${elapsed === null ? 'time elapsed unknown' : `${formatPercent(elapsed)} of the window elapsed`}. ${reset}.`
   return (
     <div className="cmd-window">
@@ -107,32 +117,24 @@ function WindowRow(props: { name: string; window: QuotaWindow; now: EpochMs }) {
 }
 
 export function RunwayCard({ status, now }: { status: ProfileStatus; now: EpochMs }) {
-  const cooling = status.rateLimitedUntil !== null && status.rateLimitedUntil > now
+  const card = cardStatus(status, now)
+  const b = blocked(status, now)
   return (
-    <article
-      className="cmd-card"
-      data-band={status.band}
-      aria-label={`Subscription ${status.profile}`}
-    >
+    <article className="cmd-card" data-status={card} aria-label={`Subscription ${status.profile}`}>
       <div className="cmd-card-head">
         <h3 className="cmd-profile">{status.profile}</h3>
-        <StatusBadge band={status.band} />
+        <StatusBadge status={card} />
       </div>
       <WindowRow name="Weekly" window={status.weekly} now={now} />
       {status.fiveHour !== null && <WindowRow name="5-hour" window={status.fiveHour} now={now} />}
       <div className="cmd-card-foot">
-        {cooling && status.rateLimitedUntil !== null && (
-          <span data-warn="true">
-            Cooling down after a rate limit for {formatCountdown(status.rateLimitedUntil - now)}
-          </span>
+        {b?.until != null && (
+          <span data-warn="true">Takes work again in {formatCountdown(b.until - now)}</span>
         )}
-        {status.tokenExpiresAt !== null && (
-          // Access tokens renew on their own; only one that has run out needs attention.
-          <span data-warn={status.tokenExpiresAt <= now}>
-            {status.tokenExpiresAt > now
-              ? `Login renews in ${formatCountdown(status.tokenExpiresAt - now)}`
-              : 'Login expired: check the profile'}
-          </span>
+        {card === 'login' && <span data-warn="true">Log the profile in again on the server</span>}
+        {status.tokenExpiresAt !== null && status.tokenExpiresAt > now && (
+          // Access tokens renew on their own; an expired one is reported above.
+          <span>Login renews in {formatCountdown(status.tokenExpiresAt - now)}</span>
         )}
         <span>p95 {formatDuration(status.latencyMs.p95)}</span>
       </div>

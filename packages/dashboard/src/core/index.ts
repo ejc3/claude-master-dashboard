@@ -6,6 +6,7 @@ export {
   type Statistic,
   UnsupportedQueryError,
 } from './catalog'
+export { fillSeries, sumBetween, sumSeries } from './fill'
 export {
   formatCount,
   formatCountdown,
@@ -13,7 +14,14 @@ export {
   formatPercent,
   formatWhen,
 } from './format'
-export { hasHeadroom, nextReset, nextRunOut, type RunOut } from './headline'
+export {
+  type Blocked,
+  blocked,
+  hasHeadroom,
+  nextAvailable,
+  nextRunOut,
+  type RunOut,
+} from './headline'
 export {
   EVEN_MARGIN,
   elapsedFraction,

@@ -10,7 +10,7 @@ import {
   HOUR_MS,
   hasHeadroom,
   MAX_POINTS,
-  nextReset,
+  nextAvailable,
   nextRunOut,
   type ProfileStatus,
   type SeriesQuery,
@@ -96,14 +96,32 @@ describe('headline', () => {
     expect(nextRunOut([profile('slow')], NOW)).toBeNull()
   })
 
-  it('finds the next reset still ahead', () => {
-    const soon = profile('soon', {
-      fiveHour: { usedFraction: 1, resetsAt: NOW + 600_000, lengthMs: FIVE_HOURS_MS },
+  it('counts no reading, an expired login and a used-up 5-hour window as without headroom', () => {
+    expect(hasHeadroom(profile('a', { band: 'unknown' }), NOW)).toBe(false)
+    expect(hasHeadroom(profile('a', { tokenExpiresAt: NOW - 1 }), NOW)).toBe(false)
+    expect(hasHeadroom(profile('a', { tokenExpiresAt: NOW + HOUR_MS }), NOW)).toBe(true)
+    const fiveHourSpent = { usedFraction: 1, resetsAt: NOW + HOUR_MS, lengthMs: FIVE_HOURS_MS }
+    expect(hasHeadroom(profile('a', { fiveHour: fiveHourSpent }), NOW)).toBe(false)
+    // Once that window has reset, the old reading no longer blocks.
+    const reset = { ...fiveHourSpent, resetsAt: NOW - 1 }
+    expect(hasHeadroom(profile('a', { fiveHour: reset }), NOW)).toBe(true)
+  })
+
+  it('says when the first blocked subscription takes work again, by its last blocker', () => {
+    // Used up weekly for 9 hours: its 5-hour reset in 30 minutes does not free it.
+    const weeklySpent = profile('weekly', {
+      band: 'exhausted',
+      weekly: { usedFraction: 1, resetsAt: NOW + 9 * HOUR_MS, lengthMs: WEEK_MS },
+      fiveHour: { usedFraction: 1, resetsAt: NOW + 0.5 * HOUR_MS, lengthMs: FIVE_HOURS_MS },
     })
-    const past = profile('past', {
-      fiveHour: { usedFraction: 0, resetsAt: NOW - 1, lengthMs: FIVE_HOURS_MS },
+    const cooling = profile('cooling', { rateLimitedUntil: NOW + 2 * HOUR_MS })
+    const expired = profile('expired', { tokenExpiresAt: NOW - 1 })
+    expect(nextAvailable([weeklySpent, cooling, expired], NOW)).toEqual({
+      profile: 'cooling',
+      at: NOW + 2 * HOUR_MS,
     })
-    expect(nextReset([profile('a'), soon, past], NOW)).toBe(NOW + 600_000)
+    expect(nextAvailable([weeklySpent], NOW)?.at).toBe(NOW + 9 * HOUR_MS)
+    expect(nextAvailable([expired], NOW)).toBeNull()
   })
 })
 
@@ -121,6 +139,8 @@ describe('format', () => {
     expect(formatPercent(0.424)).toBe('42%')
     expect(formatPercent(0.025)).toBe('2.5%')
     expect(formatPercent(0)).toBe('0%')
+    expect(formatPercent(0.996)).toBe('99.6%')
+    expect(formatPercent(1)).toBe('100%')
     expect(formatPercent(null)).toBe('—')
     expect(formatCount(1234)).toBe('1,234')
     expect(formatCount(12_400)).toBe('12.4K')

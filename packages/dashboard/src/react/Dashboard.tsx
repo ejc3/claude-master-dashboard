@@ -9,51 +9,47 @@ import {
   formatWhen,
   HOUR_MS,
   hasHeadroom,
-  nextReset,
+  nextAvailable,
   nextRunOut,
-  type Series,
   type SeriesQuery,
   type Snapshot,
+  sumBetween,
+  sumSeries,
   type TimeRange,
-} from '../core/index'
+} from '../core'
 import { Breakdown } from './Breakdown'
-import { useNow, useSeries, useSnapshot } from './hooks'
+import { type Loaded, useHydrated, useNow, useSeries, useSnapshot } from './hooks'
 import { type ChartSeries, foldSeries, LineChart, seriesColors } from './LineChart'
+import type { PollFailure } from './poller'
 import { RunwayCard } from './Runway'
-import { Sparkline } from './Sparkline'
 
 export interface DashboardProps {
-  /** The snapshot rendered on the server, so the first paint has data. */
-  initialSnapshot: Snapshot
+  /** The snapshot rendered on the server, or null when the source did not answer then. */
+  initialSnapshot: Snapshot | null
   /** Where the dashboard's route handler is mounted, e.g. "/api/claude-master". */
   apiBase: string
+  /** Where a viewer whose session ended signs in again; omitted, no link is shown. */
+  signInHref?: string
   title?: string
 }
 
 type RangeName = '24h' | '7d'
 
-const RANGES: Record<RangeName, { label: string; ms: number; stepSeconds: number }> = {
-  '24h': { label: 'Last 24 hours', ms: 24 * HOUR_MS, stepSeconds: 300 },
-  '7d': { label: 'Last 7 days', ms: 7 * 24 * HOUR_MS, stepSeconds: 3600 },
+const RANGES: Record<RangeName, { label: string; ms: number; stepSeconds: number; per: string }> = {
+  '24h': { label: 'Last 24 hours', ms: 24 * HOUR_MS, stepSeconds: 300, per: 'per 5 minutes' },
+  '7d': { label: 'Last 7 days', ms: 7 * 24 * HOUR_MS, stepSeconds: 3600, per: 'per hour' },
 }
 
-// Step-aligned so every viewer and every refresh within a step asks for the same range.
-function rangeEnding(now: EpochMs, name: RangeName): TimeRange {
-  const { ms, stepSeconds } = RANGES[name]
+const KPI_STEP_SECONDS = 300
+const STEP_MS = KPI_STEP_SECONDS * 1000
+
+// Step-aligned, so every viewer and every refresh within a step asks for the same range.
+function rangeEnding(now: EpochMs, ms: number, stepSeconds: number): TimeRange {
   const end = Math.floor(now / (stepSeconds * 1000)) * stepSeconds * 1000
   return { start: end - ms, end }
 }
 
-const total = (series: Series[] | undefined): Array<[EpochMs, number]> => {
-  const first = series?.[0]
-  if (first === undefined) return []
-  return first.points.map(([t], i) => [
-    t,
-    (series ?? []).reduce((sum, s) => sum + (s.points[i]?.[1] ?? 0), 0),
-  ])
-}
-
-/** Sums points into whole hours (already-hourly points pass through). */
+/** Sums points into whole hours. */
 function hourly(points: Array<[EpochMs, number]>): Array<[EpochMs, number]> {
   const out = new Map<EpochMs, number>()
   for (const [t, v] of points) {
@@ -63,14 +59,24 @@ function hourly(points: Array<[EpochMs, number]>): Array<[EpochMs, number]> {
   return [...out.entries()]
 }
 
-const sumLast = (points: Array<[EpochMs, number]>, n: number) =>
-  points.slice(-n).reduce((sum, [, v]) => sum + v, 0)
+const data = <T,>(loaded: Loaded<T>): T | null => (loaded.state === 'ready' ? loaded.data : null)
+const failureOf = <T,>(loaded: Loaded<T>): PollFailure | null =>
+  loaded.state === 'error' ? loaded.failure : loaded.state === 'ready' ? loaded.failure : null
 
-function Headline({ snapshot, now }: { snapshot: Snapshot; now: EpochMs }) {
+function Headline({ snapshot, now }: { snapshot: Snapshot | null; now: EpochMs }) {
+  const hydrated = useHydrated()
+  if (snapshot === null) {
+    return (
+      <div>
+        <p className="cmd-headline">Waiting for the first reading.</p>
+        <p className="cmd-subline">
+          The metrics source did not answer yet; this page retries every minute.
+        </p>
+      </div>
+    )
+  }
   const { profiles } = snapshot
   const ready = profiles.filter((p) => hasHeadroom(p, now)).length
-  const runOut = nextRunOut(profiles, now)
-  const reset = nextReset(profiles, now)
   let headline: string
   let detail: string | null = null
   if (profiles.length === 0) {
@@ -78,10 +84,12 @@ function Headline({ snapshot, now }: { snapshot: Snapshot; now: EpochMs }) {
     detail = 'Readings arrive a few minutes after claude-master starts exporting metrics.'
   } else if (ready === 0) {
     headline = 'No subscription can take work right now.'
-    if (reset !== null) {
-      detail = `The next window resets in ${formatCountdown(reset - now)}, at ${formatWhen(reset, now)}.`
+    const next = nextAvailable(profiles, now)
+    if (next !== null) {
+      detail = `${next.profile} can take work again in ${formatCountdown(next.at - now)}${hydrated ? `, at ${formatWhen(next.at, now)}` : ''}.`
     }
   } else {
+    const runOut = nextRunOut(profiles, now)
     headline =
       ready === profiles.length
         ? `All ${profiles.length} subscriptions have headroom.`
@@ -99,91 +107,140 @@ function Headline({ snapshot, now }: { snapshot: Snapshot; now: EpochMs }) {
   )
 }
 
-function Kpi(props: {
-  label: string
-  value: string
-  note?: string | undefined
-  trend?: Array<[EpochMs, number]> | undefined
-}) {
+function Kpi(props: { label: string; value: string; note?: string | undefined }) {
   return (
     <div className="cmd-kpi">
       <p className="cmd-kpi-label">{props.label}</p>
       <p className="cmd-kpi-value">{props.value}</p>
       {props.note !== undefined && <p className="cmd-kpi-note">{props.note}</p>}
-      {props.trend !== undefined && <Sparkline points={props.trend} />}
     </div>
   )
 }
 
-export function Dashboard({ initialSnapshot, apiBase, title = 'claude-master' }: DashboardProps) {
-  const now = useNow(1000, initialSnapshot.asOf)
-  const loaded = useSnapshot(apiBase, initialSnapshot)
-  const snapshot = loaded.state === 'ready' ? loaded.data : initialSnapshot
+export function Dashboard(props: DashboardProps) {
+  const { initialSnapshot, apiBase, signInHref, title = 'claude-master' } = props
+  const now = useNow(1000, initialSnapshot?.asOf ?? 0)
+  const snapshotLoaded = useSnapshot(apiBase, initialSnapshot)
+  const snapshot = data(snapshotLoaded) ?? initialSnapshot
   const [rangeName, setRangeName] = useState<RangeName>('24h')
-  const { stepSeconds } = RANGES[rangeName]
+  const chosen = RANGES[rangeName]
 
-  // Step-aligned: the request URLs change once per step, not every second, so the charts
-  // refetch only when a new bucket can exist (useSeries keys on the URL).
-  const range = rangeEnding(now, rangeName)
-  const query = (q: Omit<SeriesQuery, 'range' | 'stepSeconds'>): SeriesQuery => ({
+  // The request URLs change once per step, not every second (useSeries keys on the URL).
+  const range = rangeEnding(now, chosen.ms, chosen.stepSeconds)
+  const inRange = (q: Omit<SeriesQuery, 'range' | 'stepSeconds'>): SeriesQuery => ({
     ...q,
     range,
-    stepSeconds,
+    stepSeconds: chosen.stepSeconds,
   })
+  const byProfile = useSeries(apiBase, inRange({ metric: 'requests', groupBy: 'profile' }))
+  const errors = useSeries(apiBase, inRange({ metric: 'errors' }))
+  const backup = useSeries(apiBase, inRange({ metric: 'backupRequests' }))
 
-  const byProfile = useSeries(apiBase, query({ metric: 'requests', groupBy: 'profile' }))
-  const errors = useSeries(apiBase, query({ metric: 'errors' }))
-  const backup = useSeries(apiBase, query({ metric: 'backupRequests' }))
+  // Key numbers have their own five-minute queries, whatever the range: the last full hour
+  // ends one bucket ago, because the newest bucket is still filling (CloudWatch runs minutes
+  // behind), and "the hour before" is the hour before that.
+  const kpiRange = rangeEnding(now, 2 * HOUR_MS + STEP_MS, KPI_STEP_SECONDS)
+  const kpiQuery = (metric: 'requests' | 'errors'): SeriesQuery => ({
+    metric,
+    range: kpiRange,
+    stepSeconds: KPI_STEP_SECONDS,
+  })
+  const kpiRequests = useSeries(apiBase, kpiQuery('requests'))
+  const kpiErrors = useSeries(apiBase, kpiQuery('errors'))
+  const hourEnd = kpiRange.end - STEP_MS
+  const kpiRequestsTotal = data(kpiRequests)
+  const kpiErrorsTotal = data(kpiErrors)
+  const requestsLastHour =
+    kpiRequestsTotal === null
+      ? null
+      : sumBetween(sumSeries(kpiRequestsTotal), hourEnd - HOUR_MS, hourEnd)
+  const requestsHourBefore =
+    kpiRequestsTotal === null
+      ? null
+      : sumBetween(sumSeries(kpiRequestsTotal), hourEnd - 2 * HOUR_MS, hourEnd - HOUR_MS)
+  const errorsLastHour =
+    kpiErrorsTotal === null
+      ? null
+      : sumBetween(sumSeries(kpiErrorsTotal), hourEnd - HOUR_MS, hourEnd)
 
-  const requestsTotal = total(byProfile.state === 'ready' ? byProfile.data : undefined)
-  const errorsTotal = total(errors.state === 'ready' ? errors.data : undefined)
-  const perHour = Math.round(HOUR_MS / (stepSeconds * 1000))
-  const lastHour = sumLast(requestsTotal, perHour)
-  const hourBefore = sumLast(requestsTotal.slice(0, -perHour), perHour)
-  const lastHourErrors = sumLast(errorsTotal, perHour)
-
-  // Stable across refreshes: a new array only when the set of subscriptions changes.
-  const knownKey = snapshot.profiles.map((p) => p.profile).join('\n')
+  const byProfileData = data(byProfile)
+  const errorsData = data(errors)
+  const knownKey = (snapshot?.profiles ?? []).map((p) => p.profile).join('\n')
   const knownProfiles = useMemo(() => knownKey.split('\n').filter((n) => n !== ''), [knownKey])
+
+  const requestsTotal = useMemo(
+    () => (byProfileData === null ? null : sumSeries(byProfileData)),
+    [byProfileData],
+  )
   const profileLines: ChartSeries[] = useMemo(() => {
-    if (byProfile.state !== 'ready') return []
-    const folded = foldSeries(byProfile.data)
-    // Colors come from every known subscription, so one missing from this range keeps no
-    // other's color from shifting.
-    const colors = seriesColors([...knownProfiles, ...folded.map((s) => s.key)])
+    if (byProfileData === null) return []
+    const folded = foldSeries(byProfileData)
+    // Colors come from every known subscription, so one missing from this range shifts none.
+    const colors = seriesColors(
+      [...knownProfiles, ...folded.map((s) => s.key)],
+      folded.map((s) => s.key),
+    )
     return folded.map((s) => ({
       ...s,
       label: s.key,
-      color: colors.get(s.key) ?? 'var(--cmd-series-1)',
+      color: colors.get(s.key) ?? 'var(--cmd-ink-3)',
     }))
-  }, [byProfile, knownProfiles])
+  }, [byProfileData, knownProfiles])
 
   // Per hour, not per step: a few requests at night make a five-minute error rate swing wildly.
+  // Unknown when either side is unknown: a failed errors query is not a 0% error rate.
   const errorRate: ChartSeries[] = useMemo(() => {
-    if (requestsTotal.length === 0) return []
+    if (requestsTotal === null || errorsData === null) return []
     const requestsHourly = hourly(requestsTotal)
-    const errorsHourly = hourly(errorsTotal)
-    const points = requestsHourly.map(([t, r], i): [EpochMs, number] => [
+    const errorsHourly = new Map(hourly(sumSeries(errorsData)))
+    const points = requestsHourly.map(([t, r]): [EpochMs, number] => [
       t,
-      r === 0 ? 0 : (errorsHourly[i]?.[1] ?? 0) / r,
+      r === 0 ? 0 : (errorsHourly.get(t) ?? 0) / r,
     ])
-    return [{ key: 'error-rate', label: 'Error rate', color: 'var(--cmd-series-8)', points }]
-  }, [requestsTotal, errorsTotal])
+    return [{ key: 'error-rate', label: 'Error rate', color: 'var(--cmd-ink-2)', points }]
+  }, [requestsTotal, errorsData])
 
-  const ageMs = now - snapshot.asOf
-  const stale = ageMs > 10 * 60_000
+  const failures = [
+    failureOf(snapshotLoaded),
+    failureOf(byProfile),
+    failureOf(errors),
+    failureOf(backup),
+    failureOf(kpiRequests),
+    failureOf(kpiErrors),
+  ].filter((f): f is PollFailure => f !== null)
+  const signedOut = failures.some((f) => f.status === 401)
+  const snapshotFailure = failureOf(snapshotLoaded)
+
+  const ageMs = snapshot === null ? null : now - snapshot.asOf
+  const stale = ageMs !== null && ageMs > 10 * 60_000
+  const freshness =
+    ageMs === null
+      ? 'No reading yet'
+      : stale
+        ? `No reading for ${formatCountdown(ageMs)}`
+        : ageMs < 60_000
+          ? 'Updated just now'
+          : `Updated ${formatCountdown(ageMs)} ago`
+  const backupTotal = data(backup)
+  const rangeWords = rangeName === '24h' ? 'last 24 hours' : 'last 7 days'
 
   return (
     <div className="cmd-root">
       <div className="cmd-frame">
         <header className="cmd-header">
           <h1 className="cmd-title">{title}</h1>
-          <span className="cmd-freshness" data-stale={stale}>
-            {stale
-              ? `No reading for ${formatCountdown(ageMs)}`
-              : `Updated ${formatCountdown(ageMs)} ago`}
+          <span className="cmd-freshness" data-stale={stale || snapshotFailure !== null}>
+            {freshness}
+            {snapshotFailure !== null && !signedOut ? '; the last refresh failed' : ''}
           </span>
         </header>
+
+        {signedOut && (
+          <p className="cmd-banner" role="alert">
+            Your session has ended.{' '}
+            {signInHref !== undefined && <a href={signInHref}>Sign in again</a>}
+          </p>
+        )}
 
         <Headline snapshot={snapshot} now={now} />
 
@@ -193,7 +250,7 @@ export function Dashboard({ initialSnapshot, apiBase, title = 'claude-master' }:
               Subscriptions
             </h2>
             <div className="cmd-runways">
-              {snapshot.profiles.map((p) => (
+              {(snapshot?.profiles ?? []).map((p) => (
                 <RunwayCard key={p.profile} status={p} now={now} />
               ))}
             </div>
@@ -201,9 +258,52 @@ export function Dashboard({ initialSnapshot, apiBase, title = 'claude-master' }:
 
           <div>
             <h2 className="cmd-section-title">Traffic</h2>
+            <div className="cmd-kpis">
+              <Kpi
+                label="Requests, last hour"
+                value={formatCount(requestsLastHour)}
+                note={
+                  requestsHourBefore === null
+                    ? undefined
+                    : `${formatCount(requestsHourBefore)} the hour before`
+                }
+              />
+              <Kpi
+                label="Error rate, last hour"
+                value={formatPercent(
+                  requestsLastHour === null || errorsLastHour === null || requestsLastHour === 0
+                    ? null
+                    : errorsLastHour / requestsLastHour,
+                )}
+                note={
+                  errorsLastHour === null
+                    ? failureOf(kpiErrors) === null
+                      ? undefined
+                      : 'Error counts are unavailable'
+                    : `${formatCount(errorsLastHour)} errors from Anthropic`
+                }
+              />
+              <Kpi
+                label="Conversations now"
+                value={formatCount(snapshot?.sessions ?? null)}
+                note={
+                  snapshot?.activeConnections == null
+                    ? undefined
+                    : `${formatCount(snapshot.activeConnections)} open connections`
+                }
+              />
+              <Kpi
+                label={`Paid API backup, ${rangeWords}`}
+                value={formatCount(
+                  backupTotal === null ? null : sumBetween(sumSeries(backupTotal), 0, Infinity),
+                )}
+                note="Requests no subscription could take"
+              />
+            </div>
+
             <div className="cmd-controls">
               <fieldset className="cmd-segmented">
-                <legend className="cmd-visually-hidden">Time range</legend>
+                <legend className="cmd-visually-hidden">Time range for the charts and table</legend>
                 {(Object.keys(RANGES) as RangeName[]).map((name) => (
                   <button
                     type="button"
@@ -216,61 +316,38 @@ export function Dashboard({ initialSnapshot, apiBase, title = 'claude-master' }:
                 ))}
               </fieldset>
             </div>
-            <div className="cmd-kpis">
-              <Kpi
-                label="Requests, last hour"
-                value={formatCount(lastHour)}
-                note={hourBefore === 0 ? undefined : `${formatCount(hourBefore)} the hour before`}
-                trend={requestsTotal}
+            {byProfile.state === 'error' && (
+              <p className="cmd-error">{byProfile.failure.message}</p>
+            )}
+            {byProfile.state === 'loading' && <p className="cmd-empty">Loading…</p>}
+            {profileLines.length > 0 && (
+              <LineChart
+                title={`Requests ${chosen.per}, by subscription`}
+                series={profileLines}
+                format={formatCount}
+                integer
+                now={now}
               />
-              <Kpi
-                label="Error rate, last hour"
-                value={formatPercent(lastHour === 0 ? null : lastHourErrors / lastHour)}
-                note={`${formatCount(lastHourErrors)} errors from Anthropic`}
+            )}
+            {errors.state === 'error' && <p className="cmd-error">{errors.failure.message}</p>}
+            {errorRate.length > 0 && (
+              <LineChart
+                title="Error rate per hour"
+                series={errorRate}
+                format={(v) => formatPercent(v)}
+                now={now}
+                height={140}
               />
-              <Kpi
-                label="Conversations"
-                value={formatCount(snapshot.sessions)}
-                note={
-                  snapshot.activeConnections === null
-                    ? undefined
-                    : `${formatCount(snapshot.activeConnections)} open connections`
-                }
-              />
-              <Kpi
-                label={`Paid API backup, ${rangeName === '24h' ? '24 hours' : '7 days'}`}
-                value={formatCount(
-                  backup.state === 'ready'
-                    ? sumLast(total(backup.data), Number.MAX_SAFE_INTEGER)
-                    : null,
-                )}
-                note="Requests no subscription could take"
-              />
-            </div>
-            <div style={{ marginTop: 12 }}>
-              {byProfile.state === 'error' && <p className="cmd-error">{byProfile.message}</p>}
-              {profileLines.length > 0 && (
-                <LineChart
-                  title="Requests by subscription"
-                  series={profileLines}
-                  format={formatCount}
-                  now={now}
-                />
-              )}
-              {errorRate.length > 0 && (
-                <LineChart
-                  title="Error rate"
-                  series={errorRate}
-                  format={(v) => formatPercent(v)}
-                  now={now}
-                  height={140}
-                />
-              )}
-            </div>
+            )}
           </div>
         </div>
 
-        <Breakdown apiBase={apiBase} range={range} stepSeconds={stepSeconds} />
+        <Breakdown
+          apiBase={apiBase}
+          range={range}
+          stepSeconds={chosen.stepSeconds}
+          rangeWords={rangeWords}
+        />
       </div>
     </div>
   )

@@ -25,7 +25,10 @@ export function formatCountdown(ms: number): string {
 export function formatPercent(fraction: number | null): string {
   if (fraction === null || !Number.isFinite(fraction)) return '—'
   const percent = fraction * 100
-  if (percent !== 0 && Math.abs(percent) < 10) return `${percent.toFixed(1)}%`
+  // One decimal where rounding would mislead: under 10%, and just short of 100%.
+  if (percent !== 0 && (Math.abs(percent) < 10 || (percent >= 99.5 && percent < 100))) {
+    return `${(Math.floor(percent * 10) / 10).toFixed(1)}%`
+  }
   return `${Math.round(percent)}%`
 }
 

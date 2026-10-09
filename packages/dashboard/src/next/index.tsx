@@ -4,6 +4,7 @@ import type { ReactNode } from 'react'
 import {
   BadQueryError,
   type MetricsSource,
+  type Snapshot,
   seriesQueryFromParams,
   UnsupportedQueryError,
 } from '../core/index'
@@ -67,17 +68,31 @@ export interface DashboardPageProps {
   unauthorized: ReactNode
   /** Where createDashboardHandler is mounted, e.g. "/api/claude-master". */
   apiBase: string
+  /** Where a viewer whose session ended signs in again. */
+  signInHref?: string
   title?: string
 }
 
-/** A server component: renders the first snapshot on the server, then hands over to the browser. */
+/**
+ * A server component: renders the first snapshot on the server, then hands over to the browser.
+ * When the source does not answer, the page still renders and the browser keeps polling.
+ */
 export async function DashboardPage(props: DashboardPageProps): Promise<ReactNode> {
   if (!(await props.authorize())) return props.unauthorized
-  const initialSnapshot = await props.source().snapshot()
+  let initialSnapshot: Snapshot | null = null
+  try {
+    initialSnapshot = await props.source().snapshot()
+  } catch (error) {
+    console.error(
+      'claude-master dashboard: the first snapshot failed:',
+      error instanceof Error ? error.message : String(error),
+    )
+  }
   return (
     <Dashboard
       initialSnapshot={initialSnapshot}
       apiBase={props.apiBase}
+      {...(props.signInHref === undefined ? {} : { signInHref: props.signInHref })}
       {...(props.title === undefined ? {} : { title: props.title })}
     />
   )

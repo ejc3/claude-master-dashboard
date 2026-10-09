@@ -1,13 +1,13 @@
 'use client'
 
 import { type KeyboardEvent, memo, type PointerEvent, useId, useRef, useState } from 'react'
-import { type EpochMs, formatWhen } from '../core/index'
+import { type EpochMs, formatWhen } from '../core'
 import { useWidth } from './hooks'
 
 export interface ChartSeries {
   key: string
   label: string
-  /** A CSS color, normally var(--cmd-series-N) chosen by seriesColors. */
+  /** A CSS color, normally from seriesColors. */
   color: string
   points: Array<[EpochMs, number]>
 }
@@ -16,6 +16,8 @@ interface Props {
   title: string
   series: ChartSeries[]
   format: (value: number) => string
+  /** Whole-number data (counts): axis ticks stay whole. */
+  integer?: boolean
   height?: number
   /** Clock for axis and tooltip labels. */
   now: EpochMs
@@ -24,35 +26,47 @@ interface Props {
 const PAD = { top: 8, right: 8, bottom: 22, left: 44 }
 const LABEL_GUTTER = 72
 
-function niceMax(max: number): number {
+/** The smallest "nice" axis maximum at or above `max`; whole numbers when `integer`. */
+export function niceMax(max: number, integer: boolean): number {
   if (max <= 0) return 1
   const magnitude = 10 ** Math.floor(Math.log10(max))
   for (const step of [1, 2, 2.5, 5, 10]) {
-    if (step * magnitude >= max) return step * magnitude
+    const candidate = step * magnitude
+    if (integer && !Number.isInteger(candidate)) continue
+    if (candidate >= max) return candidate
   }
   return 10 * magnitude
 }
 
-/** Line chart with a crosshair tooltip (pointer, touch or arrow keys), legend and table view. */
+/** Axis ticks: 0, the midpoint when it is a whole number (or the data is not counts), the top. */
+export function valueTicks(max: number, integer: boolean): number[] {
+  const mid = max / 2
+  return !integer || Number.isInteger(mid) ? [0, mid, max] : [0, max]
+}
+
+/** Line chart with a crosshair readout (pointer, touch, or keyboard), legend and table view. */
 export const LineChart = memo(function LineChart({
   title,
   series,
   format,
+  integer = false,
   height = 180,
   now,
 }: Props) {
   const [ref, width] = useWidth<HTMLDivElement>()
   const [active, setActive] = useState<number | null>(null)
+  const [touch, setTouch] = useState(false)
   const [showTable, setShowTable] = useState(false)
   const tableId = useId()
-  const svgRef = useRef<SVGSVGElement>(null)
+  const plotRef = useRef<HTMLDivElement>(null)
 
+  // Every series is on the same grid (fillSeries); the first one carries the times.
   const times = series[0]?.points.map(([t]) => t) ?? []
-  const directLabels = series.length > 1 && series.length <= 4 && width >= 480
+  const directLabels = series.length > 1 && series.length <= 4 && width >= 360
   const right = PAD.right + (directLabels ? LABEL_GUTTER : 0)
   const plotWidth = Math.max(0, width - PAD.left - right)
   const plotHeight = height - PAD.top - PAD.bottom
-  const max = niceMax(Math.max(0, ...series.flatMap((s) => s.points.map(([, v]) => v))))
+  const max = niceMax(Math.max(0, ...series.flatMap((s) => s.points.map(([, v]) => v))), integer)
   const first = times[0] ?? 0
   const last = times[times.length - 1] ?? 1
   const x = (t: EpochMs) =>
@@ -60,28 +74,41 @@ export const LineChart = memo(function LineChart({
   const y = (v: number) => PAD.top + plotHeight - (v / max) * plotHeight
 
   const pick = (clientX: number) => {
-    const box = svgRef.current?.getBoundingClientRect()
+    const box = plotRef.current?.getBoundingClientRect()
     if (box === undefined || times.length === 0) return
-    const t = first + ((clientX - box.left - PAD.left) / Math.max(1, plotWidth)) * (last - first)
+    const t = first + ((clientX - box.left) / Math.max(1, box.width)) * (last - first)
     let best = 0
     for (let i = 1; i < times.length; i++) {
       if (Math.abs((times[i] ?? 0) - t) < Math.abs((times[best] ?? 0) - t)) best = i
     }
     setActive(best)
   }
-  const onPointer = (event: PointerEvent<SVGRectElement>) => pick(event.clientX)
-  const onKey = (event: KeyboardEvent<SVGRectElement>) => {
+  const onPointer = (event: PointerEvent<HTMLDivElement>) => {
+    setTouch(event.pointerType !== 'mouse')
+    pick(event.clientX)
+  }
+  const onKey = (event: KeyboardEvent<HTMLDivElement>) => {
     if (times.length === 0) return
-    if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+    const lastIndex = times.length - 1
+    const page = Math.max(1, Math.round(times.length / 12))
+    const moves: Record<string, (i: number) => number> = {
+      ArrowLeft: (i) => i - 1,
+      ArrowRight: (i) => i + 1,
+      PageUp: (i) => i - page,
+      PageDown: (i) => i + page,
+      Home: () => 0,
+      End: () => lastIndex,
+    }
+    const move = moves[event.key]
+    if (move !== undefined) {
       event.preventDefault()
-      const step = event.key === 'ArrowLeft' ? -1 : 1
-      setActive((i) => Math.min(times.length - 1, Math.max(0, (i ?? times.length - 1) + step)))
+      setActive((i) => Math.min(lastIndex, Math.max(0, move(i ?? lastIndex))))
     } else if (event.key === 'Escape') {
       setActive(null)
     }
   }
 
-  const ticksY = [0, max / 2, max]
+  const ticksY = valueTicks(max, integer)
   const ticksX = timeTicks(first, last, width < 480 ? 3 : 6)
 
   // Direct labels at each line's end, nudged apart so they never overlap.
@@ -163,7 +190,7 @@ export const LineChart = memo(function LineChart({
       ) : (
         <div className="cmd-chart" ref={ref}>
           {width > 0 && (
-            <svg ref={svgRef} viewBox={`0 0 ${width} ${height}`} height={height} aria-hidden="true">
+            <svg viewBox={`0 0 ${width} ${height}`} height={height} aria-hidden="true">
               {ticksY.map((v) => (
                 <g key={v}>
                   <line
@@ -198,6 +225,7 @@ export const LineChart = memo(function LineChart({
               {series.map((s) => (
                 <polyline
                   key={s.key}
+                  className="cmd-line"
                   fill="none"
                   stroke={s.color}
                   strokeWidth={2}
@@ -209,9 +237,9 @@ export const LineChart = memo(function LineChart({
               {ends.map(({ s, y: labelY }) => (
                 <text
                   key={s.key}
+                  className="cmd-end-label"
                   x={PAD.left + plotWidth + 6}
                   y={labelY + 4}
-                  style={{ fontSize: 12, fill: 'var(--cmd-ink-2)' }}
                 >
                   {s.label}
                 </text>
@@ -242,31 +270,34 @@ export const LineChart = memo(function LineChart({
                   })}
                 </g>
               )}
-              <rect
-                x={PAD.left}
-                y={PAD.top}
-                width={plotWidth}
-                height={plotHeight}
-                fill="transparent"
-                tabIndex={0}
-                role="slider"
-                aria-label={`${title}: arrow keys move through time`}
-                aria-valuemin={0}
-                aria-valuemax={Math.max(0, times.length - 1)}
-                aria-valuenow={active ?? Math.max(0, times.length - 1)}
-                aria-valuetext={valueText}
-                onPointerMove={onPointer}
-                onPointerDown={onPointer}
-                onPointerLeave={() => setActive(null)}
-                onKeyDown={onKey}
-                onBlur={() => setActive(null)}
-              />
             </svg>
           )}
+          {/* The readout control is HTML, outside the hidden drawing, so assistive technology
+              reads its value; pointer, touch and keys all move the same crosshair. */}
+          <div
+            ref={plotRef}
+            className="cmd-plot"
+            style={{ left: PAD.left, top: PAD.top, width: plotWidth, height: plotHeight }}
+            tabIndex={0}
+            role="slider"
+            aria-label={`${title}: read values over time`}
+            aria-valuemin={0}
+            aria-valuemax={Math.max(0, times.length - 1)}
+            aria-valuenow={Math.max(0, readIndex)}
+            aria-valuetext={valueText}
+            onPointerMove={onPointer}
+            onPointerDown={onPointer}
+            onPointerLeave={(event) => {
+              if (event.pointerType === 'mouse') setActive(null)
+            }}
+            onKeyDown={onKey}
+            onBlur={() => setActive(null)}
+          />
           {activeTime !== null && (
             <div
               className="cmd-tooltip"
-              role="status"
+              data-touch={touch}
+              aria-hidden="true"
               style={flip ? { right: width - tooltipLeft + 10 } : { left: tooltipLeft + 10 }}
             >
               <div className="cmd-tooltip-time">{formatWhen(activeTime, now)}</div>
@@ -285,24 +316,60 @@ export const LineChart = memo(function LineChart({
   )
 })
 
-const TICK_STEPS = [1, 2, 3, 6, 12, 24, 48].map((h) => h * 60 * 60 * 1000)
+const HOUR = 60 * 60 * 1000
+const TICK_HOURS = [1, 2, 3, 6, 12, 24, 48]
 
-/** Ticks on round local hours (every 1, 2, 3, 6, 12 or 24 hours), at most `most` of them. */
+/**
+ * Ticks on round local hours (every 1, 2, 3, 6, 12, 24 or 48 hours), at most about `most` of
+ * them. Built with local date arithmetic, so a daylight-saving change keeps them on the hour.
+ */
 export function timeTicks(first: EpochMs, last: EpochMs, most: number): EpochMs[] {
   if (last <= first) return []
-  const step = TICK_STEPS.find((s) => (last - first) / s <= most) ?? (TICK_STEPS.at(-1) as number)
-  // Align to the viewer's local hour boundaries, so 6-hour ticks fall on 00:00, 06:00, ...
-  const offset = new Date(first).getTimezoneOffset() * 60_000
+  const hours = TICK_HOURS.find((h) => (last - first) / (h * HOUR) <= most) ?? 48
+  const t = new Date(first)
+  t.setMinutes(0, 0, 0)
+  if (t.getTime() < first) t.setHours(t.getHours() + 1)
+  // Move to the first local hour that is a multiple of the step (midnight for whole days).
+  for (let guard = 0; t.getHours() % Math.min(hours, 24) !== 0 && guard < 48; guard++) {
+    t.setHours(t.getHours() + 1)
+  }
   const ticks: EpochMs[] = []
-  for (let t = Math.ceil((first - offset) / step) * step + offset; t <= last; t += step)
-    ticks.push(t)
+  for (let guard = 0; t.getTime() <= last && guard < 1000; guard++) {
+    ticks.push(t.getTime())
+    if (hours >= 24) t.setDate(t.getDate() + hours / 24)
+    else t.setHours(t.getHours() + hours)
+  }
   return ticks
 }
 
-/** A fixed color per entity, by its name, so a filter never repaints the series that remain. */
-export function seriesColors(keys: string[]): Map<string, string> {
-  const sorted = [...new Set(keys)].sort()
-  return new Map(sorted.map((key, i) => [key, `var(--cmd-series-${(i % 8) + 1})`]))
+/** The color of the line that stands for several folded series. */
+export const OTHER_COLOR = 'var(--cmd-ink-3)'
+const SLOTS = 8
+
+/**
+ * A fixed color per entity: its position among all known names (sorted), so a series missing
+ * from one range repaints no other. "Other" keeps its own neutral color. Should two shown
+ * series land on the same slot (more than eight known), the later one takes a free slot.
+ */
+export function seriesColors(known: string[], shown: string[] = known): Map<string, string> {
+  const universe = [...new Set(known.filter((k) => k !== 'Other'))].sort()
+  const colors = new Map<string, string>()
+  const used = new Set<number>()
+  for (const key of [...new Set(shown)].sort()) {
+    if (key === 'Other') {
+      colors.set(key, OTHER_COLOR)
+      continue
+    }
+    const index = universe.indexOf(key)
+    let slot = (index < 0 ? universe.length : index) % SLOTS
+    if (used.has(slot)) {
+      const free = Array.from({ length: SLOTS }, (_, i) => i).find((i) => !used.has(i))
+      if (free !== undefined) slot = free
+    }
+    used.add(slot)
+    colors.set(key, `var(--cmd-series-${slot + 1})`)
+  }
+  return colors
 }
 
 /** At most `limit` series; the smallest of the rest fold into one "Other" line. */

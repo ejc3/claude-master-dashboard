@@ -1,13 +1,16 @@
 'use client'
 
-import type { EpochMs } from '../core/index'
+import type { EpochMs } from '../core'
 
-/** A trend without axes, for a key number. The value it belongs to carries the meaning. */
-export function Sparkline({ points }: { points: Array<[EpochMs, number]> }) {
+/**
+ * A trend without axes. `max` sets a shared scale, so rows in one table compare by height; by
+ * default the line fills its own height.
+ */
+export function Sparkline({ points, max }: { points: Array<[EpochMs, number]>; max?: number }) {
   if (points.length < 2) return null
-  const max = Math.max(...points.map(([, v]) => v), 1)
+  const top = Math.max(max ?? 0, ...points.map(([, v]) => v), 1)
   const last = points.length - 1
-  const line = points.map(([, v], i) => `${(i / last) * 100},${28 - (v / max) * 24 - 2}`).join(' ')
+  const line = points.map(([, v], i) => `${(i / last) * 100},${28 - (v / top) * 24 - 2}`).join(' ')
   return (
     <svg className="cmd-spark" viewBox="0 0 100 28" preserveAspectRatio="none" aria-hidden="true">
       <polyline

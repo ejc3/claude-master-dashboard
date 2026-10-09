@@ -7,10 +7,45 @@ export interface RunOut {
   at: EpochMs
 }
 
-/** A subscription can take work: not exhausted, not cooling down after a 429. */
+// A window blocks work while its allowance is used up and its reset is still ahead.
+function blocksUntil(window: QuotaWindow | null, now: EpochMs): EpochMs | null {
+  if (window === null || window.usedFraction === null || window.usedFraction < 1) return null
+  return window.resetsAt !== null && window.resetsAt > now ? window.resetsAt : null
+}
+
+/**
+ * Why a subscription cannot take work right now, and until when (null when unknown, e.g. a
+ * login that has expired needs someone to fix it).
+ */
+export type Blocked =
+  | { reason: 'no-reading'; until: null }
+  | { reason: 'login-expired'; until: null }
+  | { reason: 'used-up' | 'cooling-down'; until: EpochMs | null }
+
+/** Null when the subscription can take work. */
+export function blocked(profile: ProfileStatus, now: EpochMs): Blocked | null {
+  if (profile.band === 'unknown') return { reason: 'no-reading', until: null }
+  if (profile.tokenExpiresAt !== null && profile.tokenExpiresAt <= now) {
+    return { reason: 'login-expired', until: null }
+  }
+  // Every reason that applies holds it back until the last of them ends.
+  const usedUp = [blocksUntil(profile.weekly, now), blocksUntil(profile.fiveHour, now)].filter(
+    (t): t is EpochMs => t !== null,
+  )
+  const cooling =
+    profile.rateLimitedUntil !== null && profile.rateLimitedUntil > now
+      ? profile.rateLimitedUntil
+      : null
+  if (usedUp.length > 0 || profile.band === 'exhausted') {
+    const all = cooling === null ? usedUp : [...usedUp, cooling]
+    return { reason: 'used-up', until: all.length === 0 ? null : Math.max(...all) }
+  }
+  if (cooling !== null) return { reason: 'cooling-down', until: cooling }
+  return null
+}
+
 export function hasHeadroom(profile: ProfileStatus, now: EpochMs): boolean {
-  if (profile.band === 'exhausted') return false
-  return profile.rateLimitedUntil === null || profile.rateLimitedUntil <= now
+  return blocked(profile, now) === null
 }
 
 /** The soonest a subscription with headroom runs out of a window before it resets. */
@@ -29,13 +64,16 @@ export function nextRunOut(profiles: ProfileStatus[], now: EpochMs): RunOut | nu
   return soonest
 }
 
-/** The next time any window resets. */
-export function nextReset(profiles: ProfileStatus[], now: EpochMs): EpochMs | null {
-  let soonest: EpochMs | null = null
+/** When the first blocked subscription can take work again, if any of them will on its own. */
+export function nextAvailable(
+  profiles: ProfileStatus[],
+  now: EpochMs,
+): { profile: string; at: EpochMs } | null {
+  let soonest: { profile: string; at: EpochMs } | null = null
   for (const p of profiles) {
-    for (const w of [p.weekly, p.fiveHour]) {
-      const at = w?.resetsAt ?? null
-      if (at !== null && at > now && (soonest === null || at < soonest)) soonest = at
+    const b = blocked(p, now)
+    if (b?.until != null && (soonest === null || b.until < soonest.at)) {
+      soonest = { profile: p.profile, at: b.until }
     }
   }
   return soonest

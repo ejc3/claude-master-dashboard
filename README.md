@@ -38,9 +38,10 @@ Barlow and Barlow Condensed through `next/font`).
 ```bash
 pnpm install
 pnpm check && pnpm typecheck && pnpm test
-cp apps/web/.env.example apps/web/.env.local   # set PORT and DASHBOARD_AUTH=off for local use
-cd apps/web && pnpm dev
+cp apps/web/.env.example apps/web/.env.local   # DASHBOARD_AUTH=off for local use
+cd apps/web && PORT=<port> pnpm dev
 ```
 
-`next dev` listens on `PORT` from `.env.local`. Open it as `http://localhost:<PORT>`: Next's
-development server serves its scripts only to its own origin.
+Next reads `PORT` from the environment before it loads `.env.local`, so pass it on the command
+line. Open the app as `http://localhost:<port>`: Next's development server serves its scripts
+only to its own origin.

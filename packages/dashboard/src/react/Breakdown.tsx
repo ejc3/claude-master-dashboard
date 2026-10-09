@@ -19,7 +19,13 @@ const SPLITS: Array<{ dimension: Dimension; label: string; noun: string; column:
 ]
 
 /** Who and what the requests in the range came from, one split at a time. */
-export function Breakdown(props: { apiBase: string; range: TimeRange; stepSeconds: number }) {
+export function Breakdown(props: {
+  apiBase: string
+  range: TimeRange
+  stepSeconds: number
+  /** The range in words, for the title ("last 24 hours"). */
+  rangeWords: string
+}) {
   const [split, setSplit] = useState(SPLITS[0] as (typeof SPLITS)[number])
   const query: SeriesQuery = {
     metric: 'requests',
@@ -35,12 +41,14 @@ export function Breakdown(props: { apiBase: string; range: TimeRange; stepSecond
           .sort((a, b) => b.total - a.total)
       : []
   const all = rows.reduce((sum, r) => sum + r.total, 0)
+  // One scale for every row's trend, so a small series does not look as busy as a large one.
+  const peak = Math.max(0, ...rows.flatMap((r) => r.points.map(([, v]) => v)))
 
   return (
     <section className="cmd-panel" aria-labelledby="cmd-breakdown-title">
       <div className="cmd-panel-head">
         <h2 className="cmd-panel-title" id="cmd-breakdown-title">
-          Requests by {split.noun}
+          Requests by {split.noun}, {props.rangeWords}
         </h2>
         <fieldset className="cmd-segmented">
           <legend className="cmd-visually-hidden">Split requests by</legend>
@@ -57,7 +65,7 @@ export function Breakdown(props: { apiBase: string; range: TimeRange; stepSecond
         </fieldset>
       </div>
       {loaded.state === 'loading' && <p className="cmd-empty">Loading…</p>}
-      {loaded.state === 'error' && <p className="cmd-error">{loaded.message}</p>}
+      {loaded.state === 'error' && <p className="cmd-error">{loaded.failure.message}</p>}
       {loaded.state === 'ready' && rows.length === 0 && (
         <p className="cmd-empty">No requests in this range.</p>
       )}
@@ -84,13 +92,15 @@ export function Breakdown(props: { apiBase: string; range: TimeRange; stepSecond
                     </th>
                     <td className="cmd-num">{formatCount(r.total)}</td>
                     <td>
-                      <span className="cmd-share" title={formatPercent(share)}>
-                        <span style={{ width: `${share * 100}%` }} />
+                      <span className="cmd-share-cell">
+                        <span className="cmd-share">
+                          <span style={{ width: `${share * 100}%` }} />
+                        </span>
+                        <span className="cmd-share-value">{formatPercent(share)}</span>
                       </span>
-                      <span className="cmd-visually-hidden">{formatPercent(share)}</span>
                     </td>
                     <td style={{ width: 96 }}>
-                      <Sparkline points={r.points} />
+                      <Sparkline points={r.points} max={peak} />
                     </td>
                   </tr>
                 )

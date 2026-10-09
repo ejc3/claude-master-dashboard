@@ -73,3 +73,35 @@ describe('createDashboardHandler', () => {
     expect((await handler(true)(new Request(`${base}/secrets`))).status).toBe(404)
   })
 })
+
+describe('DashboardPage', () => {
+  it('renders without a first snapshot when the source fails, so the browser can retry', async () => {
+    const { DashboardPage } = await import('../src/next/index')
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const failing: MetricsSource = {
+      snapshot: () => Promise.reject(new Error('throttled')),
+      series: () => Promise.reject(new Error('throttled')),
+    }
+    const element = (await DashboardPage({
+      source: () => failing,
+      authorize: () => true,
+      unauthorized: 'sign in',
+      apiBase: '/api/claude-master',
+    })) as { props: { initialSnapshot: unknown } }
+    expect(element.props.initialSnapshot).toBeNull()
+    log.mockRestore()
+  })
+
+  it('shows the unauthorized content and never asks the source', async () => {
+    const { DashboardPage } = await import('../src/next/index')
+    const source = { snapshot: vi.fn(), series: vi.fn() }
+    const element = await DashboardPage({
+      source: () => source,
+      authorize: () => false,
+      unauthorized: 'sign in',
+      apiBase: '/api/claude-master',
+    })
+    expect(element).toBe('sign in')
+    expect(source.snapshot).not.toHaveBeenCalled()
+  })
+})

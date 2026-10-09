@@ -1,13 +1,15 @@
 'use client'
 
-import { type RefObject, useEffect, useRef, useState } from 'react'
+import { type RefObject, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import {
   type EpochMs,
+  fillSeries,
   type Series,
   type SeriesQuery,
   type Snapshot,
   seriesQueryToParams,
-} from '../core/index'
+} from '../core'
+import { type PollFailure, type PollState, startPoller } from './poller'
 
 /** The element's content width, tracked as it resizes; 0 before the first measurement. */
 export function useWidth<T extends HTMLElement>(): [RefObject<T | null>, number] {
@@ -37,6 +39,20 @@ export function useVisible(): boolean {
   return visible
 }
 
+const noSubscribe = () => () => {}
+
+/**
+ * False during server rendering and hydration, true after. Wall-clock text depends on the
+ * viewer's time zone, which the server does not know, so it renders only once this is true.
+ */
+export function useHydrated(): boolean {
+  return useSyncExternalStore(
+    noSubscribe,
+    () => true,
+    () => false,
+  )
+}
+
 /** The current time, advancing every `everyMs` while the page is visible. */
 export function useNow(everyMs: number, initial: EpochMs): EpochMs {
   const [now, setNow] = useState(initial)
@@ -52,55 +68,54 @@ export function useNow(everyMs: number, initial: EpochMs): EpochMs {
 
 export type Loaded<T> =
   | { state: 'loading' }
-  | { state: 'ready'; data: T; at: EpochMs }
-  | { state: 'error'; message: string }
+  | { state: 'ready'; data: T; at: EpochMs; failure: PollFailure | null }
+  | { state: 'error'; failure: PollFailure }
 
-async function getJSON<T>(url: string, signal: AbortSignal): Promise<T> {
-  const response = await fetch(url, { signal, headers: { accept: 'application/json' } })
-  if (!response.ok) {
-    const body = (await response.json().catch(() => null)) as { error?: string } | null
-    throw new Error(body?.error ?? `The dashboard server answered ${response.status}.`)
-  }
-  return (await response.json()) as T
-}
-
-/** Fetches `url` now and every `everyMs` while visible; keeps the last good data on failure. */
+/** Polls `url` while visible. Data from another URL never shows under this one. */
 function usePolled<T>(url: string | null, everyMs: number, initial?: T): Loaded<T> {
-  const [loaded, setLoaded] = useState<Loaded<T>>(
-    initial === undefined
-      ? { state: 'loading' }
-      : { state: 'ready', data: initial, at: Date.now() },
+  const [poll, setPoll] = useState<PollState<T> | null>(() =>
+    url !== null && initial !== undefined ? { url, data: initial, at: Date.now() } : null,
   )
+  // The server rendered `initial`, so the first request waits one period.
+  const servedInitial = useRef(initial !== undefined)
+  const pollRef = useRef(poll)
+  pollRef.current = poll
   const visible = useVisible()
   useEffect(() => {
     if (url === null || !visible) return
-    const controller = new AbortController()
-    const load = () =>
-      getJSON<T>(url, controller.signal).then(
-        (data) => setLoaded({ state: 'ready', data, at: Date.now() }),
-        (error: unknown) => {
-          if (controller.signal.aborted) return
-          const message = error instanceof Error ? error.message : 'The request failed.'
-          setLoaded((previous) =>
-            previous.state === 'ready' ? previous : { state: 'error', message },
-          )
-        },
-      )
-    void load()
-    const timer = setInterval(load, everyMs)
-    return () => {
-      controller.abort()
-      clearInterval(timer)
-    }
+    const delayFirst = servedInitial.current
+    servedInitial.current = false
+    return startPoller<T>({
+      url,
+      everyMs,
+      delayFirst,
+      fetch: (input, init) => fetch(input, init),
+      previous: pollRef.current ?? undefined,
+      onChange: setPoll,
+    })
   }, [url, everyMs, visible])
-  return loaded
+
+  if (poll === null || poll.url !== url) return { state: 'loading' }
+  if (poll.data !== undefined) {
+    return { state: 'ready', data: poll.data, at: poll.at ?? 0, failure: poll.failure ?? null }
+  }
+  return poll.failure === undefined
+    ? { state: 'loading' }
+    : { state: 'error', failure: poll.failure }
 }
 
-export function useSnapshot(apiBase: string, initial: Snapshot): Loaded<Snapshot> {
-  return usePolled<Snapshot>(`${apiBase}/snapshot`, 60_000, initial)
+export function useSnapshot(apiBase: string, initial: Snapshot | null): Loaded<Snapshot> {
+  return usePolled<Snapshot>(`${apiBase}/snapshot`, 60_000, initial ?? undefined)
 }
 
+/** Series for `query`, filled onto its step grid so a missing bucket counts as zero. */
 export function useSeries(apiBase: string, query: SeriesQuery | null): Loaded<Series[]> {
   const url = query === null ? null : `${apiBase}/series?${seriesQueryToParams(query)}`
-  return usePolled<Series[]>(url, 5 * 60_000)
+  const loaded = usePolled<Series[]>(url, 5 * 60_000)
+  const filled = useRef<{ from: Series[]; to: Series[] } | null>(null)
+  if (loaded.state !== 'ready' || query === null) return loaded
+  if (filled.current?.from !== loaded.data) {
+    filled.current = { from: loaded.data, to: fillSeries(loaded.data, query) }
+  }
+  return { ...loaded, data: filled.current.to }
 }

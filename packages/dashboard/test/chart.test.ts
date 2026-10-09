@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import { HOUR_MS } from '../src/core'
-import { foldSeries, seriesColors, timeTicks } from '../src/react/LineChart'
+import {
+  foldSeries,
+  niceMax,
+  OTHER_COLOR,
+  seriesColors,
+  timeTicks,
+  valueTicks,
+} from '../src/react/LineChart'
 
 const NOW = Date.UTC(2026, 9, 9, 12, 7)
 
@@ -16,6 +23,25 @@ describe('timeTicks', () => {
         expect((t - offset) % HOUR_MS).toBe(0)
         expect(t >= first && t <= NOW).toBe(true)
       }
+    }
+  })
+
+  it('stays on the local hour across a daylight-saving change', () => {
+    const tz = process.env.TZ
+    process.env.TZ = 'America/New_York'
+    try {
+      // 2026-03-08: clocks in New York go from 02:00 to 03:00.
+      const first = Date.UTC(2026, 2, 7, 17) // 12:00 local, Mar 7
+      const last = Date.UTC(2026, 2, 9, 4) // 00:00 local, Mar 9
+      const ticks = timeTicks(first, last, 6)
+      expect(ticks.length).toBeGreaterThan(2)
+      for (const t of ticks) {
+        const d = new Date(t)
+        expect(d.getMinutes()).toBe(0)
+        expect(d.getHours() % 6).toBe(0)
+      }
+    } finally {
+      process.env.TZ = tz
     }
   })
 
@@ -44,10 +70,31 @@ describe('series helpers', () => {
   it('colors by name across the known set, so a missing series repaints no other', () => {
     const known = ['alpha', 'bravo', 'charlie']
     const everything = seriesColors(known)
-    // charlie has no data in this range; the chart still colors from the known set.
-    const withoutCharlie = seriesColors([...known, 'alpha', 'bravo'])
+    const withoutCharlie = seriesColors(known, ['alpha', 'bravo'])
     expect(withoutCharlie.get('bravo')).toBe(everything.get('bravo'))
     expect(everything.get('alpha')).toBe('var(--cmd-series-1)')
     expect(seriesColors(['charlie', 'bravo', 'alpha'])).toEqual(everything)
+  })
+
+  it('keeps Other neutral and out of the slots, and never shows two lines in one color', () => {
+    const known = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i']
+    const with8 = seriesColors(known, ['a', 'b', 'c'])
+    const withOther = seriesColors(known, ['a', 'b', 'c', 'Other'])
+    expect(withOther.get('a')).toBe(with8.get('a'))
+    expect(withOther.get('Other')).toBe(OTHER_COLOR)
+    // 'i' would share slot 1 with 'a' (nine known); shown together they differ.
+    const both = seriesColors(known, ['a', 'i'])
+    expect(both.get('a')).not.toBe(both.get('i'))
+  })
+})
+
+describe('axis', () => {
+  it('keeps count axes on whole numbers', () => {
+    expect(niceMax(2.5, true)).toBe(5)
+    expect(niceMax(2.5, false)).toBe(2.5)
+    expect(niceMax(180, true)).toBe(200)
+    expect(valueTicks(5, true)).toEqual([0, 5])
+    expect(valueTicks(200, true)).toEqual([0, 100, 200])
+    expect(valueTicks(0.05, false)).toEqual([0, 0.025, 0.05])
   })
 })
