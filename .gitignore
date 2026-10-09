@@ -6,3 +6,5 @@ coverage
 !.env.example
 .vercel
 *.tsbuildinfo
+.open-next
+.wrangler

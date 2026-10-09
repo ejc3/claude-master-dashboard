@@ -9,14 +9,16 @@
     "./demo": "./src/demo/index.ts",
     "./react": "./src/react/index.ts",
     "./next": "./src/next/index.tsx",
-    "./styles.css": "./src/react/dashboard.css"
+    "./styles.css": "./src/react/dashboard.css",
+    "./access": "./src/access/index.ts"
   },
   "dependencies": {
+    "jose": "6.2.12",
     "server-only": "^0.0.1"
   },
   "peerDependencies": {
-    "react": "^19.2.0",
-    "next": "^16.0.0"
+    "next": "^16.0.0",
+    "react": "^19.2.0"
   },
   "peerDependenciesMeta": {
     "next": {
