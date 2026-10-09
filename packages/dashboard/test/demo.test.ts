@@ -81,6 +81,27 @@ describe('demo source', () => {
     }
   })
 
+  it('counts nothing past the range end, even in a partial last bucket', async () => {
+    // Ten minutes back to three minutes back: the second five-minute bucket is cut short.
+    const range = { start: NOW - 10 * 60_000, end: NOW - 3 * 60_000 }
+    const at = async (stepSeconds: number) =>
+      sum((await source.series({ metric: 'requests', range, stepSeconds }))[0]?.points ?? [])
+    expect(await at(300)).toBe(await at(60))
+  })
+
+  it('keeps usage between 0 and 1 across older windows', async () => {
+    const range = { start: NOW - 15 * 24 * HOUR_MS, end: NOW }
+    const used = await source.series({
+      metric: 'weeklyUsed',
+      groupBy: 'profile',
+      range,
+      stepSeconds: 3600,
+    })
+    for (const s of used) {
+      for (const [, v] of s.points) expect(v >= 0 && v <= 1, `${s.key} ${v}`).toBe(true)
+    }
+  })
+
   it('counts an error for every non-2xx request', async () => {
     const errors = sum(
       (await source.series({ metric: 'errors', range: day, stepSeconds: 300 }))[0]?.points ?? [],
@@ -133,6 +154,10 @@ describe('validateSeriesQuery', () => {
       { ...ok, range: { start: NOW - 14 * 24 * HOUR_MS, end: NOW }, stepSeconds: 60 },
     ],
     ['a fractional bound', { ...ok, range: { start: 0.5, end: NOW } }],
+    [
+      'a step longer than the range',
+      { ...ok, range: { start: 0, end: 60_000 }, stepSeconds: 12_000_000 },
+    ],
   ])('refuses %s', (_, query) => {
     expect(() => validateSeriesQuery(query)).toThrow(BadQueryError)
   })

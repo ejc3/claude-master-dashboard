@@ -156,7 +156,8 @@ export function split(total: number, shares: readonly number[]): number[] {
   return parts
 }
 
-// A window's used share at time t, rising linearly from its start to the current reading.
+// A window's used share at time t: rising linearly to the current reading in the current window,
+// and to 0.9 in every earlier one.
 function usedAt(
   used: number,
   resetAt: EpochMs,
@@ -166,7 +167,7 @@ function usedAt(
 ): number {
   const start = resetAt - lengthMs
   if (t >= start) return Math.min(used, (used * (t - start)) / Math.max(1, now - start))
-  return Math.min(0.9, (0.9 * (t - (start - lengthMs))) / lengthMs)
+  return (0.9 * mod(t - start, lengthMs)) / lengthMs
 }
 
 const mod = (a: number, n: number) => ((a % n) + n) % n
@@ -230,11 +231,12 @@ export function createDemoSource(options: DemoOptions = {}): MetricsSource {
           return mod(now + p.tokenLeftMs - m, TOKEN_LIFETIME_MS) / 1000
         })
         if (groupBy !== undefined) return values
-        return [metric === 'tokenExpiresInSeconds' ? Math.min(...values) : Math.max(...values)]
+        return [reduce(metric === 'tokenExpiresInSeconds' ? 'MIN' : 'MAX', values)]
       }
     }
   }
 
+  // Loops, not Math.max(...values): a long bucket would overflow the call stack.
   function reduce(statistic: Statistic, values: number[]): number {
     if (values.length === 0) return 0
     switch (statistic) {
@@ -243,9 +245,9 @@ export function createDemoSource(options: DemoOptions = {}): MetricsSource {
       case 'AVG':
         return values.reduce((a, b) => a + b, 0) / values.length
       case 'MAX':
-        return Math.max(...values)
+        return values.reduce((a, b) => (b > a ? b : a))
       case 'MIN':
-        return Math.min(...values)
+        return values.reduce((a, b) => (b < a ? b : a))
     }
   }
 
@@ -295,7 +297,8 @@ export function createDemoSource(options: DemoOptions = {}): MetricsSource {
         at += stepMs
       ) {
         const perKey = keys.map((): number[] => [])
-        for (let m = at; m < at + stepMs; m += MINUTE_MS) {
+        // A bucket ends at its step or at the range end, whichever comes first.
+        for (let m = at; m < Math.min(at + stepMs, query.range.end); m += MINUTE_MS) {
           const values = minute(query.metric, query.groupBy, m, now)
           for (const [i, v] of values.entries()) perKey[i]?.push(v)
         }

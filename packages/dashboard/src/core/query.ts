@@ -25,6 +25,7 @@ export function validateSeriesQuery(query: SeriesQuery): void {
   if (!Number.isSafeInteger(step) || step < MIN_STEP_SECONDS || step % MIN_STEP_SECONDS !== 0) {
     throw new BadQueryError('the step must be a whole number of minutes')
   }
+  if (step * 1000 > end - start) throw new BadQueryError('the step is longer than the range')
   if ((end - start) / (step * 1000) > MAX_POINTS) {
     throw new BadQueryError(`the query would return more than ${MAX_POINTS} points`)
   }
