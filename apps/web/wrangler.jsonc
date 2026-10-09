@@ -5,11 +5,11 @@
   "compatibility_date": "2026-10-06",
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
   "assets": { "directory": ".open-next/assets", "binding": "ASSETS" },
-  // No public URL until Cloudflare Access covers the Worker (docs/deploy.md, step 3). Access
+  // workers.dev is on now that Cloudflare Access covers the Worker (docs/deploy.md, step 3). Access
   // follows the Worker itself (an application with the Worker as its destination), so it gates
   // workers.dev and preview URLs alike once they are on. Wrangler applies these switches on each
   // deploy, so they change here and in ejc3/aws together.
-  "workers_dev": false,
+  "workers_dev": true,
   "preview_urls": false,
   "observability": { "enabled": true }
   // The Access settings and the AWS key are Worker secrets (docs/deploy.md); they survive deploys.
