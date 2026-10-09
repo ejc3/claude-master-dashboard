@@ -10,12 +10,17 @@
   "scripts": {
     "check": "biome check .",
     "format": "biome check --write .",
-    "typecheck": "tsc --noEmit -p .",
-    "test": "vitest run"
+    "typecheck": "tsc --noEmit -p . && pnpm --filter web typecheck",
+    "test": "vitest run",
+    "build": "pnpm --filter web build"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.15",
     "@types/node": "^24.0.0",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
     "typescript": "6.0.3",
     "vitest": "^4.1.9"
   }

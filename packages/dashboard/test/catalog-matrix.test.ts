@@ -5,7 +5,7 @@ import {
   resolveMetric,
   type SemanticMetric,
   UnsupportedQueryError,
-} from '../src/core/index.js'
+} from '../src/core/index'
 
 // The attributes each metric carries, written out from claude-master's metrics.go
 // (internal/claudemaster/metrics.go, observeRequest and the routing/quota recorders), not from

@@ -1,5 +1,5 @@
-import { resolveMetric, type Statistic } from '../core/catalog.js'
-import { validateSeriesQuery } from '../core/query.js'
+import { resolveMetric, type Statistic } from '../core/catalog'
+import { validateSeriesQuery } from '../core/query'
 import {
   type Band,
   type Dimension,
@@ -13,7 +13,7 @@ import {
   type SeriesQuery,
   type Snapshot,
   WEEK_MS,
-} from '../core/types.js'
+} from '../core/types'
 
 const MINUTE_MS = 60_000
 

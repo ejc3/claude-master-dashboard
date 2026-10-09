@@ -1,4 +1,4 @@
-import type { EpochMs, QuotaWindow } from './types.js'
+import type { EpochMs, QuotaWindow } from './types'
 
 /**
  * How far usage leads the share of the window that has passed. 'even' is within EVEN_MARGIN of

@@ -1,4 +1,4 @@
-import type { Dimension, SemanticMetric } from './types.js'
+import type { Dimension, SemanticMetric } from './types'
 
 /** How a stored series is reduced: counters arrive as deltas (sum), gauges as levels. */
 export type Statistic = 'SUM' | 'AVG' | 'MAX' | 'MIN'
