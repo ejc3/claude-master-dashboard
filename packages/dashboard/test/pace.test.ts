@@ -8,7 +8,7 @@ import {
   projectedExhaustion,
   type QuotaWindow,
   WEEK_MS,
-} from '../src/core/index.js'
+} from '../src/core/index'
 
 const NOW = Date.UTC(2026, 9, 9, 12)
 

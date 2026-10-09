@@ -6,8 +6,8 @@ import {
   type SeriesQuery,
   UnsupportedQueryError,
   validateSeriesQuery,
-} from '../src/core/index.js'
-import { createDemoSource, DEMO_VALUES, split } from '../src/demo/index.js'
+} from '../src/core/index'
+import { createDemoSource, DEMO_VALUES, split } from '../src/demo/index'
 
 const NOW = Date.UTC(2026, 9, 9, 12)
 const source = createDemoSource({ now: () => NOW })

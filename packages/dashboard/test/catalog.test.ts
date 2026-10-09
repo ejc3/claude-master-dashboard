@@ -6,7 +6,7 @@ import {
   resolveMetric,
   type SemanticMetric,
   UnsupportedQueryError,
-} from '../src/core/index.js'
+} from '../src/core/index'
 
 // Queries that were checked against the live CloudWatch API for the claude-master server's own
 // CloudWatch dashboard. The catalog must produce them exactly.

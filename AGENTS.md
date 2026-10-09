@@ -15,7 +15,9 @@ pnpm test        # vitest
 
 - TypeScript stays strict (`noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`,
   `verbatimModuleSyntax`). Fix types; do not cast around them.
-- Relative imports use explicit `.js` specifiers.
+- Relative imports inside `packages/dashboard` are extensionless. The package is always bundled
+  by its host (Next `transpilePackages`, Vitest), and Turbopack does not resolve a `.js` or
+  `.jsx` specifier to a `.tsx` file.
 - Views and sources ask the catalog for semantic metrics; metric names live in
   `src/core/catalog.ts` (tests and docs may quote them).
 - Nothing from a real deployment goes into this public repository: no AWS account or role ARN,

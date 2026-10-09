@@ -1,4 +1,4 @@
-import type { SeriesQuery } from './types.js'
+import type { SeriesQuery } from './types'
 
 /** The longest range one query may cover. */
 export const MAX_RANGE_MS = 15 * 24 * 60 * 60 * 1000

@@ -5,7 +5,23 @@ export {
   resolveMetric,
   type Statistic,
   UnsupportedQueryError,
-} from './catalog.js'
+} from './catalog'
+export { fillSeries, sumBetween, sumSeries } from './fill'
+export {
+  formatCount,
+  formatCountdown,
+  formatDuration,
+  formatPercent,
+  formatWhen,
+} from './format'
+export {
+  type Blocked,
+  blocked,
+  hasHeadroom,
+  nextAvailable,
+  nextRunOut,
+  type RunOut,
+} from './headline'
 export {
   EVEN_MARGIN,
   elapsedFraction,
@@ -13,12 +29,13 @@ export {
   type Pace,
   pace,
   projectedExhaustion,
-} from './pace.js'
+} from './pace'
 export {
   BadQueryError,
   MAX_POINTS,
   MAX_RANGE_MS,
   MIN_STEP_SECONDS,
   validateSeriesQuery,
-} from './query.js'
-export * from './types.js'
+} from './query'
+export * from './types'
+export { seriesQueryFromParams, seriesQueryToParams } from './wire'
