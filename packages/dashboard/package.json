@@ -1,0 +1,11 @@
+{
+  "name": "@ejc3/claude-master-dashboard",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "A dashboard for claude-master telemetry that mounts in any Next.js app.",
+  "exports": {
+    ".": "./src/core/index.ts",
+    "./demo": "./src/demo/index.ts"
+  }
+}
