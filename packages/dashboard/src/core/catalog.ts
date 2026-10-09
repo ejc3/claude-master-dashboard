@@ -37,7 +37,11 @@ const CATALOG: Record<SemanticMetric, Entry> = {
     statistic: 'SUM',
     dimensions: ['profile', 'status', 'client_account'],
   },
-  switches: { name: 'claude_master.routing.switches', statistic: 'SUM', dimensions: ['reason'] },
+  switches: {
+    name: 'claude_master.routing.switches',
+    statistic: 'SUM',
+    dimensions: ['reason', 'from', 'to'],
+  },
   rateLimited: {
     name: 'claude_master.quota.rate_limited',
     statistic: 'SUM',
@@ -83,6 +87,19 @@ const CATALOG: Record<SemanticMetric, Entry> = {
   },
 }
 
+const DIMENSIONS: readonly Dimension[] = [
+  'profile',
+  'client',
+  'client_account',
+  'model',
+  'status_class',
+  'status',
+  'reason',
+  'from',
+  'to',
+  'result',
+]
+
 export class UnsupportedQueryError extends Error {
   constructor(metric: SemanticMetric, groupBy: Dimension) {
     super(`claude-master does not emit ${metric} split by ${groupBy}`)
@@ -105,18 +122,26 @@ export function resolveMetric(metric: SemanticMetric, groupBy?: Dimension): Reso
 /** The dimensions a semantic metric can be split by. */
 export function groupableBy(metric: SemanticMetric): Dimension[] {
   const entry = CATALOG[metric]
-  return [...entry.dimensions, ...(Object.keys(entry.projections ?? {}) as Dimension[])]
+  return DIMENSIONS.filter(
+    (d) => entry.dimensions.includes(d) || entry.projections?.[d] !== undefined,
+  )
 }
 
 // Metrics Insights keywords that must be quoted when used as a dimension name.
-const RESERVED = new Set<string>(['result', 'window'])
+const RESERVED = new Set<string>(['result', 'window', 'from', 'to'])
 
 function identifier(name: string): string {
   return RESERVED.has(name) ? `"${name}"` : name
 }
 
-/** The CloudWatch Metrics Insights query for a resolved metric in a namespace. */
+/**
+ * The CloudWatch Metrics Insights query for a resolved metric in a namespace. A namespace that
+ * would need escaping inside the query's quotes is refused rather than escaped.
+ */
 export function insightsQuery(namespace: string, resolved: ResolvedMetric): string {
+  if (!/^[A-Za-z0-9 ._\-/#:]{1,255}$/.test(namespace)) {
+    throw new Error('the namespace must be 1-255 letters, digits or . _ - / # : and spaces')
+  }
   const group = resolved.groupBy === undefined ? '' : ` GROUP BY ${identifier(resolved.groupBy)}`
   return `SELECT ${resolved.statistic}("${resolved.name}") FROM "${namespace}"${group}`
 }

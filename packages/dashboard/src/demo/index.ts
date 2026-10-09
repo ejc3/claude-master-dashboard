@@ -1,5 +1,7 @@
-import { resolveMetric } from '../core/catalog.js'
+import { resolveMetric, type Statistic } from '../core/catalog.js'
+import { validateSeriesQuery } from '../core/query.js'
 import {
+  type Band,
   type Dimension,
   type EpochMs,
   FIVE_HOURS_MS,
@@ -13,19 +15,110 @@ import {
   WEEK_MS,
 } from '../core/types.js'
 
-/** Made-up dimension values; none is a real profile, box, person or model. */
+const MINUTE_MS = 60_000
+
+/**
+ * Made-up dimension values, including the placeholders claude-master emits ('none', '0',
+ * 'local', 'unknown'); none is a real profile, box, person or model.
+ */
 export const DEMO_VALUES: Record<Dimension, readonly string[]> = {
   profile: ['alpha', 'bravo', 'charlie', 'delta'],
-  client: ['box-1', 'box-2', 'tunnel'],
-  client_account: ['alice', 'bob', 'carol', 'other'],
+  client: ['box-1', 'box-2', 'tunnel', 'local'],
+  client_account: ['alice', 'bob', 'carol', 'other', 'unknown'],
   model: ['claude-model-large', 'claude-model-medium', 'claude-model-small'],
-  status_class: ['2xx', '4xx', '5xx'],
-  status: ['429', '500', '529'],
-  reason: ['rate_limited', 'weekly_exhausted', 'reserve_reached', 'rebalanced'],
+  status_class: ['2xx', '4xx', '5xx', 'none'],
+  status: ['429', '529', '500', '401', '0'],
+  reason: [
+    'rate_limited',
+    'weekly_exhausted',
+    'reserve_reached',
+    'rebalanced',
+    'subscriptions_exhausted',
+    'subscription_capacity_returned',
+  ],
+  from: ['alpha', 'bravo', 'charlie', 'delta'],
+  to: ['alpha', 'bravo', 'charlie', 'delta'],
   result: ['adopted', 'failed', 'rotated_scheduled'],
 }
 
-// FNV-1a, folded to [0, 1): the same inputs always give the same number.
+// How traffic divides among a dimension's values, in DEMO_VALUES order.
+const SHARES: Record<Dimension, readonly number[]> = {
+  profile: [0.38, 0.34, 0.08, 0.2],
+  client: [0.45, 0.3, 0.2, 0.05],
+  client_account: [0.4, 0.3, 0.2, 0.08, 0.02],
+  model: [0.35, 0.5, 0.15],
+  status_class: [0, 0.55, 0.4, 0.05], // of errors; 2xx is everything else
+  status: [0.5, 0.25, 0.15, 0.06, 0.04], // of errors
+  reason: [0.3, 0.2, 0.2, 0.15, 0.1, 0.05],
+  from: [0.25, 0.3, 0.3, 0.15],
+  to: [0.35, 0.35, 0.05, 0.25],
+  result: [0.8, 0.05, 0.15],
+}
+
+/** One table drives both the snapshot and the history, so they agree. */
+interface DemoProfile {
+  name: string
+  band: Band
+  weeklyUsed: number
+  weeklyResetsInMs: number
+  fiveHourUsed: number | null
+  fiveHourResetsInMs: number
+  cooldownMs: number | null
+  tokenLeftMs: number
+  latencyScale: number
+}
+
+const PROFILES: readonly DemoProfile[] = [
+  {
+    name: 'alpha',
+    band: 'ok',
+    weeklyUsed: 0.42,
+    weeklyResetsInMs: 3.1 * 24 * HOUR_MS,
+    fiveHourUsed: 0.35,
+    fiveHourResetsInMs: 2.2 * HOUR_MS,
+    cooldownMs: null,
+    tokenLeftMs: 5.5 * HOUR_MS,
+    latencyScale: 1,
+  },
+  {
+    name: 'bravo',
+    band: 'ok',
+    weeklyUsed: 0.71,
+    weeklyResetsInMs: 2.6 * 24 * HOUR_MS,
+    fiveHourUsed: 0.82,
+    fiveHourResetsInMs: 1.4 * HOUR_MS,
+    cooldownMs: null,
+    tokenLeftMs: 2 * HOUR_MS,
+    latencyScale: 1.1,
+  },
+  {
+    name: 'charlie',
+    band: 'exhausted',
+    weeklyUsed: 1,
+    weeklyResetsInMs: 9 * HOUR_MS,
+    fiveHourUsed: 1,
+    fiveHourResetsInMs: 0.6 * HOUR_MS,
+    cooldownMs: null,
+    tokenLeftMs: 7 * HOUR_MS,
+    latencyScale: 0.9,
+  },
+  {
+    name: 'delta',
+    band: 'reserve',
+    weeklyUsed: 0.93,
+    weeklyResetsInMs: 4.2 * 24 * HOUR_MS,
+    fiveHourUsed: null,
+    fiveHourResetsInMs: 0,
+    cooldownMs: 7 * MINUTE_MS,
+    tokenLeftMs: 40 * MINUTE_MS,
+    latencyScale: 1.3,
+  },
+]
+
+const TOKEN_LIFETIME_MS = 8 * HOUR_MS
+const REQUESTS_PER_MINUTE = 40
+
+// FNV-1a folded to [0, 1): the same inputs always give the same number.
 function noise(...parts: Array<string | number>): number {
   let h = 0x811c9dc5
   for (const char of parts.join('|')) {
@@ -41,55 +134,42 @@ function diurnal(at: EpochMs): number {
   return 1 + 0.6 * Math.sin(((hour - 9) / 24) * 2 * Math.PI)
 }
 
-const KEY_WEIGHT: Partial<Record<Dimension, readonly number[]>> = {
-  status_class: [0.94, 0.05, 0.01],
-  status: [0.7, 0.1, 0.2],
+// A whole count with the given mean: the noise decides the rounding, so long-run averages hold.
+function count(mean: number, ...seed: Array<string | number>): number {
+  return Math.floor(mean + noise(...seed))
 }
 
-function weight(groupBy: Dimension | undefined, index: number, count: number): number {
-  if (groupBy === undefined) return 1
-  return KEY_WEIGHT[groupBy]?.[index] ?? (count - index) / ((count * (count + 1)) / 2)
-}
-
-// Requests per minute across the pool at an average hour; the other metrics scale from it.
-const REQUESTS_PER_MINUTE = 40
-
-function value(
-  metric: SemanticMetric,
-  key: string,
-  share: number,
-  at: EpochMs,
-  stepSeconds: number,
-) {
-  const jitter = 0.85 + 0.3 * noise(metric, key, at)
-  const perStep = REQUESTS_PER_MINUTE * (stepSeconds / 60) * diurnal(at) * share * jitter
-  switch (metric) {
-    case 'requests':
-      return Math.round(perStep)
-    case 'errors':
-      return Math.round(perStep * 0.03)
-    case 'switches':
-      return Math.round(perStep * 0.01)
-    case 'rateLimited':
-      return Math.round(perStep * 0.004)
-    case 'backupRequests':
-      return Math.round(perStep * 0.002)
-    case 'ttfbMs':
-      return Math.round(900 * jitter)
-    case 'durationMs':
-      return Math.round(14000 * jitter)
-    case 'upstreamTtfbMs':
-      return Math.round(820 * jitter)
-    case 'overheadMs':
-      return Math.round(4 * jitter)
-    case 'weeklyUsed':
-      return Math.min(1, ((at % WEEK_MS) / WEEK_MS) * (0.6 + noise(key) * 0.6))
-    case 'weeklyResetsInSeconds':
-      return Math.round((WEEK_MS - (at % WEEK_MS)) / 1000)
-    case 'tokenExpiresInSeconds':
-      return Math.round(4 * 3600 * (0.5 + noise(key, at)))
+/** Splits a whole count by shares so the parts are whole and add up exactly (largest remainder). */
+export function split(total: number, shares: readonly number[]): number[] {
+  const sum = shares.reduce((a, b) => a + b, 0)
+  if (sum <= 0 || total <= 0) return shares.map(() => 0)
+  const exact = shares.map((s) => (total * s) / sum)
+  const parts = exact.map(Math.floor)
+  let left = total - parts.reduce((a, b) => a + b, 0)
+  const order = exact
+    .map((e, i) => ({ i, r: e - Math.floor(e) }))
+    .sort((a, b) => b.r - a.r || a.i - b.i)
+  for (const { i } of order) {
+    if (left-- <= 0) break
+    parts[i] = (parts[i] ?? 0) + 1
   }
+  return parts
 }
+
+// A window's used share at time t, rising linearly from its start to the current reading.
+function usedAt(
+  used: number,
+  resetAt: EpochMs,
+  lengthMs: number,
+  now: EpochMs,
+  t: EpochMs,
+): number {
+  const start = resetAt - lengthMs
+  if (t >= start) return Math.min(used, (used * (t - start)) / Math.max(1, now - start))
+  return Math.min(0.9, (0.9 * (t - (start - lengthMs))) / lengthMs)
+}
+
+const mod = (a: number, n: number) => ((a % n) + n) % n
 
 export interface DemoOptions {
   /** The clock; tests pass a fixed one so every number is reproducible. */
@@ -98,76 +178,130 @@ export interface DemoOptions {
 
 /** A source with plausible, reproducible numbers, for previews, tests and local development. */
 export function createDemoSource(options: DemoOptions = {}): MetricsSource {
-  const now = options.now ?? Date.now
+  const clock = options.now ?? Date.now
+
+  // Every metric's per-minute values for each group at minute `m` (its start time).
+  function minute(
+    metric: SemanticMetric,
+    groupBy: Dimension | undefined,
+    m: EpochMs,
+    now: EpochMs,
+  ) {
+    const keys = groupBy === undefined ? ['total'] : DEMO_VALUES[groupBy]
+    const shares = groupBy === undefined ? [1] : SHARES[groupBy]
+    const requests = count(
+      REQUESTS_PER_MINUTE * diurnal(m) * (0.85 + 0.3 * noise('load', m)),
+      'requests',
+      m,
+    )
+    const errors = count(requests * 0.03, 'errors', m)
+    const byKey = (n: number) => (groupBy === undefined ? [n] : split(n, shares))
+    switch (metric) {
+      case 'requests':
+        if (groupBy === 'status_class')
+          return [requests - errors, ...split(errors, shares.slice(1))]
+        return byKey(requests)
+      case 'errors':
+        return byKey(errors)
+      case 'switches':
+        return byKey(count(requests * 0.01, 'switches', m))
+      case 'rateLimited':
+        return byKey(count(requests * 0.004, 'rateLimited', m))
+      case 'backupRequests':
+        return byKey(count(requests * 0.002, 'backup', m))
+      case 'ttfbMs':
+      case 'durationMs':
+      case 'upstreamTtfbMs':
+      case 'overheadMs': {
+        const base = { ttfbMs: 900, durationMs: 14000, upstreamTtfbMs: 820, overheadMs: 4 }[metric]
+        return keys.map((key, i) => {
+          const scale = groupBy === 'profile' ? (PROFILES[i]?.latencyScale ?? 1) : 1
+          return base * scale * (0.85 + 0.3 * noise(metric, key, m))
+        })
+      }
+      case 'weeklyUsed':
+      case 'weeklyResetsInSeconds':
+      case 'tokenExpiresInSeconds': {
+        const values = PROFILES.map((p) => {
+          if (metric === 'weeklyUsed')
+            return usedAt(p.weeklyUsed, now + p.weeklyResetsInMs, WEEK_MS, now, m)
+          if (metric === 'weeklyResetsInSeconds')
+            return mod(now + p.weeklyResetsInMs - m, WEEK_MS) / 1000
+          return mod(now + p.tokenLeftMs - m, TOKEN_LIFETIME_MS) / 1000
+        })
+        if (groupBy !== undefined) return values
+        return [metric === 'tokenExpiresInSeconds' ? Math.min(...values) : Math.max(...values)]
+      }
+    }
+  }
+
+  function reduce(statistic: Statistic, values: number[]): number {
+    if (values.length === 0) return 0
+    switch (statistic) {
+      case 'SUM':
+        return values.reduce((a, b) => a + b, 0)
+      case 'AVG':
+        return values.reduce((a, b) => a + b, 0) / values.length
+      case 'MAX':
+        return Math.max(...values)
+      case 'MIN':
+        return Math.min(...values)
+    }
+  }
+
   return {
     async snapshot(): Promise<Snapshot> {
-      const at = now()
-      const asOf = at - 30_000
-      const window = (used: number, resetsIn: number, lengthMs: number) => ({
-        usedFraction: used,
-        resetsAt: at + resetsIn,
-        lengthMs,
-      })
-      const latency = (scale: number) => ({
-        p50: 9000 * scale,
-        p95: 31000 * scale,
-        p99: 52000 * scale,
-      })
-      const profiles: ProfileStatus[] = [
-        {
-          profile: 'alpha',
-          band: 'ok',
-          weekly: window(0.42, 3.1 * 24 * HOUR_MS, WEEK_MS),
-          fiveHour: window(0.35, 2.2 * HOUR_MS, FIVE_HOURS_MS),
-          rateLimitedUntil: null,
-          tokenExpiresAt: at + 5.5 * HOUR_MS,
-          latencyMs: latency(1),
+      const now = clock()
+      const asOf = now - 30_000
+      const profiles: ProfileStatus[] = PROFILES.map((p) => ({
+        profile: p.name,
+        band: p.band,
+        weekly: {
+          usedFraction: p.weeklyUsed,
+          resetsAt: now + p.weeklyResetsInMs,
+          lengthMs: WEEK_MS,
         },
-        {
-          profile: 'bravo',
-          band: 'ok',
-          weekly: window(0.71, 2.6 * 24 * HOUR_MS, WEEK_MS),
-          fiveHour: window(0.82, 1.4 * HOUR_MS, FIVE_HOURS_MS),
-          rateLimitedUntil: null,
-          tokenExpiresAt: at + 2 * HOUR_MS,
-          latencyMs: latency(1.1),
+        fiveHour:
+          p.fiveHourUsed === null
+            ? null
+            : {
+                usedFraction: p.fiveHourUsed,
+                resetsAt: now + p.fiveHourResetsInMs,
+                lengthMs: FIVE_HOURS_MS,
+              },
+        rateLimitedUntil: p.cooldownMs === null ? null : now + p.cooldownMs,
+        tokenExpiresAt: now + p.tokenLeftMs,
+        latencyMs: {
+          p50: 9000 * p.latencyScale,
+          p95: 31000 * p.latencyScale,
+          p99: 52000 * p.latencyScale,
         },
-        {
-          profile: 'charlie',
-          band: 'exhausted',
-          weekly: window(1, 9 * HOUR_MS, WEEK_MS),
-          fiveHour: window(1, 0.6 * HOUR_MS, FIVE_HOURS_MS),
-          rateLimitedUntil: null,
-          tokenExpiresAt: at + 7 * HOUR_MS,
-          latencyMs: latency(0.9),
-        },
-        {
-          profile: 'delta',
-          band: 'reserve',
-          weekly: window(0.93, 4.2 * 24 * HOUR_MS, WEEK_MS),
-          fiveHour: null,
-          rateLimitedUntil: at + 7 * 60_000,
-          tokenExpiresAt: at + 40 * 60_000,
-          latencyMs: latency(1.3),
-        },
-      ]
+      }))
       return { asOf, profiles, sessions: 23, activeConnections: 41 }
     },
 
     async series(query: SeriesQuery): Promise<Series[]> {
+      validateSeriesQuery(query)
       // Refuse what claude-master does not emit, exactly as a real source must.
-      resolveMetric(query.metric, query.groupBy)
+      const { statistic } = resolveMetric(query.metric, query.groupBy)
+      const now = clock()
       const stepMs = query.stepSeconds * 1000
-      const first = Math.ceil(query.range.start / stepMs) * stepMs
       const keys = query.groupBy === undefined ? ['total'] : DEMO_VALUES[query.groupBy]
-      return keys.map((key, index) => {
-        const share = weight(query.groupBy, index, keys.length)
-        const points: Array<[EpochMs, number]> = []
-        for (let at = first; at <= query.range.end; at += stepMs) {
-          points.push([at, value(query.metric, key, share, at, query.stepSeconds)])
+      const points = keys.map((): Array<[EpochMs, number]> => [])
+      // Buckets start on step boundaries; the range end is exclusive, as in GetMetricData.
+      for (
+        let at = Math.ceil(query.range.start / stepMs) * stepMs;
+        at < query.range.end;
+        at += stepMs
+      ) {
+        const perKey = keys.map((): number[] => [])
+        for (let m = at; m < at + stepMs; m += MINUTE_MS) {
+          const values = minute(query.metric, query.groupBy, m, now)
+          for (const [i, v] of values.entries()) perKey[i]?.push(v)
         }
-        return { key, points }
-      })
+        for (const [i, values] of perKey.entries()) points[i]?.push([at, reduce(statistic, values)])
+      }
+      return keys.map((key, i) => ({ key, points: points[i] ?? [] }))
     },
   }
 }

@@ -45,7 +45,10 @@ export interface Snapshot {
   activeConnections: number | null
 }
 
-/** The axes claude-master splits its metrics by. Each metric carries at most one of these. */
+/**
+ * The axes claude-master splits its metrics by. A metric carries a few of them (at most three
+ * for the metrics the dashboard reads); a split by another axis is a separate metric.
+ */
 export type Dimension =
   | 'profile'
   | 'client'
@@ -54,6 +57,8 @@ export type Dimension =
   | 'status_class'
   | 'status'
   | 'reason'
+  | 'from'
+  | 'to'
   | 'result'
 
 /** What a chart asks for, independent of where the numbers are stored. */

@@ -16,7 +16,8 @@ pnpm test        # vitest
 - TypeScript stays strict (`noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`,
   `verbatimModuleSyntax`). Fix types; do not cast around them.
 - Relative imports use explicit `.js` specifiers.
-- Views ask the catalog for semantic metrics; no metric name appears outside `src/core/catalog.ts`.
+- Views and sources ask the catalog for semantic metrics; metric names live in
+  `src/core/catalog.ts` (tests and docs may quote them).
 - Nothing from a real deployment goes into this public repository: no AWS account or role ARN,
   Vercel team, email address, host name, profile name or model id from a real setup. Tests and
   examples use made-up values (`alpha`, `box-1`, `claude-model-large`).

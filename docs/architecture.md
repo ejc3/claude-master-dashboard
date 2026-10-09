@@ -3,7 +3,7 @@
 A dashboard for [claude-master](https://github.com/ejc3/CLIProxyAPI/blob/main/docs/claude-master.md)
 telemetry: which subscription has headroom, when each window resets, who uses the pool, and
 whether requests succeed. It ships as a package that any Next.js app mounts, plus a reference app
-that deploys it.
+that deploys it. This document is the design; [Delivery](#delivery) lists which parts exist.
 
 ## Data path
 
@@ -15,10 +15,13 @@ claude-master ──OTLP/HTTP──▶ CloudWatch agent ──▶ CloudWatch nam
                                   dashboard components (browser)
 ```
 
-claude-master emits each metric with at most three attributes and one projection per axis
+claude-master splits each metric the dashboard reads by at most three attributes, with one
+projection per axis
 (`claude_master.inference.requests` by profile, account and status class;
 `…requests.by_client` by box; `…requests.by_model` by model). CloudWatch keeps the OpenTelemetry
-name as the metric name and every attribute as a dimension. Counters arrive as deltas, so a sum
+name as the metric name and every attribute as a dimension, plus the resource's `service.name`.
+(`claude_master.anthropic.ratelimit.state` carries a fourth attribute; the dashboard does not
+read it.) Counters arrive as deltas, so a sum
 is a count. Histograms arrive as statistic sets without percentiles, so latency percentiles come
 from the proxy's own `duration_quantile` gauges.
 
@@ -26,15 +29,15 @@ from the proxy's own `duration_quantile` gauges.
 
 `packages/dashboard` (`@ejc3/claude-master-dashboard`):
 
-| Entry | Contents | Runs in |
-|---|---|---|
-| `.` | Types, the `MetricsSource` interface, the metric catalog, pacing | anywhere |
-| `./demo` | A reproducible fixture source | anywhere |
-| `./react` | The dashboard components | browser |
-| `./next` | `DashboardPage` and `createDashboardHandler(config)` | Node (server-only) |
-| `./cloudwatch` | The CloudWatch source; `@aws-sdk/client-cloudwatch` is a peer dependency | Node |
+| Entry | Contents | Runs in | Step |
+|---|---|---|---|
+| `.` | Types, the `MetricsSource` interface, the metric catalog, pacing, query limits | anywhere | 1 |
+| `./demo` | A reproducible fixture source | anywhere | 1 |
+| `./react` | The dashboard components | browser | 2 |
+| `./next` | `DashboardPage` and `createDashboardHandler(config)` | Node (server-only) | 2 |
+| `./cloudwatch` | The CloudWatch source; `@aws-sdk/client-cloudwatch` is a peer dependency | Node | 3 |
 
-A host app mounts it with two files:
+From step 2, a host app mounts it with two files:
 
 ```ts
 // app/claude-master/[[...slug]]/page.tsx
@@ -52,8 +55,11 @@ export const { GET } = createDashboardHandler(config)
   The catalog (`src/core/catalog.ts`) resolves that to the emitted metric and refuses a split the
   proxy does not emit (`UnsupportedQueryError`) instead of returning an empty chart. Its Metrics
   Insights queries are tested against the queries proven on the live API.
-- **Every source behaves alike.** The demo source refuses the same splits a real source does,
-  so a view that works on demo data works on CloudWatch.
+- **Every source behaves alike.** Every source runs `validateSeriesQuery` (whole-minute steps,
+  at most 15 days and 1,500 points), refuses the same splits, buckets on step boundaries with
+  the range end exclusive (as GetMetricData does), and sums counters so a split adds up to its
+  total. CloudWatch leaves out empty buckets and groups with no data, so views treat a missing
+  bucket as zero and a missing group as absent.
 - **Times are absolute.** A source turns `resets_in_seconds` into `resetsAt` (sample time plus
   value), and the browser counts down from it locally; every snapshot carries `asOf`.
 - **Credentials stay on the server.** The CloudWatch source and its AWS credentials exist only
@@ -90,9 +96,10 @@ the proxy can serve the snapshot later while CloudWatch serves history.
 
 Each step is its own pull request, stacked on the previous one:
 
-1. Workspace, core types, catalog, pacing, demo source, CI (this repository's first commit).
+1. Workspace, core types, catalog, pacing, demo source, CI.
 2. The components and the reference app on demo data, with sign-in.
-3. The CloudWatch source, cache and coalescing.
+3. The CloudWatch source, cache and coalescing, and the catalog's snapshot metrics (quota band,
+   cooldown, latency quantiles, sessions, connections, Anthropic's per-window utilization).
 4. The read-only role (Terraform), and production on CloudWatch.
 
 Configuration that names a real account, role, team, person or host lives in the deployment's

@@ -14,4 +14,11 @@ export {
   pace,
   projectedExhaustion,
 } from './pace.js'
+export {
+  BadQueryError,
+  MAX_POINTS,
+  MAX_RANGE_MS,
+  MIN_STEP_SECONDS,
+  validateSeriesQuery,
+} from './query.js'
 export * from './types.js'
