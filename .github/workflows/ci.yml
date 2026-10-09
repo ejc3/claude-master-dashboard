@@ -21,8 +21,9 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Format + lint (biome)
         run: pnpm exec biome ci .
-      - name: Build the reference app
-        run: pnpm build
+      # Builds the reference app as the Cloudflare Worker it deploys as, and dry-runs the deploy.
+      - name: Build the Worker
+        run: pnpm --filter web cf:check
         env:
           NEXT_TELEMETRY_DISABLED: '1'
       - name: Typecheck

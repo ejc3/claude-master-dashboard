@@ -1,0 +1,54 @@
+name: Deploy
+
+# Builds apps/web as a Cloudflare Worker (OpenNext) and deploys it as claude-master-dashboard.
+# Cloudflare Access gates every URL of the Worker, and the app refuses any request without a valid
+# Access assertion.
+#
+# The deploy step holds a credential (the repository secret CLOUDFLARE_API_TOKEN, a token limited
+# to Workers scripts), so this never runs for anything a fork or an unreviewed branch can start:
+# only a push to main, or by hand on main. Never pull_request, pull_request_target or workflow_run.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Deploys queue behind each other and are never cancelled half way.
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    # GitHub-hosted: this repository is public, so it never uses self-hosted runners.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Build the Worker
+        run: pnpm --filter web cf:build
+        env:
+          NEXT_TELEMETRY_DISABLED: '1'
+      # Until the token exists (see docs/deploy.md), this step says so instead of failing.
+      - name: Deploy claude-master-dashboard
+        working-directory: apps/web
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "::notice::No CLOUDFLARE_API_TOKEN secret or CLOUDFLARE_ACCOUNT_ID variable yet; skipping the deploy (docs/deploy.md)."
+            exit 0
+          fi
+          pnpm exec wrangler deploy

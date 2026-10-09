@@ -10,7 +10,7 @@ that deploys it. This document is the design; [Delivery](#delivery) lists which 
 ```
 claude-master ──OTLP/HTTP──▶ CloudWatch agent ──▶ CloudWatch namespace "ClaudeMaster"
                                                           │ GetMetricData (Metrics Insights)
-                                  Next.js route handler ◀─┘  (server-only, Vercel OIDC role)
+                                  Next.js route handler ◀─┘  (server-only, read-only AWS key)
                                           │ JSON
                                   dashboard components (browser)
 ```
@@ -34,7 +34,8 @@ from the proxy's own `duration_quantile` gauges.
 | `.` | Types, the `MetricsSource` interface, the metric catalog, pacing, query limits | anywhere | 1 |
 | `./demo` | A reproducible fixture source | anywhere | 1 |
 | `./react` | The dashboard components | browser | 2 |
-| `./next` | `DashboardPage` and `createDashboardHandler(config)` | Node (server-only) | 2 |
+| `./next` | `DashboardPage` and `createDashboardHandler(config)` | server | 2 |
+| `./access` | `cloudflareAccess()`: verifies the Cloudflare Access assertion | server | 3 |
 | `./cloudwatch` | The CloudWatch source; `@aws-sdk/client-cloudwatch` is a peer dependency | Node | 3 |
 
 From step 2, a host app mounts it with two files:
@@ -67,23 +68,22 @@ export const { GET } = createDashboardHandler(config)
 - **No anonymous mount.** `createDashboardHandler` and `DashboardPage` require an
   `authorize(request)` callback; there is no default that allows everyone.
 
-## Access to AWS
+## Hosting, sign-in and access to AWS
 
-The reference app reads CloudWatch with a read-only IAM role assumed through Vercel's OIDC
-federation (`awsCredentialsProvider({ roleArn })`); there are no stored AWS keys. The role
-allows `cloudwatch:GetMetricData` and `cloudwatch:ListMetrics` in one region and trusts only the
-dashboard project's production deployments. CloudWatch read actions cannot be narrowed to one
-namespace, so the code, not IAM, limits reads to `ClaudeMaster`. Preview deployments get no role
-and use the demo source.
+The reference app runs as a Cloudflare Worker (Next.js through OpenNext). Cloudflare Access gates
+every URL of the Worker: an Access application with the Worker as its destination, signing people
+in with the account's existing Google identity provider and admitting the addresses its policy
+lists. The app checks again: `cloudflareAccess()` verifies the `Cf-Access-Jwt-Assertion` header
+(signature against the team's published keys, issuer, the application's audience tag, expiry, and
+optionally an email allowlist), so a request that did not come through that Access application is
+refused. With no Access settings configured the app admits nobody.
 
-GetMetricData is billed per metric read, so the handler caches each query per step-aligned time
-range and coalesces identical requests in flight; the snapshot refreshes every minute and charts
-every five, and only while the tab is visible.
-
-## Who can see it
-
-The reference app signs people in with Google (Auth.js) and admits the addresses in
-`DASHBOARD_ALLOWED_EMAILS`. The data names subscription accounts and the people who use them.
+The Worker reads CloudWatch with an access key for an IAM user allowed only
+`cloudwatch:GetMetricData` and `cloudwatch:ListMetrics` in one region, stored as Worker secrets.
+CloudWatch read actions cannot be narrowed to one namespace, so the code, not IAM, limits reads to
+`ClaudeMaster`. GetMetricData is billed per metric read, so the handler caches each query per
+step-aligned time range and coalesces identical requests in flight; the snapshot refreshes every
+minute and charts every five, and only while the tab is visible.
 
 ## Freshness
 
@@ -97,10 +97,11 @@ the proxy can serve the snapshot later while CloudWatch serves history.
 Each step is its own pull request, stacked on the previous one:
 
 1. Workspace, core types, catalog, pacing, demo source, CI.
-2. The components and the reference app on demo data, with sign-in.
-3. The CloudWatch source, cache and coalescing, and the catalog's snapshot metrics (quota band,
+2. The components and the reference app on demo data.
+3. Cloudflare Access sign-in and the Worker build and deploy.
+4. The CloudWatch source, cache and coalescing, and the catalog's snapshot metrics (quota band,
    cooldown, latency quantiles, sessions, connections, Anthropic's per-window utilization).
-4. The read-only role (Terraform), and production on CloudWatch.
+5. Production on CloudWatch.
 
-Configuration that names a real account, role, team, person or host lives in the deployment's
-environment variables, never in this repository.
+Configuration that names a real account, key, team, person or host lives in the Worker's secrets,
+never in this repository. `docs/deploy.md` lists them.

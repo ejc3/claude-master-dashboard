@@ -30,6 +30,10 @@ export default function Page() {
 
 `source` returns a `MetricsSource` (`createDemoSource()` from `@ejc3/claude-master-dashboard/demo`
 until a CloudWatch source is configured). `authorize` is required; nothing is served without it.
+Behind Cloudflare Access, `cloudflareAccess({ teamDomain, audience }).authorize` from
+`@ejc3/claude-master-dashboard/access` verifies the Access assertion.
+
+The reference app deploys as a Cloudflare Worker: see [docs/deploy.md](docs/deploy.md).
 The fonts are optional: set `--cmd-font-sans` and `--cmd-font-condensed` (the reference app uses
 Barlow and Barlow Condensed through `next/font`).
 
@@ -38,7 +42,7 @@ Barlow and Barlow Condensed through `next/font`).
 ```bash
 pnpm install
 pnpm check && pnpm typecheck && pnpm test
-cp apps/web/.env.example apps/web/.env.local   # DASHBOARD_AUTH=off for local use
+cp apps/web/.env.example apps/web/.env.local   # DASHBOARD_AUTH=off skips Access locally
 cd apps/web && PORT=<port> pnpm dev
 ```
 
