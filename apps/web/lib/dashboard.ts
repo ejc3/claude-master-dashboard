@@ -23,25 +23,37 @@ const authDisabled = process.env.NODE_ENV !== 'production' && process.env.DASHBO
 let access: ReturnType<typeof cloudflareAccess> | null | undefined
 
 // Built on first use: on Workers the environment is filled in per request, after module load.
-// Without CF_ACCESS_TEAM_DOMAIN and CF_ACCESS_AUD nobody is admitted (the app fails closed).
+// Without CF_ACCESS_TEAM_DOMAIN and CF_ACCESS_AUD, or with an invalid one, nobody is admitted
+// (the app fails closed) and the reason is logged once.
 function accessCheck(): ReturnType<typeof cloudflareAccess> | null {
-  if (access === undefined) {
-    const teamDomain = process.env.CF_ACCESS_TEAM_DOMAIN
-    const audience = process.env.CF_ACCESS_AUD
-    const emails = (process.env.DASHBOARD_ALLOWED_EMAILS ?? '')
-      .split(',')
-      .map((e) => e.trim())
-      .filter((e) => e !== '')
-    const serviceToken = process.env.DASHBOARD_SERVICE_TOKEN_CLIENT_ID
-    access =
-      teamDomain && audience
-        ? cloudflareAccess({
-            teamDomain,
-            audience,
-            ...(emails.length > 0 ? { allowedEmails: emails } : {}),
-            ...(serviceToken ? { serviceTokenClientId: serviceToken } : {}),
-          })
-        : null
+  if (access !== undefined) return access
+  const teamDomain = process.env.CF_ACCESS_TEAM_DOMAIN?.trim()
+  const audience = process.env.CF_ACCESS_AUD?.trim()
+  const emails = (process.env.DASHBOARD_ALLOWED_EMAILS ?? '')
+    .split(',')
+    .map((e) => e.trim())
+    .filter((e) => e !== '')
+  const serviceToken = process.env.DASHBOARD_SERVICE_TOKEN_CLIENT_ID?.trim()
+  if (!teamDomain || !audience) {
+    console.error(
+      'claude-master dashboard: CF_ACCESS_TEAM_DOMAIN and CF_ACCESS_AUD are not set; admitting nobody',
+    )
+    access = null
+    return access
+  }
+  try {
+    access = cloudflareAccess({
+      teamDomain,
+      audience,
+      ...(emails.length > 0 ? { allowedEmails: emails } : {}),
+      ...(serviceToken ? { serviceTokenClientId: serviceToken } : {}),
+    })
+  } catch (error) {
+    console.error(
+      'claude-master dashboard: invalid Access settings; admitting nobody:',
+      error instanceof Error ? error.message : String(error),
+    )
+    access = null
   }
   return access
 }

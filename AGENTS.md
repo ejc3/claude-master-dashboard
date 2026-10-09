@@ -28,5 +28,7 @@ pnpm test        # vitest
 - Nothing from a real deployment goes into this public repository: no AWS account or role ARN,
   Cloudflare Access team or audience, email address, host name, profile name or model id from a real setup. Tests and
   examples use made-up values (`alpha`, `box-1`, `claude-model-large`).
+- Never put secrets in `apps/web/.env*`: OpenNext embeds those files in the Worker it builds, and
+  the Deploy workflow fails if a build embeds any. Deploys happen only from that workflow.
 - Each change is its own pull request: the gate above, then `/code-review` and an independent
   `codex exec -s read-only` pass, then green CI.

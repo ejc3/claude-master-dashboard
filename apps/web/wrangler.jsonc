@@ -5,12 +5,12 @@
   "compatibility_date": "2026-10-06",
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
   "assets": { "directory": ".open-next/assets", "binding": "ASSETS" },
-  // Cloudflare Access gates every URL of this Worker (an Access application with a worker
-  // destination). The app also refuses any request without a valid Access assertion, so a URL
-  // that is up before the Access application exists shows nothing.
-  "workers_dev": true,
+  // No public URL until Cloudflare Access covers the Worker (docs/deploy.md, step 3). Access
+  // follows the Worker itself (an application with the Worker as its destination), so it gates
+  // workers.dev and preview URLs alike once they are on. Wrangler applies these switches on each
+  // deploy, so they change here and in ejc3/aws together.
+  "workers_dev": false,
   "preview_urls": false,
   "observability": { "enabled": true }
-  // CF_ACCESS_TEAM_DOMAIN, CF_ACCESS_AUD, DASHBOARD_ALLOWED_EMAILS and the AWS credentials are
-  // Worker secrets set outside this repository (wrangler secret put); they survive deploys.
+  // The Access settings and the AWS key are Worker secrets (docs/deploy.md); they survive deploys.
 }

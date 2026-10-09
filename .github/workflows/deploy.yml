@@ -1,12 +1,13 @@
 name: Deploy
 
 # Builds apps/web as a Cloudflare Worker (OpenNext) and deploys it as claude-master-dashboard.
-# Cloudflare Access gates every URL of the Worker, and the app refuses any request without a valid
-# Access assertion.
+# Cloudflare Access gates the Worker (an Access application with the Worker as its destination,
+# managed in ejc3/aws), and the app refuses any request without a valid Access assertion.
 #
-# The deploy step holds a credential (the repository secret CLOUDFLARE_API_TOKEN, a token limited
-# to Workers scripts), so this never runs for anything a fork or an unreviewed branch can start:
-# only a push to main, or by hand on main. Never pull_request, pull_request_target or workflow_run.
+# The deploy token lives in the "production" environment, whose deployment-branch policy admits
+# main only, so no other branch, workflow or fork can read it. This workflow runs only on a push
+# to main or by hand on main; never on pull_request, pull_request_target or workflow_run. Every
+# action is pinned to a commit: a moved tag must not run on the runner that later holds the token.
 on:
   push:
     branches: [main]
@@ -23,24 +24,31 @@ concurrency:
 jobs:
   deploy:
     if: github.ref == 'refs/heads/main'
+    environment: production
     # GitHub-hosted: this repository is public, so it never uses self-hosted runners.
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # The same gate as CI, on the commit being deployed: a red commit never deploys.
+      - name: Check
+        run: pnpm exec biome ci . && pnpm typecheck && pnpm test
       - name: Build the Worker
         run: pnpm --filter web cf:build
         env:
           NEXT_TELEMETRY_DISABLED: '1'
-      # Until the token exists (see docs/deploy.md), this step says so instead of failing.
+      # OpenNext embeds apps/web/.env* files in the Worker; CI has none, and none may appear.
+      - name: Nothing from an env file is embedded
+        run: |
+          node -e "import('./apps/web/.open-next/cloudflare/next-env.mjs').then((m) => { const p = m.production ?? {}; if (Object.keys(p).length) { console.error('embedded env:', Object.keys(p)); process.exit(1) } })"
       - name: Deploy claude-master-dashboard
         working-directory: apps/web
         env:
@@ -48,7 +56,8 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
-            echo "::notice::No CLOUDFLARE_API_TOKEN secret or CLOUDFLARE_ACCOUNT_ID variable yet; skipping the deploy (docs/deploy.md)."
+            echo "::warning::Not deployed: the production environment has no CLOUDFLARE_API_TOKEN secret or CLOUDFLARE_ACCOUNT_ID variable yet (docs/deploy.md)."
+            echo "### Not deployed: no deploy credentials in the production environment yet" >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
           pnpm exec wrangler deploy

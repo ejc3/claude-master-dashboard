@@ -71,7 +71,8 @@ export const { GET } = createDashboardHandler(config)
 ## Hosting, sign-in and access to AWS
 
 The reference app runs as a Cloudflare Worker (Next.js through OpenNext). Cloudflare Access gates
-every URL of the Worker: an Access application with the Worker as its destination, signing people
+every URL of the Worker: an Access application with the Worker itself as its destination (so
+workers.dev and preview URLs alike), signing people
 in with the account's existing Google identity provider and admitting the addresses its policy
 lists. The app checks again: `cloudflareAccess()` verifies the `Cf-Access-Jwt-Assertion` header
 (signature against the team's published keys, issuer, the application's audience tag, expiry, and

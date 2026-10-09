@@ -1,6 +1,6 @@
 import { createLocalJWKSet, exportJWK, generateKeyPair, type JWK, SignJWT } from 'jose'
 import { beforeAll, describe, expect, it } from 'vitest'
-import { ACCESS_ASSERTION_HEADER, cloudflareAccess } from '../src/access'
+import { ACCESS_ASSERTION_HEADER, accessTeamDomain, cloudflareAccess } from '../src/access'
 
 const TEAM = 'https://example.cloudflareaccess.com'
 const AUD = 'aud-made-up-for-tests'
@@ -11,9 +11,11 @@ let sign: (
 ) => Promise<string>
 let signWithOtherKey: (claims: Record<string, unknown>) => Promise<string>
 let jwks: { keys: JWK[] }
+let privateKey: CryptoKey
 
 beforeAll(async () => {
   const mine = await generateKeyPair('RS256')
+  privateKey = mine.privateKey
   const theirs = await generateKeyPair('RS256')
   jwks = { keys: [{ ...(await exportJWK(mine.publicKey)), kid: 'k1', alg: 'RS256' }] }
   const make =
@@ -91,5 +93,23 @@ describe('cloudflareAccess', () => {
       email: null,
       serviceToken: 'client-1.access',
     })
+  })
+
+  it('refuses a signed assertion that has no expiry', async () => {
+    const forever = await new SignJWT({ email: 'owner@example.com' })
+      .setProtectedHeader({ alg: 'RS256', kid: 'k1' })
+      .setIssuer(TEAM)
+      .setAudience(AUD)
+      .setIssuedAt()
+      .sign(privateKey)
+    expect(await access().identify(forever)).toBeNull()
+  })
+
+  it('takes the team domain only as an https origin, and the audience only when set', () => {
+    expect(accessTeamDomain(' https://example.cloudflareaccess.com/\n')).toBe(TEAM)
+    expect(() => accessTeamDomain('example.cloudflareaccess.com')).toThrow()
+    expect(() => accessTeamDomain('http://example.cloudflareaccess.com')).toThrow()
+    expect(() => accessTeamDomain('https://example.cloudflareaccess.com/cdn-cgi')).toThrow()
+    expect(() => cloudflareAccess({ teamDomain: TEAM, audience: '  ' })).toThrow()
   })
 })

@@ -30,8 +30,23 @@ export default function Page() {
 
 `source` returns a `MetricsSource` (`createDemoSource()` from `@ejc3/claude-master-dashboard/demo`
 until a CloudWatch source is configured). `authorize` is required; nothing is served without it.
-Behind Cloudflare Access, `cloudflareAccess({ teamDomain, audience }).authorize` from
-`@ejc3/claude-master-dashboard/access` verifies the Access assertion.
+
+Behind Cloudflare Access, create one checker per process (it caches the team's keys) and use it in
+both places:
+
+```ts
+import { ACCESS_ASSERTION_HEADER, cloudflareAccess } from '@ejc3/claude-master-dashboard/access'
+import { headers } from 'next/headers'
+
+const access = cloudflareAccess({ teamDomain, audience })
+// route handler: takes the request
+export const { GET } = createDashboardHandler({ source, authorize: access.authorize })
+// page: reads the incoming request's headers
+const allowed = async () =>
+  (await access.identify((await headers()).get(ACCESS_ASSERTION_HEADER))) !== null
+```
+
+`apps/web/lib/dashboard.ts` does this, reading the settings from Worker secrets.
 
 The reference app deploys as a Cloudflare Worker: see [docs/deploy.md](docs/deploy.md).
 The fonts are optional: set `--cmd-font-sans` and `--cmd-font-condensed` (the reference app uses
