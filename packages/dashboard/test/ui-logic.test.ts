@@ -122,6 +122,15 @@ describe('headline', () => {
     })
     expect(nextAvailable([weeklySpent], NOW)?.at).toBe(NOW + 9 * HOUR_MS)
     expect(nextAvailable([expired], NOW)).toBeNull()
+    // Used up with an unknown reset: a shorter cooldown does not make it available.
+    const unknownReset = profile('unknown', {
+      band: 'exhausted',
+      weekly: { usedFraction: 1, resetsAt: null, lengthMs: WEEK_MS },
+      fiveHour: null,
+      rateLimitedUntil: NOW + 10 * 60_000,
+    })
+    expect(nextAvailable([unknownReset], NOW)).toBeNull()
+    expect(hasHeadroom(unknownReset, NOW)).toBe(false)
   })
 })
 

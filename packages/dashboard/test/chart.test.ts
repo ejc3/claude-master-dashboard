@@ -45,6 +45,21 @@ describe('timeTicks', () => {
     }
   })
 
+  it('stays on the hour across a 30-minute daylight-saving change', () => {
+    const tz = process.env.TZ
+    process.env.TZ = 'Australia/Lord_Howe'
+    try {
+      const ticks = timeTicks(Date.UTC(2026, 9, 3, 15), Date.UTC(2026, 9, 4, 14, 55), 6)
+      expect(ticks.length).toBeGreaterThan(2)
+      for (const [i, t] of ticks.entries()) {
+        expect(new Date(t).getMinutes()).toBe(0)
+        if (i > 0) expect(t).toBeGreaterThan(ticks[i - 1] as number)
+      }
+    } finally {
+      process.env.TZ = tz
+    }
+  })
+
   it('is empty for an empty range', () => {
     expect(timeTicks(NOW, NOW, 5)).toEqual([])
   })

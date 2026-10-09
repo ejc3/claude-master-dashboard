@@ -2,7 +2,7 @@
 
 import { type KeyboardEvent, memo, type PointerEvent, useId, useRef, useState } from 'react'
 import { type EpochMs, formatWhen } from '../core'
-import { useWidth } from './hooks'
+import { useHydrated, useWidth } from './hooks'
 
 export interface ChartSeries {
   key: string
@@ -54,6 +54,7 @@ export const LineChart = memo(function LineChart({
   now,
 }: Props) {
   const [ref, width] = useWidth<HTMLDivElement>()
+  const hydrated = useHydrated()
   const [active, setActive] = useState<number | null>(null)
   const [touch, setTouch] = useState(false)
   const [showTable, setShowTable] = useState(false)
@@ -126,10 +127,11 @@ export const LineChart = memo(function LineChart({
   const activeTime = active === null ? null : (times[active] ?? null)
   const readIndex = active ?? times.length - 1
   const readTime = times[readIndex]
+  // Wall-clock text waits for hydration: the server does not know the viewer's time zone.
   const valueText =
     readTime === undefined
       ? 'No data'
-      : `${formatWhen(readTime, now)}: ${series.map((s) => `${s.label} ${format(s.points[readIndex]?.[1] ?? 0)}`).join(', ')}`
+      : `${hydrated ? formatWhen(readTime, now) : 'Latest'}: ${series.map((s) => `${s.label} ${format(s.points[readIndex]?.[1] ?? 0)}`).join(', ')}`
   const tooltipLeft = activeTime === null ? 0 : x(activeTime)
   const flip = tooltipLeft > width / 2
 
@@ -326,18 +328,26 @@ const TICK_HOURS = [1, 2, 3, 6, 12, 24, 48]
 export function timeTicks(first: EpochMs, last: EpochMs, most: number): EpochMs[] {
   if (last <= first) return []
   const hours = TICK_HOURS.find((h) => (last - first) / (h * HOUR) <= most) ?? 48
-  const t = new Date(first)
-  t.setMinutes(0, 0, 0)
-  if (t.getTime() < first) t.setHours(t.getHours() + 1)
-  // Move to the first local hour that is a multiple of the step (midnight for whole days).
-  for (let guard = 0; t.getHours() % Math.min(hours, 24) !== 0 && guard < 48; guard++) {
-    t.setHours(t.getHours() + 1)
+  const every = Math.min(hours, 24)
+  // The first local time at or after `from` that is on the hour and a multiple of the step.
+  // Minutes are zeroed on every move: a daylight-saving jump can shift the clock by half an hour.
+  const align = (from: EpochMs): Date => {
+    const t = new Date(from)
+    for (let k = 0; k < 96; k++) {
+      t.setMinutes(0, 0, 0)
+      if (t.getTime() >= from && t.getHours() % every === 0) break
+      t.setTime(t.getTime() + HOUR)
+    }
+    return t
   }
   const ticks: EpochMs[] = []
+  let t = align(first)
   for (let guard = 0; t.getTime() <= last && guard < 1000; guard++) {
     ticks.push(t.getTime())
-    if (hours >= 24) t.setDate(t.getDate() + hours / 24)
-    else t.setHours(t.getHours() + hours)
+    const next = new Date(t)
+    if (hours >= 24) next.setDate(next.getDate() + hours / 24)
+    else next.setHours(next.getHours() + hours)
+    t = align(Math.max(next.getTime(), t.getTime() + HOUR))
   }
   return ticks
 }

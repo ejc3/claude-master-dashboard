@@ -7,10 +7,12 @@ export interface RunOut {
   at: EpochMs
 }
 
-// A window blocks work while its allowance is used up and its reset is still ahead.
-function blocksUntil(window: QuotaWindow | null, now: EpochMs): EpochMs | null {
+// A used-up window blocks work until its reset: 'unknown' when the reset time is unknown, null when
+// it does not block (not used up, or its reset has already passed).
+function blocksUntil(window: QuotaWindow | null, now: EpochMs): EpochMs | 'unknown' | null {
   if (window === null || window.usedFraction === null || window.usedFraction < 1) return null
-  return window.resetsAt !== null && window.resetsAt > now ? window.resetsAt : null
+  if (window.resetsAt === null) return 'unknown'
+  return window.resetsAt > now ? window.resetsAt : null
 }
 
 /**
@@ -28,17 +30,21 @@ export function blocked(profile: ProfileStatus, now: EpochMs): Blocked | null {
   if (profile.tokenExpiresAt !== null && profile.tokenExpiresAt <= now) {
     return { reason: 'login-expired', until: null }
   }
-  // Every reason that applies holds it back until the last of them ends.
+  // Every reason that applies holds it back until the last of them ends; one with no known end
+  // makes the whole wait unknown.
   const usedUp = [blocksUntil(profile.weekly, now), blocksUntil(profile.fiveHour, now)].filter(
-    (t): t is EpochMs => t !== null,
+    (t): t is EpochMs | 'unknown' => t !== null,
   )
   const cooling =
     profile.rateLimitedUntil !== null && profile.rateLimitedUntil > now
       ? profile.rateLimitedUntil
       : null
   if (usedUp.length > 0 || profile.band === 'exhausted') {
-    const all = cooling === null ? usedUp : [...usedUp, cooling]
-    return { reason: 'used-up', until: all.length === 0 ? null : Math.max(...all) }
+    const known = usedUp.filter((t): t is EpochMs => t !== 'unknown')
+    // An exhausted band no window explains has no known end either.
+    const unknown = usedUp.includes('unknown') || usedUp.length === 0
+    const all = cooling === null ? known : [...known, cooling]
+    return { reason: 'used-up', until: unknown || all.length === 0 ? null : Math.max(...all) }
   }
   if (cooling !== null) return { reason: 'cooling-down', until: cooling }
   return null
