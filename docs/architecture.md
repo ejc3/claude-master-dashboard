@@ -1,0 +1,99 @@
+# Architecture
+
+A dashboard for [claude-master](https://github.com/ejc3/CLIProxyAPI/blob/main/docs/claude-master.md)
+telemetry: which subscription has headroom, when each window resets, who uses the pool, and
+whether requests succeed. It ships as a package that any Next.js app mounts, plus a reference app
+that deploys it.
+
+## Data path
+
+```
+claude-master ──OTLP/HTTP──▶ CloudWatch agent ──▶ CloudWatch namespace "ClaudeMaster"
+                                                          │ GetMetricData (Metrics Insights)
+                                  Next.js route handler ◀─┘  (server-only, Vercel OIDC role)
+                                          │ JSON
+                                  dashboard components (browser)
+```
+
+claude-master emits each metric with at most three attributes and one projection per axis
+(`claude_master.inference.requests` by profile, account and status class;
+`…requests.by_client` by box; `…requests.by_model` by model). CloudWatch keeps the OpenTelemetry
+name as the metric name and every attribute as a dimension. Counters arrive as deltas, so a sum
+is a count. Histograms arrive as statistic sets without percentiles, so latency percentiles come
+from the proxy's own `duration_quantile` gauges.
+
+## Package
+
+`packages/dashboard` (`@ejc3/claude-master-dashboard`):
+
+| Entry | Contents | Runs in |
+|---|---|---|
+| `.` | Types, the `MetricsSource` interface, the metric catalog, pacing | anywhere |
+| `./demo` | A reproducible fixture source | anywhere |
+| `./react` | The dashboard components | browser |
+| `./next` | `DashboardPage` and `createDashboardHandler(config)` | Node (server-only) |
+| `./cloudwatch` | The CloudWatch source; `@aws-sdk/client-cloudwatch` is a peer dependency | Node |
+
+A host app mounts it with two files:
+
+```ts
+// app/claude-master/[[...slug]]/page.tsx
+export default function Page() {
+  return <DashboardPage config={config} />
+}
+
+// app/api/claude-master/[...path]/route.ts
+export const { GET } = createDashboardHandler(config)
+```
+
+### Invariants
+
+- **Semantic queries only.** Views ask for `requests` split by `client`, never a metric name.
+  The catalog (`src/core/catalog.ts`) resolves that to the emitted metric and refuses a split the
+  proxy does not emit (`UnsupportedQueryError`) instead of returning an empty chart. Its Metrics
+  Insights queries are tested against the queries proven on the live API.
+- **Every source behaves alike.** The demo source refuses the same splits a real source does,
+  so a view that works on demo data works on CloudWatch.
+- **Times are absolute.** A source turns `resets_in_seconds` into `resetsAt` (sample time plus
+  value), and the browser counts down from it locally; every snapshot carries `asOf`.
+- **Credentials stay on the server.** The CloudWatch source and its AWS credentials exist only
+  in route handlers; the browser receives JSON.
+- **No anonymous mount.** `createDashboardHandler` and `DashboardPage` require an
+  `authorize(request)` callback; there is no default that allows everyone.
+
+## Access to AWS
+
+The reference app reads CloudWatch with a read-only IAM role assumed through Vercel's OIDC
+federation (`awsCredentialsProvider({ roleArn })`); there are no stored AWS keys. The role
+allows `cloudwatch:GetMetricData` and `cloudwatch:ListMetrics` in one region and trusts only the
+dashboard project's production deployments. CloudWatch read actions cannot be narrowed to one
+namespace, so the code, not IAM, limits reads to `ClaudeMaster`. Preview deployments get no role
+and use the demo source.
+
+GetMetricData is billed per metric read, so the handler caches each query per step-aligned time
+range and coalesces identical requests in flight; the snapshot refreshes every minute and charts
+every five, and only while the tab is visible.
+
+## Who can see it
+
+The reference app signs people in with Google (Auth.js) and admits the addresses in
+`DASHBOARD_ALLOWED_EMAILS`. The data names subscription accounts and the people who use them.
+
+## Freshness
+
+A reading reaches CloudWatch two to four minutes after the request (the proxy exports every
+60 seconds, the agent collects every 60 seconds, then ingestion). Quotas and resets change on
+that scale. `MetricsSource` separates `snapshot()` from `series()`, so a live status endpoint on
+the proxy can serve the snapshot later while CloudWatch serves history.
+
+## Delivery
+
+Each step is its own pull request, stacked on the previous one:
+
+1. Workspace, core types, catalog, pacing, demo source, CI (this repository's first commit).
+2. The components and the reference app on demo data, with sign-in.
+3. The CloudWatch source, cache and coalescing.
+4. The read-only role (Terraform), and production on CloudWatch.
+
+Configuration that names a real account, role, team, person or host lives in the deployment's
+environment variables, never in this repository.
