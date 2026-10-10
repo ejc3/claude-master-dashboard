@@ -440,4 +440,63 @@ describe('review fixes', () => {
     )
     expectNear(f.clipsAt, NOW + 15 * HOUR_MS)
   })
+
+  it('routes by each weekly reset as it moves, not the one in the snapshot', () => {
+    // a resets first (24h), so it takes the work; after its reset its next one is 192h, so b
+    // (48h) goes first, then a again. Neither fills within the week at 0.015 per hour.
+    const f = poolForecast(
+      [
+        profile('a', { weekly: weekly(0, 24 * HOUR_MS) }),
+        profile('b', { weekly: weekly(0.3, 48 * HOUR_MS) }),
+      ],
+      'weekly',
+      NOW,
+      rates({ a: 0.0075, b: 0.0075 }),
+    )
+    expect(f).toMatchObject({ clipsAt: null, lasts: 'horizon' })
+  })
+
+  it('gives the 5-hour forecast no room in a subscription whose week is used up', () => {
+    // claude-master never picks a while its weekly allowance is gone, whatever its 5-hour room:
+    // b's 0.1 lasts half an hour, and the first to take work again is b, at its 5-hour reset.
+    const f = poolForecast(
+      [
+        profile('a', {
+          weekly: weekly(1, 30 * HOUR_MS),
+          fiveHour: { usedFraction: 0, resetsAt: NOW + FIVE_HOURS_MS, lengthMs: FIVE_HOURS_MS },
+        }),
+        profile('b', {
+          weekly: weekly(0.2),
+          fiveHour: { usedFraction: 0.9, resetsAt: NOW + FIVE_HOURS_MS, lengthMs: FIVE_HOURS_MS },
+        }),
+      ],
+      'fiveHour',
+      NOW,
+      rates({ a: 0, b: 0.2 }),
+    )
+    expectNear(f.clipsAt, NOW + 30 * MIN, 2 * MIN)
+    expect(f.recoversAt).toBe(NOW + FIVE_HOURS_MS)
+  })
+
+  it('lets a pool that is out now outrank expired logins among only some', () => {
+    const forecast = (over: Partial<PoolForecast>): PoolForecast => ({
+      window: 'weekly',
+      counted: 1,
+      unreported: 0,
+      smoothedCount: 0,
+      used: 1,
+      burnPerHour: 0.1,
+      clipsAt: null,
+      recoversAt: null,
+      lasts: null,
+      ...over,
+    })
+    const logins = forecast({ lasts: 'logins', unreported: 1 })
+    const out = forecast({ window: 'fiveHour', clipsAt: NOW, recoversAt: NOW + HOUR_MS })
+    expect(forecastHeadline([logins, out], NOW)).toMatchObject({
+      tone: 'error',
+      headline: 'The pool is out of 5-hour capacity now.',
+    })
+    expect(forecastHeadline([logins], NOW).tone).toBe('warning')
+  })
 })

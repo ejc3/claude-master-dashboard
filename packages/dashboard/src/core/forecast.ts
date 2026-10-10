@@ -102,28 +102,74 @@ export interface PoolForecast {
   lasts: 'idle' | 'horizon' | 'unknown' | 'logins' | null
 }
 
-interface Slot {
+/** One window of one subscription as the simulation moves it along. */
+interface SimWindow {
   used: number
   resetsAt: EpochMs | null
   lengthMs: number
-  /** claude-master's routing order: the weekly reset (unknown last), then the snapshot order. */
-  route: [number, number]
-  /** For the 5-hour window: whether the weekly allowance is in its reserve tier. */
-  weeklyReserve: boolean
+}
+
+/**
+ * A subscription in the simulation: the window being forecast, and its weekly window, which is
+ * what claude-master routes by (the same object when the weekly window is the one forecast).
+ */
+interface Slot {
+  quota: SimWindow
+  weekly: SimWindow
+  /** Its place in the snapshot, claude-master's last tiebreak (the configured order). */
+  index: number
 }
 
 /** Above this used share a weekly allowance is in claude-master's reserve tier. */
 export const WEEKLY_RESERVE_FROM = 0.9
 
-// Moves a slot past every reset up to `t` in one step (a loop of single windows could run for
+function simWindow(w: QuotaWindow | null): SimWindow {
+  const lengthMs = w !== null && Number.isFinite(w.lengthMs) && w.lengthMs > 0 ? w.lengthMs : null
+  const used = w?.usedFraction
+  return {
+    used:
+      used === null || used === undefined || !Number.isFinite(used)
+        ? 0
+        : Math.min(1, Math.max(0, used)),
+    resetsAt:
+      lengthMs !== null && w?.resetsAt != null && Number.isFinite(w.resetsAt) ? w.resetsAt : null,
+    lengthMs: lengthMs ?? 1,
+  }
+}
+
+// Moves a window past every reset up to `t` in one step (a loop of single windows could run for
 // ever on a reset time far in the past).
-function catchUp(slot: Slot, t: EpochMs): void {
-  if (slot.resetsAt === null || slot.resetsAt > t) return
-  const windows = Math.floor((t - slot.resetsAt) / slot.lengthMs) + 1
-  slot.resetsAt += windows * slot.lengthMs
-  slot.used = 0
+function catchUp(w: SimWindow, t: EpochMs): void {
+  if (w.resetsAt === null || w.resetsAt > t) return
+  const windows = Math.floor((t - w.resetsAt) / w.lengthMs) + 1
+  w.resetsAt += windows * w.lengthMs
+  w.used = 0
   // Past float precision the reset time cannot move; it is unknown from here.
-  if (!(slot.resetsAt > t)) slot.resetsAt = null
+  if (!(w.resetsAt > t)) w.resetsAt = null
+}
+
+/** Whether claude-master can pick the subscription: room in the forecast window and the week. */
+const routable = (s: Slot) => s.quota.used < 1 && s.weekly.used < 1
+
+/**
+ * claude-master's order, from the state at this step: outside the weekly reserve tier first,
+ * then the soonest weekly reset (unknown last), then the configured order.
+ */
+function routeOrder(x: Slot, y: Slot): number {
+  const reserve = (s: Slot) => Number(s.weekly.used >= WEEKLY_RESERVE_FROM)
+  const reset = (s: Slot) => s.weekly.resetsAt ?? Number.POSITIVE_INFINITY
+  return reserve(x) - reserve(y) || reset(x) - reset(y) || x.index - y.index
+}
+
+/** When a subscription can be picked again: after whichever full window resets last. */
+function availableAt(s: Slot, t: EpochMs): EpochMs | null {
+  let at = t
+  for (const w of [s.quota, s.weekly]) {
+    if (w.used < 1) continue
+    if (w.resetsAt === null) return null
+    at = Math.max(at, w.resetsAt)
+  }
+  return at
 }
 
 const reading = (p: ProfileStatus, window: WindowKind): QuotaWindow | null => {
@@ -139,11 +185,12 @@ const reading = (p: ProfileStatus, window: WindowKind): QuotaWindow | null => {
  * Demand is the sum of the subscriptions' burn rates (the smoothed one when given, else the
  * average since the window began), measured in one subscription's allowance per hour, so it
  * assumes the subscriptions are the same size. Going forward the demand goes where
- * claude-master routes it: subscriptions whose weekly allowance is under the reserve tier first,
- * then the one whose weekly allowance resets soonest, for either window (the router ranks by the
- * weekly reset; a 5-hour limit only holds a subscription back once reached). A subscription
- * takes work again when its window resets, and a 5-hour window is taken to restart at once. A
- * run-out that has ended by `now` is skipped. A subscription whose login has expired adds no room; one with no reading of the
+ * claude-master routes it, judged at every step: subscriptions with room in this window and
+ * their week only, those under the weekly reserve tier first, then the soonest weekly reset,
+ * then the configured order. The 5-hour forecast moves each weekly window to its resets but
+ * keeps its used share (the 5-hour use is not converted to weekly use). A subscription takes
+ * work again when its windows reset, and a 5-hour window is taken to restart at once. A run-out
+ * that has ended by `now` is skipped. A subscription whose login has expired adds no room; one with no reading of the
  * window is left out (`unreported`). Steps are STEP_MS apart, so a pool that runs out less than
  * a step before a reset may show no clip.
  */
@@ -163,25 +210,17 @@ export function poolForecast(
     const w = reading(p, window)
     if (w === null) continue
     counted++
-    const lengthMs = Number.isFinite(w.lengthMs) && w.lengthMs > 0 ? w.lengthMs : null
-    const resetsAt =
-      lengthMs !== null && w.resetsAt !== null && Number.isFinite(w.resetsAt) ? w.resetsAt : null
+    const quota = simWindow(w)
     const slot: Slot = {
-      used: Math.min(1, Math.max(0, w.usedFraction as number)),
-      resetsAt,
-      lengthMs: lengthMs ?? 1,
-      route: [
-        p.weekly.resetsAt !== null && Number.isFinite(p.weekly.resetsAt)
-          ? p.weekly.resetsAt
-          : Number.POSITIVE_INFINITY,
-        index,
-      ],
-      weeklyReserve: (p.weekly.usedFraction ?? 0) >= WEEKLY_RESERVE_FROM,
+      quota,
+      weekly: window === 'weekly' ? quota : simWindow(p.weekly),
+      index,
     }
     // A reading from before its window reset: that window is over and nothing of the new one
     // is known to be used.
-    catchUp(slot, from)
-    usedSum += slot.used
+    catchUp(slot.quota, from)
+    catchUp(slot.weekly, from)
+    usedSum += slot.quota.used
     const smooth = smoothed.get(p.profile)
     const hasSmooth = smooth !== null && smooth !== undefined && Number.isFinite(smooth)
     if (hasSmooth) smoothedCount++
@@ -211,10 +250,13 @@ export function poolForecast(
   const perStep = (demand / HOUR_MS) * step
   const end = from + FORECAST_HORIZON_MS[window]
   for (let t = from; t <= end; t += step) {
-    for (const s of slots) catchUp(s, t)
-    const open = slots.filter((s) => s.used < 1)
+    for (const s of slots) {
+      catchUp(s.quota, t)
+      if (s.weekly !== s.quota) catchUp(s.weekly, t)
+    }
+    const open = slots.filter(routable)
     if (open.length === 0) {
-      const resets = slots.map((s) => s.resetsAt).filter((r): r is EpochMs => r !== null)
+      const resets = slots.map((s) => availableAt(s, t)).filter((r): r is EpochMs => r !== null)
       const recoversAt = resets.length === 0 ? null : Math.min(...resets)
       // A run-out that has already ended by `now` (the readings lag the clock) is not reported;
       // the simulation goes on from the reset.
@@ -224,21 +266,13 @@ export function poolForecast(
       continue
     }
     if (perStep <= 0) break
-    // claude-master's order: subscriptions outside the weekly reserve tier first, then by the
-    // weekly reset (soonest first), then the configured order; what one cannot take goes on.
-    const reserve = (s: Slot) =>
-      window === 'weekly' ? s.used >= WEEKLY_RESERVE_FROM : s.weeklyReserve
-    open.sort(
-      (x, y) =>
-        Number(reserve(x)) - Number(reserve(y)) ||
-        x.route[0] - y.route[0] ||
-        x.route[1] - y.route[1],
-    )
+    // In claude-master's order as of this step; what one cannot take goes to the next.
+    open.sort(routeOrder)
     let left = perStep
     for (const s of open) {
       if (left <= 0) break
-      const take = Math.min(left, 1 - s.used)
-      s.used += take
+      const take = Math.min(left, 1 - s.quota.used)
+      s.quota.used += take
       left -= take
     }
   }
@@ -275,18 +309,12 @@ export function forecastHeadline(
     return { tone: 'info', headline: 'Waiting for the first reading.', window: null }
   }
   const logins = forecasts.find((f) => f.lasts === 'logins')
-  if (logins !== undefined) {
-    return reportingAll(logins)
-      ? {
-          tone: 'error',
-          headline: 'No subscription can take work: every login has expired.',
-          window: logins.window,
-        }
-      : {
-          tone: 'warning',
-          headline: `Every subscription reporting its ${ALLOWANCE[logins.window]} has an expired login${among(logins)}.`,
-          window: logins.window,
-        }
+  if (logins !== undefined && reportingAll(logins)) {
+    return {
+      tone: 'error',
+      headline: 'No subscription can take work: every login has expired.',
+      window: logins.window,
+    }
   }
   const clips = forecasts
     .filter((f): f is PoolForecast & { clipsAt: EpochMs } => f.clipsAt !== null)
@@ -304,6 +332,14 @@ export function forecastHeadline(
       tone: 'warning',
       headline: `At this pace the pool runs out of its ${ALLOWANCE[first.window]} in ${formatCountdown(first.clipsAt - now)}${among(first)}.`,
       window: first.window,
+    }
+  }
+  // Expired logins among only some subscriptions rank below any run-out, which may be an error.
+  if (logins !== undefined) {
+    return {
+      tone: 'warning',
+      headline: `Every subscription reporting its ${ALLOWANCE[logins.window]} has an expired login${among(logins)}.`,
+      window: logins.window,
     }
   }
   if (forecasts.every((f) => f.lasts === 'unknown')) {

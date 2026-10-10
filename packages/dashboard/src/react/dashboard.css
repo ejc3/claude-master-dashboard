@@ -298,7 +298,8 @@
     }
   }
 
-  .cmd-forecast[data-state="clips"] .cmd-forecast-value {
+  .cmd-forecast[data-state="clips"] .cmd-forecast-value,
+  .cmd-forecast[data-state="partial"] .cmd-forecast-value {
     color: var(--cmd-reserve);
   }
 
