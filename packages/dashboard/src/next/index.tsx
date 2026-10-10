@@ -71,6 +71,8 @@ export interface DashboardPageProps {
   /** Where a viewer whose session ended signs in again. */
   signInHref?: string
   title?: string
+  /** True when the numbers are made up (the demo source); the page then says so. */
+  demoData?: boolean
 }
 
 /**
@@ -94,6 +96,7 @@ export async function DashboardPage(props: DashboardPageProps): Promise<ReactNod
       apiBase={props.apiBase}
       {...(props.signInHref === undefined ? {} : { signInHref: props.signInHref })}
       {...(props.title === undefined ? {} : { title: props.title })}
+      {...(props.demoData === undefined ? {} : { demoData: props.demoData })}
     />
   )
 }

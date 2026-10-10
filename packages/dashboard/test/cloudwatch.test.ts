@@ -1,0 +1,398 @@
+import { describe, expect, it, vi } from 'vitest'
+import {
+  bandFromGauge,
+  CloudWatchError,
+  createCloudWatchSource,
+  DEFAULT_CACHE_MS,
+  gaugeQuery,
+  SNAPSHOT_LOOKBACK_MS,
+  selectSource,
+  splitLabel,
+} from '../src/cloudwatch/index'
+import { FIVE_HOURS_MS, HOUR_MS, type MetricsSource, WEEK_MS } from '../src/core/index'
+import { createDemoSource } from '../src/demo/index'
+import { createDashboardHandler } from '../src/next/index'
+
+// 2026-10-10T05:10:00Z, a whole minute, as the page's step-aligned ranges are.
+const NOW = Date.UTC(2026, 9, 10, 5, 10)
+const SEC = (ms: number) => Math.floor(ms / 1000)
+
+// The shape CloudWatch's JSON protocol answers with, as recorded live (values made up): epoch
+// seconds, one result per group, the GROUP BY values joined by a space as the label, and the
+// query id as the label when there is no GROUP BY.
+function result(label: string, points: Array<[number, number]>) {
+  return {
+    Id: 'q',
+    Label: label,
+    Timestamps: points.map(([t]) => SEC(t)),
+    Values: points.map(([, v]) => v),
+    StatusCode: 'Complete',
+  }
+}
+
+type Answer = (body: Record<string, unknown>, expression: string) => unknown
+
+/** A fake CloudWatch: records every signed request and answers from `answer`. */
+function fakeCloudWatch(answer: Answer) {
+  const requests: Array<{ request: Request; body: Record<string, unknown>; expression: string }> =
+    []
+  const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+    const request = input as Request
+    const body = JSON.parse(await request.clone().text()) as Record<string, unknown>
+    const query = (body.MetricDataQueries as Array<{ Expression: string }>)[0]
+    const expression = query?.Expression ?? ''
+    requests.push({ request, body, expression })
+    const answered = answer(body, expression)
+    if (answered instanceof Response) return answered
+    return Response.json(answered)
+  })
+  return { fetchImpl: fetchImpl as unknown as typeof fetch, requests, calls: fetchImpl }
+}
+
+function source(answer: Answer, options: { now?: () => number; cacheMs?: number } = {}) {
+  const fake = fakeCloudWatch(answer)
+  const src = createCloudWatchSource({
+    accessKeyId: 'AKIAEXAMPLE',
+    secretAccessKey: 'example-secret',
+    region: 'us-test-1',
+    fetch: fake.fetchImpl,
+    now: options.now ?? (() => NOW),
+    ...(options.cacheMs === undefined ? {} : { cacheMs: options.cacheMs }),
+  })
+  return { src, ...fake }
+}
+
+const t0 = NOW - 10 * 60_000
+
+// The snapshot's gauges for two made-up subscriptions, plus the backup and placeholder that
+// report latency but no quota.
+function snapshotAnswers(): Answer {
+  const latest = t0 + 9 * 60_000
+  return (_body, expression) => {
+    const results = (() => {
+      if (expression.includes('quota.used_fraction'))
+        return [
+          result('alpha', [
+            [t0, 0.4],
+            [latest, 0.42],
+          ]),
+          result('bravo', [[latest, 1]]),
+        ]
+      if (expression.includes('quota.resets_in_seconds'))
+        return [result('alpha', [[latest, 3 * 24 * 3600]]), result('bravo', [[latest, 0]])]
+      if (expression.includes('quota.band'))
+        return [result('alpha', [[latest, 0]]), result('bravo', [[latest, 2]])]
+      if (expression.includes('rate_limited_for_seconds'))
+        return [result('alpha', [[latest, 0]]), result('bravo', [[latest, 420]])]
+      if (expression.includes('token_expires_in_seconds'))
+        return [result('alpha', [[latest, 16_000]]), result('bravo', [[latest, 15_000]])]
+      if (expression.includes('duration_quantile'))
+        return [
+          result('alpha 0.5', [[latest, 3600]]),
+          result('alpha 0.95', [[latest, 18_000]]),
+          result('alpha 0.99', [[latest, 33_000]]),
+          result('api-backup 0.5', [[latest, 660]]),
+          result('none 0.5', [[latest, 100]]),
+        ]
+      if (expression.includes('anthropic.ratelimit'))
+        return [
+          result('alpha utilization', [[latest, 0.32]]),
+          result('alpha resets_in_seconds', [[latest, 14_000]]),
+          result('alpha surpassed_threshold', [[latest, 0.9]]),
+        ]
+      if (expression.includes('sessions.tracked')) return [result('q', [[latest, 94]])]
+      if (expression.includes('active_connections')) return [result('q', [[latest, 55]])]
+      return []
+    })()
+    return { MetricDataResults: results, Messages: [] }
+  }
+}
+
+describe('createCloudWatchSource', () => {
+  it('signs one Metrics Insights query per GetMetricData call over the JSON protocol', async () => {
+    const { src, requests } = source(() => ({ MetricDataResults: [] }))
+    await src.series({
+      metric: 'requests',
+      groupBy: 'profile',
+      range: { start: NOW - HOUR_MS, end: NOW },
+      stepSeconds: 300,
+    })
+    expect(requests).toHaveLength(1)
+    const [{ request, body }] = requests as [(typeof requests)[number]]
+    expect(request.url).toBe('https://monitoring.us-test-1.amazonaws.com/')
+    expect(request.method).toBe('POST')
+    expect(request.headers.get('x-amz-target')).toBe('GraniteServiceVersion20100801.GetMetricData')
+    expect(request.headers.get('content-type')).toBe('application/x-amz-json-1.0')
+    expect(request.headers.get('authorization')).toMatch(
+      /^AWS4-HMAC-SHA256 Credential=AKIAEXAMPLE\/\d{8}\/us-test-1\/monitoring\/aws4_request/,
+    )
+    expect(body.StartTime).toBe(SEC(NOW - HOUR_MS))
+    expect(body.EndTime).toBe(SEC(NOW))
+    expect(body.ScanBy).toBe('TimestampAscending')
+    expect(body.MetricDataQueries).toEqual([
+      {
+        Id: 'q',
+        Expression:
+          'SELECT SUM("claude_master.inference.requests") FROM "ClaudeMaster" GROUP BY profile',
+        Period: 300,
+      },
+    ])
+  })
+
+  it('turns results into series: ms timestamps, ascending, the label as the key', async () => {
+    const { src } = source(() => ({
+      MetricDataResults: [
+        result('bravo', [
+          [t0 + 300_000, 3],
+          [t0, 5],
+        ]),
+        result('alpha', [[t0, 7]]),
+      ],
+    }))
+    const series = await src.series({
+      metric: 'requests',
+      groupBy: 'profile',
+      range: { start: t0, end: NOW },
+      stepSeconds: 300,
+    })
+    expect(series).toEqual([
+      {
+        key: 'bravo',
+        points: [
+          [t0, 5],
+          [t0 + 300_000, 3],
+        ],
+      },
+      { key: 'alpha', points: [[t0, 7]] },
+    ])
+  })
+
+  it('names an ungrouped query total and follows NextToken pages', async () => {
+    let page = 0
+    const { src, requests } = source((body) => {
+      page++
+      if (body.NextToken === undefined) {
+        return { MetricDataResults: [result('q', [[t0, 1]])], NextToken: 'page-2' }
+      }
+      return { MetricDataResults: [result('q', [[t0 + 300_000, 2]])] }
+    })
+    const series = await src.series({
+      metric: 'backupRequests',
+      range: { start: t0, end: NOW },
+      stepSeconds: 300,
+    })
+    expect(page).toBe(2)
+    expect(requests[1]?.body.NextToken).toBe('page-2')
+    expect(series).toEqual([
+      {
+        key: 'total',
+        points: [
+          [t0, 1],
+          [t0 + 300_000, 2],
+        ],
+      },
+    ])
+  })
+
+  it('refuses a split claude-master does not emit before any request', async () => {
+    const { src, calls } = source(() => ({ MetricDataResults: [] }))
+    await expect(
+      src.series({
+        metric: 'errors',
+        groupBy: 'model',
+        range: { start: t0, end: NOW },
+        stepSeconds: 300,
+      }),
+    ).rejects.toThrow(/does not emit/)
+    expect(calls).not.toHaveBeenCalled()
+  })
+
+  it('answers the same query once a minute, concurrent callers included', async () => {
+    let now = NOW
+    const { src, calls } = source(() => ({ MetricDataResults: [result('q', [[t0, 1]])] }), {
+      now: () => now,
+    })
+    const query = {
+      metric: 'backupRequests' as const,
+      range: { start: t0, end: NOW },
+      stepSeconds: 300,
+    }
+    await Promise.all([src.series(query), src.series(query), src.series(query)])
+    expect(calls).toHaveBeenCalledTimes(1)
+    await src.series({ ...query, range: { start: t0 - 300_000, end: NOW } })
+    expect(calls).toHaveBeenCalledTimes(2)
+    now += DEFAULT_CACHE_MS
+    await src.series(query)
+    expect(calls).toHaveBeenCalledTimes(3)
+  })
+
+  it('does not keep a failure: the next caller asks again', async () => {
+    let fail = true
+    const { src, calls } = source(() =>
+      fail
+        ? new Response(
+            JSON.stringify({
+              __type: 'com.amazon.coral.service#ThrottlingException',
+              message: 'Rate exceeded',
+            }),
+            { status: 400 },
+          )
+        : { MetricDataResults: [result('q', [[t0, 1]])] },
+    )
+    const query = {
+      metric: 'backupRequests' as const,
+      range: { start: t0, end: NOW },
+      stepSeconds: 300,
+    }
+    const error = await src.series(query).catch((e: unknown) => e)
+    expect(error).toBeInstanceOf(CloudWatchError)
+    expect((error as CloudWatchError).code).toBe('ThrottlingException')
+    expect((error as CloudWatchError).status).toBe(400)
+    fail = false
+    expect(await src.series(query)).toHaveLength(1)
+    expect(calls).toHaveBeenCalledTimes(2)
+  })
+
+  it('composes the snapshot from the gauges, one query each', async () => {
+    const { src, requests } = source(snapshotAnswers())
+    const snapshot = await src.snapshot()
+    const latest = t0 + 9 * 60_000
+    expect(requests).toHaveLength(9)
+    const expressions = requests.map((r) => r.expression)
+    expect(expressions).toContain(
+      'SELECT MAX("claude_master.quota.used_fraction") FROM "ClaudeMaster" GROUP BY profile',
+    )
+    expect(expressions).toContain(
+      'SELECT MAX("claude_master.inference.duration_quantile") FROM "ClaudeMaster" GROUP BY profile, quantile',
+    )
+    expect(expressions).toContain(
+      'SELECT MAX("claude_master.anthropic.ratelimit") FROM "ClaudeMaster" WHERE "window" = \'5h\' GROUP BY profile, measure',
+    )
+    expect(expressions).toContain(
+      'SELECT MAX("claude_master.sessions.tracked") FROM "ClaudeMaster"',
+    )
+    for (const { body } of requests) {
+      expect(body.EndTime).toBe(SEC(NOW + 60_000))
+      expect(body.StartTime).toBe(SEC(NOW + 60_000 - SNAPSHOT_LOOKBACK_MS))
+    }
+    expect(snapshot.asOf).toBe(latest)
+    expect(snapshot.sessions).toBe(94)
+    expect(snapshot.activeConnections).toBe(55)
+    // Only subscriptions (those with a weekly share), sorted; the backup and 'none' are not listed.
+    expect(snapshot.profiles.map((p) => p.profile)).toEqual(['alpha', 'bravo'])
+    const [alpha, bravo] = snapshot.profiles as [
+      (typeof snapshot.profiles)[number],
+      (typeof snapshot.profiles)[number],
+    ]
+    expect(alpha.band).toBe('ok')
+    expect(alpha.weekly).toEqual({
+      usedFraction: 0.42,
+      resetsAt: latest + 3 * 24 * 3600 * 1000,
+      lengthMs: WEEK_MS,
+    })
+    expect(alpha.fiveHour).toEqual({
+      usedFraction: 0.32,
+      resetsAt: latest + 14_000 * 1000,
+      lengthMs: FIVE_HOURS_MS,
+    })
+    expect(alpha.rateLimitedUntil).toBeNull()
+    expect(alpha.tokenExpiresAt).toBe(latest + 16_000 * 1000)
+    expect(alpha.latencyMs).toEqual({ p50: 3600, p95: 18_000, p99: 33_000 })
+    expect(bravo.band).toBe('exhausted')
+    expect(bravo.weekly.resetsAt).toBeNull()
+    expect(bravo.fiveHour).toBeNull()
+    expect(bravo.rateLimitedUntil).toBe(latest + 420_000)
+    expect(bravo.latencyMs).toEqual({ p50: null, p95: null, p99: null })
+  })
+
+  it('has no profiles and the clock as asOf when nothing has been exported', async () => {
+    const { src } = source(() => ({ MetricDataResults: [] }))
+    const snapshot = await src.snapshot()
+    expect(snapshot).toEqual({ asOf: NOW, profiles: [], sessions: null, activeConnections: null })
+  })
+
+  it('reaches the handler as a 502, never as demo data', async () => {
+    const { src } = source(
+      () =>
+        new Response(JSON.stringify({ __type: 'AccessDeniedException', message: 'no' }), {
+          status: 403,
+        }),
+    )
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const GET = createDashboardHandler({ source: () => src, authorize: () => true }).GET
+    const response = await GET(new Request('https://example.test/api/claude-master/snapshot'))
+    expect(response.status).toBe(502)
+    expect(JSON.stringify(await response.json())).not.toContain('alpha')
+    log.mockRestore()
+  })
+})
+
+describe('helpers', () => {
+  it('quotes reserved identifiers and escapes the filter value', () => {
+    expect(
+      gaugeQuery('ClaudeMaster', 'MAX', 'claude_master.anthropic.ratelimit', {
+        where: ['window', "5h'x"],
+        groupBy: ['profile', 'measure'],
+      }),
+    ).toBe(
+      'SELECT MAX("claude_master.anthropic.ratelimit") FROM "ClaudeMaster" WHERE "window" = \'5h\'\'x\' GROUP BY profile, measure',
+    )
+    expect(gaugeQuery('ClaudeMaster', 'MIN', 'claude_master.x')).toBe(
+      'SELECT MIN("claude_master.x") FROM "ClaudeMaster"',
+    )
+  })
+
+  it('maps the band gauge and splits two-dimension labels', () => {
+    expect([0, 1, 2, -1, null, 7].map(bandFromGauge)).toEqual([
+      'ok',
+      'reserve',
+      'exhausted',
+      'unknown',
+      'unknown',
+      'unknown',
+    ])
+    expect(splitLabel('alpha 0.95')).toEqual(['alpha', '0.95'])
+    expect(splitLabel('q')).toEqual(['q', ''])
+  })
+})
+
+describe('selectSource', () => {
+  const demo: MetricsSource = createDemoSource({ now: () => NOW })
+
+  it('picks CloudWatch when the key is complete', () => {
+    const warn = vi.fn()
+    const chosen = selectSource(
+      { AWS_ACCESS_KEY_ID: 'AKIAEXAMPLE', AWS_SECRET_ACCESS_KEY: 'x', AWS_REGION: 'us-test-1' },
+      demo,
+      { warn, fetch: vi.fn() as unknown as typeof fetch },
+    )
+    expect(chosen.kind).toBe('cloudwatch')
+    expect(chosen.source).not.toBe(demo)
+    expect(warn).not.toHaveBeenCalled()
+  })
+
+  it('falls back to the demo fixture, naming what is missing, otherwise', () => {
+    const warn = vi.fn()
+    const chosen = selectSource({ AWS_ACCESS_KEY_ID: 'AKIAEXAMPLE', AWS_REGION: ' ' }, demo, {
+      warn,
+    })
+    expect(chosen).toEqual({ kind: 'demo', source: demo })
+    expect(warn).toHaveBeenCalledWith(
+      'claude-master dashboard: AWS_SECRET_ACCESS_KEY, AWS_REGION not set; showing demo data',
+    )
+  })
+})
+
+describe('DashboardPage', () => {
+  it('passes the demo label through to the page', async () => {
+    const { DashboardPage } = await import('../src/next/index')
+    const element = (await DashboardPage({
+      source: () => createDemoSource({ now: () => NOW }),
+      authorize: () => true,
+      unauthorized: 'sign in',
+      apiBase: '/api/claude-master',
+      demoData: true,
+    })) as { props: { demoData?: boolean } }
+    expect(element.props.demoData).toBe(true)
+  })
+})

@@ -10,9 +10,11 @@
     "./react": "./src/react/index.ts",
     "./next": "./src/next/index.tsx",
     "./styles.css": "./src/react/dashboard.css",
-    "./access": "./src/access/index.ts"
+    "./access": "./src/access/index.ts",
+    "./cloudwatch": "./src/cloudwatch/index.ts"
   },
   "dependencies": {
+    "aws4fetch": "1.0.20",
     "jose": "6.2.12",
     "server-only": "^0.0.1"
   },

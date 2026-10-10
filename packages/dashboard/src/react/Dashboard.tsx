@@ -33,6 +33,8 @@ export interface DashboardProps {
   /** Where a viewer whose session ended signs in again; omitted, no link is shown. */
   signInHref?: string
   title?: string
+  /** True when the source is the demo fixture: a label says so, so made-up numbers never pass for real ones. */
+  demoData?: boolean
 }
 
 type RangeName = '24h' | '7d'
@@ -76,7 +78,7 @@ function Kpi(props: { label: string; value: string; note?: string | undefined })
 }
 
 export function Dashboard(props: DashboardProps) {
-  const { initialSnapshot, apiBase, signInHref, title = 'claude-master' } = props
+  const { initialSnapshot, apiBase, signInHref, title = 'claude-master', demoData = false } = props
   const now = useNow(1000, initialSnapshot?.asOf ?? 0)
   const snapshotLoaded = useSnapshot(apiBase, initialSnapshot)
   const snapshot = data(snapshotLoaded) ?? initialSnapshot
@@ -242,7 +244,14 @@ export function Dashboard(props: DashboardProps) {
       <div className="cmd-frame">
         <header className="cmd-header">
           <div className="cmd-header-text">
-            <h1 className="cmd-title">{title}</h1>
+            <h1 className="cmd-title">
+              {title}
+              {demoData && (
+                <span className="cmd-demo" role="status" title="A fixture, not CloudWatch">
+                  Demo data
+                </span>
+              )}
+            </h1>
             <span className="cmd-freshness" data-stale={stale || snapshotFailure !== null}>
               <span className="cmd-pulse" aria-hidden="true" />
               {freshness}
