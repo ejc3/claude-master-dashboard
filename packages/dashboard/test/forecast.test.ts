@@ -200,12 +200,36 @@ describe('forecastHeadline', () => {
   })
 
   it('leads with the soonest run-out', () => {
-    const h = forecastHeadline([weeklyAt(NOW + 30 * HOUR_MS), fiveAt(NOW + 2 * HOUR_MS)], NOW)
+    const h = forecastHeadline([weeklyAt(null, 'horizon'), fiveAt(NOW + 2 * HOUR_MS)], NOW)
     expect(h).toEqual({
       tone: 'warning',
       headline: 'At this pace the pool runs out of its 5-hour capacity in 2h.',
       window: 'fiveHour',
     })
+  })
+
+  it('names the other window too when it runs out, and how long each run-out lasts', () => {
+    // A short 5-hour gap first; the weekly one, hours later, lasts days.
+    const five = {
+      ...fiveAt(NOW + 19 * MIN),
+      recoversAt: NOW + 19 * MIN + 206 * MIN,
+      unreported: 3,
+      counted: 1,
+    }
+    const weekly = { ...weeklyAt(NOW + 517 * MIN), recoversAt: NOW + 517 * MIN + 50 * HOUR_MS }
+    expect(forecastHeadline([weekly, five], NOW)).toEqual({
+      tone: 'warning',
+      headline:
+        'At this pace the pool runs out of its 5-hour capacity in 19m, for 3h 26m (the 1 reporting it); its weekly allowance runs out in 8h 37m, for 2d 2h.',
+      window: 'fiveHour',
+    })
+  })
+
+  it('names the other window when it is already out', () => {
+    const h = forecastHeadline([weeklyAt(NOW), fiveAt(NOW)], NOW)
+    expect(h.headline).toBe(
+      'The pool is out of weekly allowance now; it is out of 5-hour capacity too.',
+    )
   })
 
   it('says when the pool is out now', () => {
@@ -531,7 +555,7 @@ describe('review fixes', () => {
           f({ ...five, clipsAt: NOW, lasts: null }),
         ],
         'error',
-        'The pool is out of 5-hour capacity now.',
+        'The pool is out of 5-hour capacity now; it is out of weekly allowance too (the 2 reporting it).',
       ],
       [
         'out among some over a later run-out',
@@ -540,7 +564,7 @@ describe('review fixes', () => {
           f({ ...five, clipsAt: NOW, lasts: null, unreported: 1, counted: 1 }),
         ],
         'warning',
-        'The pool is out of 5-hour capacity now (the 1 reporting it).',
+        'The pool is out of 5-hour capacity now (the 1 reporting it); its weekly allowance runs out in 1h.',
       ],
       [
         'sooner run-out first',
@@ -549,7 +573,7 @@ describe('review fixes', () => {
           f({ ...five, clipsAt: NOW + 2 * HOUR_MS, lasts: null }),
         ],
         'warning',
-        'At this pace the pool runs out of its 5-hour capacity in 2h.',
+        'At this pace the pool runs out of its 5-hour capacity in 2h; its weekly allowance runs out in 1d 6h.',
       ],
       [
         'a run-out over partial logins',

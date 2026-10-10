@@ -18,6 +18,7 @@ import {
   UnsupportedQueryError,
 } from '../src/core/index'
 import { createDemoSource } from '../src/demo/index'
+import { requestTable } from '../src/react/Breakdown'
 
 const NOW = Date.UTC(2026, 9, 10, 6)
 const STEP = 300
@@ -186,6 +187,32 @@ describe('token helpers', () => {
       ['charlie', 0],
     ])
     expect(inputOnly[1]?.points).toEqual([[at(10), 10]])
+  })
+
+  it('has no row for a key with no tokens of any type in the range', () => {
+    const byType = {
+      input: [series('alpha', [[at(10), 10]]), series('acct-0', [[at(10), 0]])],
+      output: [series('acct-0', []), series('bravo', [[at(10), 4]])],
+    }
+    expect(tokenRows(byType, 'all').map((r) => r.key)).toEqual(['alpha', 'bravo'])
+    // A row with other types' tokens stays, at 0, when one type is chosen.
+    expect(tokenRows(byType, 'input').map((r) => [r.key, r.total])).toEqual([
+      ['alpha', 10],
+      ['bravo', 0],
+    ])
+  })
+
+  it('has no request row for a key with no requests in the range', () => {
+    expect(
+      requestTable([
+        series('alpha', [[at(10), 3]]),
+        series('acct-0', [[at(10), 0]]),
+        series('bravo', [[at(10), 5]]),
+      ]).map((r) => [r.key, r.total]),
+    ).toEqual([
+      ['bravo', 5],
+      ['alpha', 3],
+    ])
   })
 
   it('sums each type over a window from a query split by type', () => {

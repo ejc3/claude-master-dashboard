@@ -351,7 +351,29 @@ export function forecastSeverity(f: PoolForecast, now: EpochMs): number {
   }
 }
 
-/** The answer to "will we run out?": the most severe forecast, and its tone. */
+/** How long a run-out lasts, in words (", for 2d 2h"); nothing when no reset time is known. */
+function outFor(f: PoolForecast): string {
+  return f.clipsAt === null || f.recoversAt === null
+    ? ''
+    : `, for ${formatCountdown(f.recoversAt - f.clipsAt)}`
+}
+
+/** The other window, when it is out or runs out too: "; its weekly allowance runs out in …". */
+function alsoClause(f: PoolForecast | undefined, now: EpochMs): string {
+  if (f === undefined) return ''
+  const { state } = forecastState(f, now)
+  if (state === 'out') return `; it is out of ${ALLOWANCE[f.window]} too${among(f)}`
+  if (state === 'clips' && f.clipsAt !== null) {
+    return `; its ${ALLOWANCE[f.window]} runs out in ${formatCountdown(f.clipsAt - now)}${outFor(f)}${among(f)}`
+  }
+  return ''
+}
+
+/**
+ * The answer to "will we run out?": the most severe forecast, and its tone. When the other window
+ * is out or runs out too, the headline says so as well, so a short 5-hour gap never hides a
+ * weekly one of days.
+ */
 export function forecastHeadline(
   forecasts: PoolForecast[] | null,
   now: EpochMs,
@@ -365,6 +387,7 @@ export function forecastHeadline(
       (a.clipsAt ?? Number.POSITIVE_INFINITY) - (b.clipsAt ?? Number.POSITIVE_INFINITY),
   )
   const top = ranked[0] as PoolForecast
+  const also = alsoClause(ranked[1], now)
   const { state, partial } = forecastState(top, now)
   const window = top.window
   switch (state) {
@@ -383,13 +406,13 @@ export function forecastHeadline(
     case 'out':
       return {
         tone: partial ? 'warning' : 'error',
-        headline: `The pool is out of ${ALLOWANCE[window]} now${among(top)}.`,
+        headline: `The pool is out of ${ALLOWANCE[window]} now${among(top)}${also}.`,
         window,
       }
     case 'clips':
       return {
         tone: 'warning',
-        headline: `At this pace the pool runs out of its ${ALLOWANCE[window]} in ${formatCountdown((top.clipsAt as EpochMs) - now)}${among(top)}.`,
+        headline: `At this pace the pool runs out of its ${ALLOWANCE[window]} in ${formatCountdown((top.clipsAt as EpochMs) - now)}${outFor(top)}${among(top)}${also}.`,
         window,
       }
     case 'lasts':
