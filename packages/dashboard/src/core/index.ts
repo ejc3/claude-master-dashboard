@@ -68,6 +68,7 @@ export {
   MIN_STEP_SECONDS,
   validateSeriesQuery,
 } from './query'
+export { SUBSCRIPTION_HOLD_MS, subscriptionCount } from './subscriptions'
 export {
   firstPointAt,
   fromFirstBucket,

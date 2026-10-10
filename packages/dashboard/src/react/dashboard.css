@@ -860,6 +860,10 @@
     .cmd-charts {
       grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     }
+
+    .cmd-charts > .cmd-charts-wide {
+      grid-column: 1 / -1;
+    }
   }
 
   .cmd-legend {

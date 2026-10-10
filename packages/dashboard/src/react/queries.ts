@@ -189,6 +189,7 @@ export function firstQueries(now: EpochMs): SeriesQuery[] {
     // The token choice starts at all types: no tokenType.
     chartQuery(now, FIRST_RANGE, { metric: 'tokens', groupBy: 'profile' }),
     chartQuery(now, FIRST_RANGE, { metric: 'errors' }),
+    chartQuery(now, FIRST_RANGE, { metric: 'weeklyUsed', groupBy: 'profile' }),
     chartQuery(now, FIRST_RANGE, { metric: 'backupRequests' }),
     backupOutputQuery(now),
     projectsQuery(now),

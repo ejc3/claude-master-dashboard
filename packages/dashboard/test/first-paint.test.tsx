@@ -148,8 +148,16 @@ describe('the first paint', () => {
     expect(text).not.toMatch(/Then[,;]/)
     // Each chart holds its plot's height before the browser measures its width and draws it.
     const charts = [...container.querySelectorAll<HTMLElement>('.cmd-chart')]
-    // The two capacity charts at the top, the two traffic charts, then the breakdown's.
-    expect(charts).toHaveLength(5)
+    // The two capacity charts at the top, the two traffic charts, the subscriptions in the pool,
+    // then the breakdown's.
+    expect(charts).toHaveLength(6)
+    // The pool's size, drawn on the server: the demo's four subscriptions now.
+    const pool = [...container.querySelectorAll('figure')].find(
+      (f) => f.querySelector('figcaption')?.textContent === 'Subscriptions in the pool · 4 now',
+    )
+    expect(pool?.querySelector('[role="slider"]')?.getAttribute('aria-valuetext')).toMatch(
+      /: Subscriptions 4$/,
+    )
     // Each holds its plot's height (the capacity charts are shorter) before it is measured.
     // The stacked weekly chart is a little taller than the 5-hour one.
     expect(charts.map((chart) => chart.style.minHeight)).toEqual([
@@ -157,6 +165,7 @@ describe('the first paint', () => {
       '160px',
       '200px',
       '200px',
+      '120px',
       '180px',
     ])
   })
