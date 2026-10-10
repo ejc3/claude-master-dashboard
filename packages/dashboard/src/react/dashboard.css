@@ -988,6 +988,10 @@
       opacity: 1;
     }
 
+    .cmd-pulse {
+      background: CanvasText;
+    }
+
     /* Without this the browser paints a Canvas backplate behind the label, hiding it. */
     .cmd-segmented button[aria-pressed="true"],
     .cmd-tabs button[aria-pressed="true"] {
