@@ -1049,7 +1049,8 @@
 
   /* Tabs: what the breakdown splits by. */
   .cmd-tabs {
-    margin: 0;
+    /* The tabs' side padding hangs outside, so their text lines up with the title. */
+    margin: 0 -6px;
     padding: 0;
     min-inline-size: 0;
     border: 0;
@@ -1060,7 +1061,7 @@
     flex-wrap: nowrap;
     overflow-x: auto;
     scrollbar-width: none;
-    gap: 0 16px;
+    gap: 0 4px;
   }
 
   .cmd-tabs button {
@@ -1071,11 +1072,17 @@
     color: var(--cmd-ink-3);
     background: none;
     border: 0;
-    padding: 8px 0 10px;
+    /* Room at each side for the focus ring, which the scrolling strip would otherwise cut. */
+    padding: 8px 6px 10px;
     min-height: 40px;
     flex-shrink: 0;
     white-space: nowrap;
     cursor: pointer;
+  }
+
+  .cmd-root .cmd-tabs button:focus-visible {
+    outline-offset: -2px;
+    border-radius: 4px;
   }
 
   .cmd-tabs button:hover {
@@ -1089,8 +1096,8 @@
   .cmd-tabs button[aria-pressed="true"]::after {
     content: "";
     position: absolute;
-    left: 0;
-    right: 0;
+    left: 6px;
+    right: 6px;
     bottom: 0;
     height: 3px;
     border-radius: 3px 3px 0 0;

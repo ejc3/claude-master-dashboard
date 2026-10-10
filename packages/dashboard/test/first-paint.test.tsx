@@ -1175,10 +1175,10 @@ describe('the breakdown table', () => {
   it('gives a phone the name, the total and the share, and a shorter name for subscriptions', async () => {
     const source = prefixedSource()
     const { GET } = createDashboardHandler({ source: () => source, authorize: () => true })
-    vi.stubGlobal(
-      'fetch',
-      vi.fn((url: string) => GET(new Request(new URL(url, 'https://dashboard.example')))),
+    const fetchMock = vi.fn((url: string) =>
+      GET(new Request(new URL(url, 'https://dashboard.example'))),
     )
+    vi.stubGlobal('fetch', fetchMock)
     const element = await serverPage(ZONE, source)
     const container = document.createElement('div')
     container.innerHTML = renderToString(element)
@@ -1215,11 +1215,30 @@ describe('the breakdown table', () => {
     expect(name?.querySelector('.cmd-phone')?.textContent).toBe(
       name?.querySelector('.cmd-full')?.textContent?.slice('team-'.length),
     )
-    // The phone's total is the sum of the wide screen's columns.
+    // The phone's total is every token the page was served for that subscription.
     const cells = [...first.querySelectorAll('td.cmd-num')]
     const phoneTotal = cells.find((td) => td.classList.contains('cmd-phone'))?.textContent
-    expect(phoneTotal).toMatch(/\d/)
     expect(cells.filter((td) => td.classList.contains('cmd-full'))).toHaveLength(4)
+    const key = name?.querySelector('.cmd-full')?.textContent
+    const served = fetchMock.mock.calls
+      .map(([url]) => new URL(url, 'https://dashboard.example'))
+      .filter((u) => u.searchParams.get('metric') === 'tokens')
+      .filter((u) => u.searchParams.get('groupBy') === 'profile')
+    expect(served.map((u) => u.searchParams.get('type')).sort()).toEqual([
+      'cache_creation',
+      'cache_read',
+      'input',
+      'output',
+    ])
+    let sum = 0
+    for (const u of served) {
+      const series = (await source.series(seriesQueryFromParams(u.searchParams))).find(
+        (s) => s.key === key,
+      )
+      sum += series?.points.reduce((total, [, v]) => total + v, 0) ?? 0
+    }
+    expect(sum).toBeGreaterThan(0)
+    expect(phoneTotal).toBe(formatCount(sum))
   })
 })
 
