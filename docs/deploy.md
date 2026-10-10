@@ -37,10 +37,10 @@ Set from `apps/web` with `wrangler secret put <NAME>`, reading the value from st
 | `CF_ACCESS_TEAM_DOMAIN` | The Access team domain, `https://<team>.cloudflareaccess.com` (Terraform output) |
 | `CF_ACCESS_AUD` | The Access application's audience tag (Terraform output) |
 | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION` | The read-only key, from its Secrets Manager secret (read by the CloudWatch source) |
-| `DASHBOARD_ALLOWED_EMAILS` | Optional. When set, only these addresses are admitted: it narrows the Access policy and never widens it |
+| `DASHBOARD_ALLOWED_EMAILS` | Required. The addresses admitted, comma-separated. The app checks the address in the Access assertion against it, so a policy widened by mistake in Access admits no one new |
 | `DASHBOARD_SERVICE_TOKEN_CLIENT_ID` | Optional. Admits that service token. Access issues one only if the application has a service-auth policy for it, and none is configured |
 
-Without a valid `CF_ACCESS_TEAM_DOMAIN` and `CF_ACCESS_AUD` the app admits nobody and logs why.
+Without a valid `CF_ACCESS_TEAM_DOMAIN`, `CF_ACCESS_AUD` and `DASHBOARD_ALLOWED_EMAILS` the app admits nobody and logs why. Set `DASHBOARD_ALLOWED_EMAILS` before deploying a build that requires it.
 
 Never put secrets in `apps/web/.env*`. OpenNext embeds those files in the Worker it builds. The Deploy workflow fails if a build embeds any.
 

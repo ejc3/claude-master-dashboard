@@ -75,9 +75,10 @@ every URL of the Worker: an Access application with the Worker itself as its des
 workers.dev and preview URLs alike), signing people
 in with the account's existing Google identity provider and admitting the addresses its policy
 lists. The app checks again: `cloudflareAccess()` verifies the `Cf-Access-Jwt-Assertion` header
-(signature against the team's published keys, issuer, the application's audience tag, expiry, and
-optionally an email allowlist), so a request that did not come through that Access application is
-refused. With no Access settings configured the app admits nobody.
+(signature against the team's published keys, issuer, the application's audience tag and expiry),
+then the signed-in address against its own required allowlist. A request that did not come
+through that Access application is refused, and a policy widened by mistake in Access admits no
+one new. With any of these settings missing the app admits nobody.
 
 The Worker reads CloudWatch with an access key for an IAM user allowed only
 `cloudwatch:GetMetricData` and `cloudwatch:ListMetrics` in one region, stored as Worker secrets.

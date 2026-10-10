@@ -39,6 +39,7 @@ function access(extra: { allowedEmails?: string[]; serviceTokenClientId?: string
   return cloudflareAccess({
     teamDomain: `${TEAM}/`,
     audience: AUD,
+    allowedEmails: ['owner@example.com'],
     keys: createLocalJWKSet(jwks),
     ...extra,
   })
@@ -79,10 +80,21 @@ describe('cloudflareAccess', () => {
     expect(await a.authorize(new Request('https://dash.example/x'))).toBe(false)
   })
 
-  it('applies the email allowlist on top of the Access policy', async () => {
-    const a = access({ allowedEmails: ['owner@example.com'] })
+  it('admits only allowlisted addresses, whatever Access signed', async () => {
+    const a = access()
     expect(await a.identify(await sign({ email: 'OWNER@example.com' }))).not.toBeNull()
+    // Signed by Access for this application, but not on the app's own list.
     expect(await a.identify(await sign({ email: 'family@example.com' }))).toBeNull()
+  })
+
+  it('refuses to start without an allowlist', () => {
+    const base = { teamDomain: TEAM, audience: AUD, keys: createLocalJWKSet(jwks) }
+    expect(() => cloudflareAccess({ ...base, allowedEmails: [] })).toThrow(/allowlist/)
+    expect(() => cloudflareAccess({ ...base, allowedEmails: [' ', ''] })).toThrow(/allowlist/)
+    // A caller without types (plain JavaScript) that leaves it out is refused too.
+    expect(() =>
+      cloudflareAccess(base as unknown as Parameters<typeof cloudflareAccess>[0]),
+    ).toThrow()
   })
 
   it('admits only the configured service token', async () => {
@@ -110,6 +122,8 @@ describe('cloudflareAccess', () => {
     expect(() => accessTeamDomain('example.cloudflareaccess.com')).toThrow()
     expect(() => accessTeamDomain('http://example.cloudflareaccess.com')).toThrow()
     expect(() => accessTeamDomain('https://example.cloudflareaccess.com/cdn-cgi')).toThrow()
-    expect(() => cloudflareAccess({ teamDomain: TEAM, audience: '  ' })).toThrow()
+    expect(() =>
+      cloudflareAccess({ teamDomain: TEAM, audience: '  ', allowedEmails: ['owner@example.com'] }),
+    ).toThrow()
   })
 })

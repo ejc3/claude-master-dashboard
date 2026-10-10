@@ -8,8 +8,11 @@ export interface AccessOptions {
   teamDomain: string
   /** The Access application's audience tag (AUD). */
   audience: string
-  /** When set, only these addresses (any case) are admitted; it narrows the Access policy. */
-  allowedEmails?: readonly string[]
+  /**
+   * The addresses (any case) admitted. Required and non-empty: the app checks the signed-in
+   * address itself, so a policy widened by mistake in Access admits no one new here.
+   */
+  allowedEmails: readonly string[]
   /**
    * When set, a service token with this client id is admitted too. Access issues such an
    * assertion only if the application has a service-auth policy for that token.
@@ -46,7 +49,7 @@ export interface AccessIdentity {
 
 /**
  * Verifies a Cloudflare Access assertion: signature against the team's keys, issuer, audience and
- * expiry, then the optional allowlists. Returns null for anything that does not pass, so a request
+ * expiry, then the signed-in address against the allowlist (or the service token's client id). Returns null for anything that does not pass, so a request
  * that reaches the app without going through Access (or through another Access application) is
  * refused.
  */
@@ -58,7 +61,8 @@ export function cloudflareAccess(options: AccessOptions): {
   const keys = options.keys ?? createRemoteJWKSet(new URL(`${teamDomain}/cdn-cgi/access/certs`))
   const audience = options.audience.trim()
   if (audience === '') throw new Error('the Access audience tag is empty')
-  const allowed = options.allowedEmails?.map((e) => e.trim().toLowerCase())
+  const allowed = options.allowedEmails.map((e) => e.trim().toLowerCase()).filter((e) => e !== '')
+  if (allowed.length === 0) throw new Error('the email allowlist is empty')
 
   async function identify(assertion: string | null | undefined): Promise<AccessIdentity | null> {
     if (assertion === null || assertion === undefined || assertion === '') return null
@@ -83,7 +87,7 @@ export function cloudflareAccess(options: AccessOptions): {
     }
     const email = typeof payload.email === 'string' ? payload.email.toLowerCase() : null
     if (email !== null && email !== '') {
-      if (allowed !== undefined && !allowed.includes(email)) return null
+      if (!allowed.includes(email)) return null
       return { email, serviceToken: null }
     }
     // A service token's assertion carries its client id as common_name and no email.

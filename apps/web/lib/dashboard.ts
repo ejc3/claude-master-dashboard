@@ -23,8 +23,8 @@ const authDisabled = process.env.NODE_ENV !== 'production' && process.env.DASHBO
 let access: ReturnType<typeof cloudflareAccess> | null | undefined
 
 // Built on first use: on Workers the environment is filled in per request, after module load.
-// Without CF_ACCESS_TEAM_DOMAIN and CF_ACCESS_AUD, or with an invalid one, nobody is admitted
-// (the app fails closed) and the reason is logged once.
+// Without CF_ACCESS_TEAM_DOMAIN, CF_ACCESS_AUD and DASHBOARD_ALLOWED_EMAILS, or with an invalid
+// one, nobody is admitted (the app fails closed) and the reason is logged once.
 function accessCheck(): ReturnType<typeof cloudflareAccess> | null {
   if (access !== undefined) return access
   const teamDomain = process.env.CF_ACCESS_TEAM_DOMAIN?.trim()
@@ -34,9 +34,9 @@ function accessCheck(): ReturnType<typeof cloudflareAccess> | null {
     .map((e) => e.trim())
     .filter((e) => e !== '')
   const serviceToken = process.env.DASHBOARD_SERVICE_TOKEN_CLIENT_ID?.trim()
-  if (!teamDomain || !audience) {
+  if (!teamDomain || !audience || emails.length === 0) {
     console.error(
-      'claude-master dashboard: CF_ACCESS_TEAM_DOMAIN and CF_ACCESS_AUD are not set; admitting nobody',
+      'claude-master dashboard: CF_ACCESS_TEAM_DOMAIN, CF_ACCESS_AUD and DASHBOARD_ALLOWED_EMAILS must all be set; admitting nobody',
     )
     access = null
     return access
@@ -45,7 +45,7 @@ function accessCheck(): ReturnType<typeof cloudflareAccess> | null {
     access = cloudflareAccess({
       teamDomain,
       audience,
-      ...(emails.length > 0 ? { allowedEmails: emails } : {}),
+      allowedEmails: emails,
       ...(serviceToken ? { serviceTokenClientId: serviceToken } : {}),
     })
   } catch (error) {
