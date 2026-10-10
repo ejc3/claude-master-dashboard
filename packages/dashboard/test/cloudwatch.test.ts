@@ -74,6 +74,8 @@ function snapshotAnswers(): Answer {
   const latest = t0 + 9 * 60_000
   return (_body, expression) => {
     const results = (() => {
+      // The usage poll's 5-hour gauges (none here: the header readings stand).
+      if (expression.includes('quota.five_hour.')) return []
       if (expression.includes('quota.used_fraction'))
         return [
           result('alpha', [
@@ -261,7 +263,7 @@ describe('createCloudWatchSource', () => {
     const { src, requests } = source(snapshotAnswers())
     const snapshot = await src.snapshot()
     const latest = t0 + 9 * 60_000
-    expect(requests).toHaveLength(9)
+    expect(requests).toHaveLength(11)
     const expressions = requests.map((r) => r.expression)
     expect(expressions).toContain(
       'SELECT MAX("claude_master.quota.used_fraction") FROM "ClaudeMaster" GROUP BY profile',
@@ -358,6 +360,26 @@ describe('createCloudWatchSource', () => {
     expect(fiveHourAt(alpha?.fiveHour ?? null, NOW)).toEqual(alpha?.fiveHour)
     // The old reading does not make the snapshot older.
     expect(snapshot.asOf).toBe(latest)
+  })
+
+  it("takes the usage poll's 5-hour reading over the response headers' when there is one", async () => {
+    const latest = t0 + 9 * 60_000
+    const answers = snapshotAnswers()
+    const { src } = source((body, expression) => {
+      if (expression.includes('quota.five_hour.used_fraction'))
+        return { MetricDataResults: [result('alpha', [[latest, 0.81]])], Messages: [] }
+      if (expression.includes('quota.five_hour.resets_in_seconds'))
+        return { MetricDataResults: [result('alpha', [[latest, 600]])], Messages: [] }
+      return answers(body, expression)
+    })
+    const snapshot = await src.snapshot()
+    const alpha = snapshot.profiles.find((p) => p.profile === 'alpha')
+    // The headers said 0.32, resetting in 14000 s; the poll is the one kept.
+    expect(alpha?.fiveHour).toEqual({
+      usedFraction: 0.81,
+      resetsAt: latest + 600_000,
+      lengthMs: FIVE_HOURS_MS,
+    })
   })
 
   it('reads a countdown of zero as a window that reset when it was read', () => {
