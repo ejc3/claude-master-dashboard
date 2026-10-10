@@ -1,6 +1,11 @@
 import { createLocalJWKSet, exportJWK, generateKeyPair, type JWK, SignJWT } from 'jose'
-import { beforeAll, describe, expect, it } from 'vitest'
-import { ACCESS_ASSERTION_HEADER, accessTeamDomain, cloudflareAccess } from '../src/access'
+import { beforeAll, describe, expect, it, vi } from 'vitest'
+import {
+  ACCESS_ASSERTION_HEADER,
+  accessOptionsFromEnv,
+  accessTeamDomain,
+  cloudflareAccess,
+} from '../src/access'
 
 const TEAM = 'https://example.cloudflareaccess.com'
 const AUD = 'aud-made-up-for-tests'
@@ -39,6 +44,7 @@ function access(extra: { allowedEmails?: string[]; serviceTokenClientId?: string
   return cloudflareAccess({
     teamDomain: `${TEAM}/`,
     audience: AUD,
+    allowedEmails: ['owner@example.com'],
     keys: createLocalJWKSet(jwks),
     ...extra,
   })
@@ -79,10 +85,21 @@ describe('cloudflareAccess', () => {
     expect(await a.authorize(new Request('https://dash.example/x'))).toBe(false)
   })
 
-  it('applies the email allowlist on top of the Access policy', async () => {
-    const a = access({ allowedEmails: ['owner@example.com'] })
+  it('admits only allowlisted addresses, whatever Access signed', async () => {
+    const a = access()
     expect(await a.identify(await sign({ email: 'OWNER@example.com' }))).not.toBeNull()
+    // Signed by Access for this application, but not on the app's own list.
     expect(await a.identify(await sign({ email: 'family@example.com' }))).toBeNull()
+  })
+
+  it('refuses to start without an allowlist', () => {
+    const base = { teamDomain: TEAM, audience: AUD, keys: createLocalJWKSet(jwks) }
+    expect(() => cloudflareAccess({ ...base, allowedEmails: [] })).toThrow(/allowlist/)
+    expect(() => cloudflareAccess({ ...base, allowedEmails: [' ', ''] })).toThrow(/allowlist/)
+    // A caller without types (plain JavaScript) that leaves it out is refused too.
+    expect(() =>
+      cloudflareAccess(base as unknown as Parameters<typeof cloudflareAccess>[0]),
+    ).toThrow(/allowlist is missing/)
   })
 
   it('admits only the configured service token', async () => {
@@ -110,6 +127,69 @@ describe('cloudflareAccess', () => {
     expect(() => accessTeamDomain('example.cloudflareaccess.com')).toThrow()
     expect(() => accessTeamDomain('http://example.cloudflareaccess.com')).toThrow()
     expect(() => accessTeamDomain('https://example.cloudflareaccess.com/cdn-cgi')).toThrow()
-    expect(() => cloudflareAccess({ teamDomain: TEAM, audience: '  ' })).toThrow()
+    expect(() =>
+      cloudflareAccess({ teamDomain: TEAM, audience: '  ', allowedEmails: ['owner@example.com'] }),
+    ).toThrow()
+  })
+
+  it('admits no nameless token when the service token id is blank', async () => {
+    const nameless = await sign({ common_name: '' })
+    for (const serviceTokenClientId of ['', '  ']) {
+      expect(await access({ serviceTokenClientId }).identify(nameless)).toBeNull()
+    }
+  })
+
+  it('does not fold lookalike characters onto the allowlist', async () => {
+    // U+212A KELVIN SIGN lowercases to "k" under Unicode rules.
+    const a = access({ allowedEmails: ['kate@example.com'] })
+    expect(await a.identify(await sign({ email: '\u212Aate@example.com' }))).toBeNull()
+    expect(await a.identify(await sign({ email: 'Kate@Example.com' }))).not.toBeNull()
+    // The same on the list's side: a lookalike there matches no real address.
+    const lookalike = access({ allowedEmails: ['\u212Aate@example.com'] })
+    expect(await lookalike.identify(await sign({ email: 'kate@example.com' }))).toBeNull()
+  })
+
+  it('logs a refused address without naming it', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      expect(await access().identify(await sign({ email: 'stranger@example.com' }))).toBeNull()
+      const logged = warn.mock.calls.map((c) => c.join(' '))
+      expect(logged.some((line) => line.includes('not on the allowlist'))).toBe(true)
+      expect(logged.some((line) => line.includes('stranger'))).toBe(false)
+    } finally {
+      warn.mockRestore()
+    }
+  })
+})
+
+describe('accessOptionsFromEnv', () => {
+  it('names each missing setting, never a value', () => {
+    expect(accessOptionsFromEnv({})).toEqual({
+      missing: ['CF_ACCESS_TEAM_DOMAIN', 'CF_ACCESS_AUD', 'DASHBOARD_ALLOWED_EMAILS'],
+    })
+    expect(
+      accessOptionsFromEnv({
+        CF_ACCESS_TEAM_DOMAIN: TEAM,
+        CF_ACCESS_AUD: AUD,
+        DASHBOARD_ALLOWED_EMAILS: ' , ',
+      }),
+    ).toEqual({ missing: ['DASHBOARD_ALLOWED_EMAILS'] })
+  })
+
+  it('splits the allowlist on commas and whitespace and drops a blank service token', () => {
+    expect(
+      accessOptionsFromEnv({
+        CF_ACCESS_TEAM_DOMAIN: ` ${TEAM} `,
+        CF_ACCESS_AUD: AUD,
+        DASHBOARD_ALLOWED_EMAILS: 'a@example.com b@example.com,\nc@example.com,',
+        DASHBOARD_SERVICE_TOKEN_CLIENT_ID: '  ',
+      }),
+    ).toEqual({
+      options: {
+        teamDomain: TEAM,
+        audience: AUD,
+        allowedEmails: ['a@example.com', 'b@example.com', 'c@example.com'],
+      },
+    })
   })
 })

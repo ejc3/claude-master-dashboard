@@ -38,7 +38,7 @@ both places:
 import { ACCESS_ASSERTION_HEADER, cloudflareAccess } from '@ejc3/claude-master-dashboard/access'
 import { headers } from 'next/headers'
 
-const access = cloudflareAccess({ teamDomain, audience })
+const access = cloudflareAccess({ teamDomain, audience, allowedEmails })
 // route handler: takes the request
 export const { GET } = createDashboardHandler({ source, authorize: access.authorize })
 // page: reads the incoming request's headers

@@ -8,8 +8,12 @@ export interface AccessOptions {
   teamDomain: string
   /** The Access application's audience tag (AUD). */
   audience: string
-  /** When set, only these addresses (any case) are admitted; it narrows the Access policy. */
-  allowedEmails?: readonly string[]
+  /**
+   * The addresses admitted (letters A-Z in any case; other characters must match exactly).
+   * Required and non-empty: the app checks the signed-in address itself, so a policy widened by
+   * mistake in Access admits no one new here.
+   */
+  allowedEmails: readonly string[]
   /**
    * When set, a service token with this client id is admitted too. Access issues such an
    * assertion only if the application has a service-auth policy for that token.
@@ -45,10 +49,18 @@ export interface AccessIdentity {
 }
 
 /**
- * Verifies a Cloudflare Access assertion: signature against the team's keys, issuer, audience and
- * expiry, then the optional allowlists. Returns null for anything that does not pass, so a request
- * that reaches the app without going through Access (or through another Access application) is
- * refused.
+ * Lowercases A-Z only. Unicode case folding maps some characters onto ASCII letters (the Kelvin
+ * sign onto "k"), which would let a lookalike address match one on the list.
+ */
+export function asciiLower(value: string): string {
+  return value.replace(/[A-Z]/g, (c) => c.toLowerCase())
+}
+
+/**
+ * Verifies a Cloudflare Access assertion: signature against the team's keys, issuer, audience
+ * and expiry, then the signed-in address against the allowlist (or the service token's client
+ * id). Returns null for anything that does not pass, so a request that reaches the app without
+ * going through Access (or through another Access application) is refused.
  */
 export function cloudflareAccess(options: AccessOptions): {
   identify: (assertion: string | null | undefined) => Promise<AccessIdentity | null>
@@ -58,7 +70,11 @@ export function cloudflareAccess(options: AccessOptions): {
   const keys = options.keys ?? createRemoteJWKSet(new URL(`${teamDomain}/cdn-cgi/access/certs`))
   const audience = options.audience.trim()
   if (audience === '') throw new Error('the Access audience tag is empty')
-  const allowed = options.allowedEmails?.map((e) => e.trim().toLowerCase())
+  if (!Array.isArray(options.allowedEmails)) throw new Error('the email allowlist is missing')
+  const allowed = options.allowedEmails.map((e) => asciiLower(e.trim())).filter((e) => e !== '')
+  if (allowed.length === 0) throw new Error('the email allowlist is empty')
+  // A blank client id is no service token: it must not match an assertion without a name.
+  const serviceToken = options.serviceTokenClientId?.trim() || null
 
   async function identify(assertion: string | null | undefined): Promise<AccessIdentity | null> {
     if (assertion === null || assertion === undefined || assertion === '') return null
@@ -81,14 +97,18 @@ export function cloudflareAccess(options: AccessOptions): {
       )
       return null
     }
-    const email = typeof payload.email === 'string' ? payload.email.toLowerCase() : null
+    const email = typeof payload.email === 'string' ? asciiLower(payload.email) : null
     if (email !== null && email !== '') {
-      if (allowed !== undefined && !allowed.includes(email)) return null
+      if (!allowed.includes(email)) {
+        // Never the address: a typo in the list should be visible, a stranger's address not.
+        console.warn('claude-master dashboard: signed-in address is not on the allowlist')
+        return null
+      }
       return { email, serviceToken: null }
     }
     // A service token's assertion carries its client id as common_name and no email.
     const clientId = typeof payload.common_name === 'string' ? payload.common_name : null
-    if (clientId !== null && clientId === options.serviceTokenClientId?.trim()) {
+    if (serviceToken !== null && clientId === serviceToken) {
       return { email: null, serviceToken: clientId }
     }
     return null
@@ -98,5 +118,40 @@ export function cloudflareAccess(options: AccessOptions): {
     identify,
     authorize: async (request) =>
       (await identify(request.headers.get(ACCESS_ASSERTION_HEADER))) !== null,
+  }
+}
+
+/**
+ * String settings (process.env, or a Worker's string vars and secrets) by the names docs/deploy.md
+ * uses: CF_ACCESS_TEAM_DOMAIN, CF_ACCESS_AUD, DASHBOARD_ALLOWED_EMAILS and the optional
+ * DASHBOARD_SERVICE_TOKEN_CLIENT_ID.
+ */
+export type AccessEnv = Readonly<Record<string, string | undefined>>
+
+/**
+ * The options for cloudflareAccess from environment settings, or the names of the required ones
+ * that are missing (never their values). The allowlist takes addresses separated by commas or
+ * whitespace.
+ */
+export function accessOptionsFromEnv(
+  env: AccessEnv,
+): { options: AccessOptions } | { missing: string[] } {
+  const teamDomain = env.CF_ACCESS_TEAM_DOMAIN?.trim() ?? ''
+  const audience = env.CF_ACCESS_AUD?.trim() ?? ''
+  const allowedEmails = (env.DASHBOARD_ALLOWED_EMAILS ?? '').split(/[\s,]+/).filter((e) => e !== '')
+  const missing = [
+    teamDomain === '' ? 'CF_ACCESS_TEAM_DOMAIN' : null,
+    audience === '' ? 'CF_ACCESS_AUD' : null,
+    allowedEmails.length === 0 ? 'DASHBOARD_ALLOWED_EMAILS' : null,
+  ].filter((name): name is string => name !== null)
+  if (missing.length > 0) return { missing }
+  const serviceTokenClientId = env.DASHBOARD_SERVICE_TOKEN_CLIENT_ID?.trim()
+  return {
+    options: {
+      teamDomain,
+      audience,
+      allowedEmails,
+      ...(serviceTokenClientId ? { serviceTokenClientId } : {}),
+    },
   }
 }
