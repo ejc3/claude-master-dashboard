@@ -21,6 +21,17 @@ describe('Dashboard wiring', () => {
   })
 })
 
+const pool = readFileSync(new URL('../src/react/Pool.tsx', import.meta.url), 'utf8')
+
+describe('Headline wiring', () => {
+  it('reads the headline from one simulation of both windows, from the readings time', () => {
+    expect(source).toMatch(/poolGaps\(profilesNow, snapshot\?\.asOf \?\? now, smoothed, now\)/)
+    expect(source).toMatch(/<PoolOutlook forecasts=\{forecasts\} gaps=\{gaps\}/)
+    expect(pool).toMatch(/gapsHeadline\(props\.gaps, now\)/)
+    expect(pool).not.toMatch(/forecastHeadline\(/)
+  })
+})
+
 const breakdown = readFileSync(new URL('../src/react/Breakdown.tsx', import.meta.url), 'utf8')
 const queries = readFileSync(new URL('../src/react/queries.ts', import.meta.url), 'utf8')
 
