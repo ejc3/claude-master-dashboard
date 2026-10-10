@@ -157,6 +157,11 @@ export function backupOutputQuery(now: EpochMs): SeriesQuery {
   return chartQuery(now, '24h', { metric: 'tokens', groupBy: 'profile', tokenType: 'output' })
 }
 
+/** Tokens by project over the last day: which projects were active. */
+export function projectsQuery(now: EpochMs): SeriesQuery {
+  return chartQuery(now, '24h', { metric: 'tokens', groupBy: 'project' })
+}
+
 /** Every query the page makes when it opens at `now`: the range and split it opens with. */
 export function firstQueries(now: EpochMs): SeriesQuery[] {
   const split = SPLITS[0]
@@ -172,6 +177,7 @@ export function firstQueries(now: EpochMs): SeriesQuery[] {
     chartQuery(now, FIRST_RANGE, { metric: 'errors' }),
     chartQuery(now, FIRST_RANGE, { metric: 'backupRequests' }),
     backupOutputQuery(now),
+    projectsQuery(now),
     kpiQuery(now, 'requests'),
     kpiQuery(now, 'errors'),
     kpiTokensQuery(now),

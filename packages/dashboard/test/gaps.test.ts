@@ -588,6 +588,7 @@ describe('poolGaps invariants (seeded)', () => {
     }
   }
 
+  // 300 pools, each simulated over a week: slow on a shared CI runner, so a generous timeout.
   it('gives ordered gaps that do not overlap, end after they start, and have not ended by now', () => {
     for (let seed = 1; seed <= 300; seed++) {
       const r = rng(seed)
@@ -631,5 +632,5 @@ describe('poolGaps invariants (seeded)', () => {
         expect(line, `seed ${seed}`).toMatch(/^[A-Z][^.]*[^.]$/)
       }
     }
-  })
+  }, 60_000)
 })

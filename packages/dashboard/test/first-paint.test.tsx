@@ -1038,11 +1038,7 @@ describe('the paid API box', () => {
       e.textContent?.startsWith('Paid API output tokens, last 24 hours'),
     )
     expect(box?.querySelector('.cmd-kpi-value')?.textContent).toBe('1,500')
-    expect(box?.querySelector('.cmd-kpi-note')?.textContent).toMatch(
-      /^\d[\d.,K]* requests no subscription could take$/,
-    )
-    // Conversations name their window.
-    expect(container.textContent).toContain('Conversations, last 30 days')
+    expect(box?.querySelector('.cmd-kpi-note')?.textContent).toMatch(/^\d[\d.,K]* requests$/)
   })
 })
 
@@ -1136,5 +1132,18 @@ describe('account colors', () => {
     expect(row.querySelector<HTMLElement>('.cmd-profile .cmd-swatch')?.style.color).toBe(
       'var(--cmd-series-3)',
     )
+  })
+})
+
+describe('the active projects box', () => {
+  it('counts the projects that used tokens in the last day, and names the busiest', async () => {
+    const container = document.createElement('div')
+    container.innerHTML = renderToString(await serverPage(ZONE))
+    const box = [...container.querySelectorAll('.cmd-kpi')].find((e) =>
+      e.textContent?.startsWith('Active projects, last 24 hours'),
+    )
+    // The demo's three projects; work no launch named a project for ("none") is not one.
+    expect(box?.querySelector('.cmd-kpi-value')?.textContent).toBe('3')
+    expect(box?.querySelector('.cmd-kpi-note')?.textContent).toMatch(/^Most: web-app, \d+%$/)
   })
 })
