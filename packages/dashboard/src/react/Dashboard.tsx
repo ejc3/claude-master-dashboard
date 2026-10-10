@@ -50,6 +50,7 @@ import {
   kpiHourEnd,
   kpiQuery,
   kpiTokensQuery,
+  projectsQuery,
   RANGES,
   type RangeName,
   readingsQuery,
@@ -145,6 +146,16 @@ function DashboardBody(props: DashboardProps) {
   const backup = useSeries(apiBase, chartQuery(now, '24h', { metric: 'backupRequests' }))
   // What the paid API's work cost: its output tokens, the subscription named api-backup.
   const backupOutput = useSeries(apiBase, backupOutputQuery(now))
+  // Projects that used tokens in the last day ("none" is work no launch named a project for).
+  const projectsLoaded = useSeries(apiBase, projectsQuery(now))
+  const projectsData = data(projectsLoaded)
+  const projectTotals = (projectsData ?? [])
+    .filter((s) => s.key !== 'none')
+    .map((s) => ({ key: s.key, total: s.points.reduce((sum, [, v]) => sum + v, 0) }))
+    .filter((p) => p.total > 0)
+    .sort((a, b) => b.total - a.total)
+  const projectsAll = projectTotals.reduce((sum, p) => sum + p.total, 0)
+  const topProject = projectTotals[0]
 
   // Key numbers have their own five-minute queries, whatever the range (kpiRange).
   const kpiRequests = useSeries(apiBase, kpiQuery(now, 'requests'))
@@ -401,12 +412,18 @@ function DashboardBody(props: DashboardProps) {
             }
           />
           <Kpi
-            label="Conversations, last 30 days"
-            value={formatCount(snapshot?.sessions ?? null)}
+            label="Active projects, last 24 hours"
+            value={
+              projectsData === null || projectTotals.length === 0
+                ? '—'
+                : formatCount(projectTotals.length)
+            }
             note={
-              snapshot?.activeConnections == null
-                ? undefined
-                : `${formatCount(snapshot.activeConnections)} connections open now`
+              topProject === undefined
+                ? projectsData === null
+                  ? undefined
+                  : 'None reported yet'
+                : `Most: ${topProject.key}, ${formatPercent(topProject.total / projectsAll)}`
             }
           />
           <Kpi
@@ -415,7 +432,7 @@ function DashboardBody(props: DashboardProps) {
             note={
               backupTotal === null
                 ? undefined
-                : `${formatCount(sumBetween(sumSeries(backupTotal), 0, Infinity))} requests no subscription could take`
+                : `${formatCount(sumBetween(sumSeries(backupTotal), 0, Infinity))} requests`
             }
           />
         </section>
