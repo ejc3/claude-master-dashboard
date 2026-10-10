@@ -2,11 +2,9 @@
 
 import { useState } from 'react'
 import {
-  type Dimension,
   type EpochMs,
   formatCount,
   formatPercent,
-  formatWhen,
   fromFirstBucket,
   type Series,
   type SeriesQuery,
@@ -19,28 +17,10 @@ import {
   tokenCoverage,
   tokenRows,
 } from '../core/index'
-import { useCountedSeries, useSeries } from './hooks'
+import { useSharedAnswers } from './answers'
+import { useCountedSeries, useSeries, useWhen } from './hooks'
+import { breakdownQueries, SPLITS } from './queries'
 import { Sparkline, sharedPeak } from './Sparkline'
-
-const SPLITS: Array<{
-  dimension: Dimension
-  label: string
-  noun: string
-  column: string
-  /** claude-master counts tokens by this split; models have no token projection. */
-  tokens: boolean
-}> = [
-  { dimension: 'client_account', label: 'People', noun: 'person', column: 'Person', tokens: true },
-  { dimension: 'client', label: 'Machines', noun: 'machine', column: 'Machine', tokens: true },
-  {
-    dimension: 'profile',
-    label: 'Subscriptions',
-    noun: 'subscription',
-    column: 'Subscription',
-    tokens: true,
-  },
-  { dimension: 'model', label: 'Models', noun: 'model', column: 'Model', tokens: false },
-]
 
 function ShareCell(props: { share: number }) {
   return (
@@ -66,17 +46,25 @@ export function Breakdown(props: {
   tokenChoice: TokenChoice
   now: EpochMs
 }) {
+  const when = useWhen()
   const [split, setSplit] = useState(SPLITS[0] as (typeof SPLITS)[number])
-  const base = { range: props.range, stepSeconds: props.stepSeconds, groupBy: split.dimension }
-  const requests = useSeries(props.apiBase, { ...base, metric: 'requests' })
+  const queries = breakdownQueries(props.range, props.stepSeconds, split)
+  const requests = useSeries(props.apiBase, queries.requests)
   // One query per token type, each split the same way; none for models.
   const tokenQuery = (tokenType: TokenType): SeriesQuery | null =>
-    split.tokens ? { ...base, metric: 'tokens', tokenType } : null
+    queries.tokens?.[tokenType] ?? null
   const input = useCountedSeries(props.apiBase, tokenQuery('input'))
   const output = useCountedSeries(props.apiBase, tokenQuery('output'))
   const cacheRead = useCountedSeries(props.apiBase, tokenQuery('cache_read'))
   const cacheWrite = useCountedSeries(props.apiBase, tokenQuery('cache_creation'))
   const byTypeLoaded = { input, output, cache_read: cacheRead, cache_creation: cacheWrite }
+  // The rows add the types together: only the range all four answers cover.
+  const byType = useSharedAnswers({
+    input: input.loaded,
+    output: output.loaded,
+    cache_read: cacheRead.loaded,
+    cache_creation: cacheWrite.loaded,
+  })
 
   const typesReady = TOKEN_TYPES.every((t) => byTypeLoaded[t].loaded.state === 'ready')
   const typeFailure = TOKEN_TYPES.map((t) => byTypeLoaded[t].loaded).find(
@@ -93,8 +81,7 @@ export function Breakdown(props: {
     ? tokenRows(
         Object.fromEntries(
           TOKEN_TYPES.map((t) => {
-            const loaded = byTypeLoaded[t].loaded
-            const series: Series[] = loaded.state === 'ready' ? loaded.data : []
+            const series: Series[] = byType?.data[t] ?? []
             return [t, fromFirstBucket(series, firstAt, props.stepSeconds)]
           }),
         ) as Record<TokenType, Series[]>,
@@ -129,7 +116,7 @@ export function Breakdown(props: {
     : coverage === 'none'
       ? 'No token counts for this range yet; showing requests.'
       : coverage === 'partial' && firstAt !== null
-        ? `Token counts start ${formatWhen(firstAt, props.now)}; nothing was counted before.`
+        ? `Token counts start ${when === null ? 'partway through this range' : when(firstAt, props.now)}; nothing was counted before.`
         : null
   const loading = tokensPending || (!showTokens && requests.state === 'loading')
   const requestsFailure =

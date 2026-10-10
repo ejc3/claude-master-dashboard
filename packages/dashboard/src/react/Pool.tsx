@@ -9,13 +9,12 @@ import {
   forecastState,
   formatCountdown,
   formatPercent,
-  formatWhen,
   type PoolForecast,
   type PoolTone,
   reportingAll,
   type WindowKind,
 } from '../core'
-import { useHydrated } from './hooks'
+import { useWhen } from './hooks'
 
 const WINDOW_NAME: Record<WindowKind, string> = {
   weekly: 'Weekly allowance',
@@ -67,9 +66,8 @@ export function forecastCellState(
 
 function ForecastCell(props: { forecast: PoolForecast; now: EpochMs }) {
   const { forecast: f, now } = props
-  const hydrated = useHydrated()
-  // Wall-clock times depend on the viewer's time zone, so they appear after hydration.
-  const at = (t: EpochMs) => (hydrated ? `, ${formatWhen(t, now)}` : '')
+  const when = useWhen()
+  const at = (t: EpochMs) => (when === null ? '' : `, ${when(t, now)}`)
   let value: string
   let detail: string
   const state = forecastCellState(f, now)
@@ -88,11 +86,11 @@ function ForecastCell(props: { forecast: PoolForecast; now: EpochMs }) {
   } else if (kind === 'clips' && f.clipsAt !== null) {
     const clipsAt = f.clipsAt
     value = `Runs out in ${formatCountdown(clipsAt - now)}`
-    const when = hydrated ? formatWhen(clipsAt, now) : 'Then'
+    const then = when === null ? 'Then' : when(clipsAt, now)
     detail =
       f.recoversAt === null
-        ? `${when}; no reset time is known.`
-        : `${when}, for ${formatCountdown(f.recoversAt - clipsAt)} until the first reset.`
+        ? `${then}; no reset time is known.`
+        : `${then}, for ${formatCountdown(f.recoversAt - clipsAt)} until the first reset.`
   } else if (kind === 'unknown') {
     value = 'No reading'
     detail = 'No subscription reports this window yet.'

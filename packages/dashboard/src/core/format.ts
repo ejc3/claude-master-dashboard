@@ -73,3 +73,21 @@ export function formatWhen(at: EpochMs, now: EpochMs, timeZone?: string): string
   }
   return new Intl.DateTimeFormat('en', { ...options, month: 'short', day: 'numeric' }).format(at)
 }
+
+/** The cookie in which the browser tells the server the viewer's time zone. */
+export const TIME_ZONE_COOKIE = 'cmd-tz'
+
+/**
+ * An IANA time zone name the formatter accepts, or null: a cookie value is the viewer's to set,
+ * so anything else is ignored rather than trusted.
+ */
+export function timeZoneOrNull(value: string | null | undefined): string | null {
+  if (typeof value !== 'string' || value.length === 0 || value.length > 64) return null
+  if (!/^[A-Za-z0-9_+\-/]+$/.test(value)) return null
+  try {
+    new Intl.DateTimeFormat('en', { timeZone: value })
+    return value
+  } catch {
+    return null
+  }
+}

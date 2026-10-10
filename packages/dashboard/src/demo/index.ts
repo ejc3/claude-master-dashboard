@@ -101,7 +101,7 @@ const PROFILES: readonly DemoProfile[] = [
     fiveHourUsed: 0.82,
     fiveHourResetsInMs: 1.4 * HOUR_MS,
     cooldownMs: null,
-    tokenLeftMs: 2 * HOUR_MS,
+    tokenLeftMs: 4.5 * HOUR_MS,
     latencyScale: 1.1,
   },
   {
@@ -123,12 +123,14 @@ const PROFILES: readonly DemoProfile[] = [
     fiveHourUsed: null,
     fiveHourResetsInMs: 0,
     cooldownMs: 7 * MINUTE_MS,
-    tokenLeftMs: 40 * MINUTE_MS,
+    tokenLeftMs: 6 * HOUR_MS,
     latencyScale: 1.3,
   },
 ]
 
 const TOKEN_LIFETIME_MS = 8 * HOUR_MS
+// claude-master renews a login with four hours left, so a token reads between four and eight.
+const TOKEN_RENEW_AT_MS = 4 * HOUR_MS
 const REQUESTS_PER_MINUTE = 40
 
 // FNV-1a folded to [0, 1): the same inputs always give the same number.
@@ -249,7 +251,14 @@ export function createDemoSource(options: DemoOptions = {}): MetricsSource {
             return usedAt(p.weeklyUsed, now + p.weeklyResetsInMs, WEEK_MS, now, m)
           if (metric === 'weeklyResetsInSeconds')
             return mod(now + p.weeklyResetsInMs - m, WEEK_MS) / 1000
-          return mod(now + p.tokenLeftMs - m, TOKEN_LIFETIME_MS) / 1000
+          return (
+            (TOKEN_RENEW_AT_MS +
+              mod(
+                now + p.tokenLeftMs - TOKEN_RENEW_AT_MS - m,
+                TOKEN_LIFETIME_MS - TOKEN_RENEW_AT_MS,
+              )) /
+            1000
+          )
         })
         if (groupBy !== undefined) return values
         return [reduce(metric === 'tokenExpiresInSeconds' ? 'MIN' : 'MAX', values)]
