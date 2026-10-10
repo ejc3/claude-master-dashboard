@@ -73,7 +73,7 @@ describe('wire format', () => {
 })
 
 describe('headline', () => {
-  it('counts a cooling-down or exhausted subscription as without headroom', () => {
+  it('counts a rate-limited or exhausted subscription as without headroom', () => {
     expect(hasHeadroom(profile('a'), NOW)).toBe(true)
     expect(hasHeadroom(profile('a', { band: 'exhausted' }), NOW)).toBe(false)
     expect(hasHeadroom(profile('a', { rateLimitedUntil: NOW + 60_000 }), NOW)).toBe(false)
@@ -114,15 +114,15 @@ describe('headline', () => {
       weekly: { usedFraction: 1, resetsAt: NOW + 9 * HOUR_MS, lengthMs: WEEK_MS },
       fiveHour: { usedFraction: 1, resetsAt: NOW + 0.5 * HOUR_MS, lengthMs: FIVE_HOURS_MS },
     })
-    const cooling = profile('cooling', { rateLimitedUntil: NOW + 2 * HOUR_MS })
+    const limited = profile('limited', { rateLimitedUntil: NOW + 2 * HOUR_MS })
     const expired = profile('expired', { tokenExpiresAt: NOW - 1 })
-    expect(nextAvailable([weeklySpent, cooling, expired], NOW)).toEqual({
-      profile: 'cooling',
+    expect(nextAvailable([weeklySpent, limited, expired], NOW)).toEqual({
+      profile: 'limited',
       at: NOW + 2 * HOUR_MS,
     })
     expect(nextAvailable([weeklySpent], NOW)?.at).toBe(NOW + 9 * HOUR_MS)
     expect(nextAvailable([expired], NOW)).toBeNull()
-    // Used up with an unknown reset: a shorter cooldown does not make it available.
+    // Used up with an unknown reset: a shorter rate limit does not make it available.
     const unknownReset = profile('unknown', {
       band: 'exhausted',
       weekly: { usedFraction: 1, resetsAt: null, lengthMs: WEEK_MS },

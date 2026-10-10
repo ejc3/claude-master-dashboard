@@ -27,7 +27,7 @@ export interface ProfileStatus {
   weekly: QuotaWindow
   /** Null when the source does not report the 5-hour window. */
   fiveHour: QuotaWindow | null
-  /** When claude-master's cooldown after a 429 ends; null when there is none. */
+  /** When claude-master tries the subscription again after Anthropic rate-limited it (a 429); null when it is not rate-limited. */
   rateLimitedUntil: EpochMs | null
   /** When the profile's login token expires; null when unknown. */
   tokenExpiresAt: EpochMs | null
