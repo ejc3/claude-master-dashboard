@@ -53,9 +53,9 @@ targets, always:
   `claude-master-dashboard/aws-reader`, the allowlist from `people/addresses`, the account
   aliases built from `claude-master/account-labels`, and the Access values from `terraform
   output claude_master_dashboard` in ejc3/aws. A Vercel copy takes the same values from the
-  same containers. A secret changed on one platform only is a bug. Never commit one, never
-  print one. A platform's own deploy credentials (the Cloudflare deploy token, Vercel tokens)
-  are not app secrets and stay with their platform.
+  same containers. A secret the app needs that exists on one platform only is a bug. Never
+  commit one, never print one. A platform's own deploy credentials (the Cloudflare deploy
+  token, Vercel tokens) are not app secrets and stay with their platform.
 - **Public build-time values** (`NEXT_PUBLIC_*`) are Actions variables mapped into the build
   step of `.github/workflows/deploy.yml` (only the names mapped there reach the build); a
   Vercel copy must use the same values.
