@@ -17,7 +17,7 @@ import {
   type WindowKind,
 } from '../core'
 import { useWhen } from './hooks'
-import { LineChart } from './LineChart'
+import { LineChart, seriesColors } from './LineChart'
 
 // Shape as well as color: check, triangle, cross, circle.
 const TONE_ICON: Record<PoolTone, ReactNode> = {
@@ -250,11 +250,20 @@ function capacitySeries(gaps: PoolGaps | null, now: EpochMs, resets: EpochMs[]) 
     gaps.trace
       .filter((p) => p.at >= now - every && p.at <= until && (p.at - start) % every === 0)
       .map((p): [EpochMs, number] => [p.at, p[key]])
+  // Each subscription's week, for the stacked weekly chart.
+  const weeklyBy = gaps.subscriptions.map((name, k) => ({
+    name,
+    points: gaps.trace
+      .filter((p) => p.at >= now - HOUR_MS && p.at <= weeklyUntil && (p.at - start) % HOUR_MS === 0)
+      .map((p): [EpochMs, number] => [p.at, p.weeklyBy[k] ?? 0]),
+  }))
   return {
     weekly: points('weekly', weeklyUntil, HOUR_MS),
+    weeklyBy,
     fiveHour: points('fiveHour', fiveUntil, TRACE_STEP_MS),
     bands: gaps.gaps.map((g) => ({ start: g.start, end: g.end ?? horizonEnd })),
     capacity: gaps.capacity,
+    subscriptionsShown: gaps.subscriptions,
   }
 }
 
@@ -293,7 +302,10 @@ export function CapacityOutlook(props: {
     [props.gapsIfStopped, now, resets],
   )
   if (projected === null) return null
-  const weekly = weeklyView === 'stopped' && stopped !== null ? stopped : projected
+  // One toggle for both charts: use going on at the recent pace, or none from now (what is left
+  // then only comes back as limits reset).
+  const shown = weeklyView === 'stopped' && stopped !== null ? stopped : projected
+  const weekly = shown
   const chart = (
     key: 'weekly' | 'fiveHour',
     series: NonNullable<typeof projected>,
@@ -321,30 +333,59 @@ export function CapacityOutlook(props: {
   }
   return (
     <div className="cmd-capacity">
+      {stopped !== null && (
+        <fieldset className="cmd-segmented cmd-capacity-tabs">
+          <legend className="cmd-visually-hidden">Forecast</legend>
+          <button
+            type="button"
+            aria-pressed={weeklyView === 'projected'}
+            onClick={() => setWeeklyView('projected')}
+          >
+            Projected
+          </button>
+          <button
+            type="button"
+            aria-pressed={weeklyView === 'stopped'}
+            onClick={() => setWeeklyView('stopped')}
+          >
+            Resets only
+          </button>
+        </fieldset>
+      )}
       <div className="cmd-capacity-weekly">
-        {stopped !== null && (
-          <fieldset className="cmd-segmented cmd-capacity-tabs">
-            <legend className="cmd-visually-hidden">Weekly limit forecast</legend>
-            <button
-              type="button"
-              aria-pressed={weeklyView === 'projected'}
-              onClick={() => setWeeklyView('projected')}
-            >
-              Projected
-            </button>
-            <button
-              type="button"
-              aria-pressed={weeklyView === 'stopped'}
-              onClick={() => setWeeklyView('stopped')}
-            >
-              Subscription resets
-            </button>
-          </fieldset>
-        )}
-        {chart('weekly', weekly, 'Weekly limit left', 'var(--cmd-series-1)')}
+        {(() => {
+          // Stacked by subscription: the top is the pool's total, each band one subscription's.
+          const current =
+            weekly.weekly.filter(([t]) => t <= props.now).at(-1)?.[1] ?? weekly.weekly[0]?.[1]
+          const names = (props.profiles ?? []).map((p) => p.profile)
+          const short = shortNames(names.length > 0 ? names : weekly.subscriptionsShown)
+          const colors = seriesColors(names, weekly.subscriptionsShown)
+          return weekly.weekly.length < 2 ? null : (
+            <LineChart
+              title={`Weekly limit left${current === undefined ? '' : ` · ${asPercent(current)}`}`}
+              series={weekly.weeklyBy.map((s) => ({
+                key: s.name,
+                label: short.get(s.name) ?? s.name,
+                color: colors.get(s.name) ?? 'var(--cmd-ink-3)',
+                points: s.points,
+              }))}
+              format={asPercent}
+              max={weekly.capacity}
+              bands={weekly.bands}
+              bandLabel="None available"
+              table={false}
+              height={180}
+              now={now}
+              stacked
+            />
+          )
+        })()}
       </div>
-      {chart('fiveHour', projected, '5-hour limit left, next 24h', 'var(--cmd-series-2)')}
+      {chart('fiveHour', shown, '5-hour limit left, next 24h', 'var(--cmd-series-2)')}
       <p className="cmd-capacity-note">
+        {weeklyView === 'stopped'
+          ? 'If nothing more is used: capacity only comes back as each limit resets. '
+          : 'If use goes on at the recent pace. '}
         100% = one subscription's limit · {projected.capacity * 100}% = all {projected.capacity}{' '}
         unused · shaded: none available
       </p>

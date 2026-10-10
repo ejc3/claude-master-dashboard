@@ -436,7 +436,8 @@ describe('poolGaps capacity trace', () => {
       rates({ a: 0.01, b: 0.01 }),
     )
     const at = (h: number) => g.trace.find((p) => p.at === NOW + h * H)
-    expect(g.trace[0]).toEqual({ at: NOW, weekly: 1, fiveHour: 2 })
+    expect(g.trace[0]).toEqual({ at: NOW, weekly: 1, fiveHour: 2, weeklyBy: [0.5, 0.5] })
+    expect(g.subscriptions).toEqual(['a', 'b'])
     // 2% of one subscription's week an hour: 0.98 left after an hour.
     expect(at(1)?.weekly).toBeCloseTo(0.98, 6)
     // a's week resets at 24h: what is left jumps by a's used share.
@@ -498,6 +499,7 @@ describe('gapsHeadline', () => {
     lasts: null,
     trace: [],
     capacity: 2,
+    subscriptions: [],
     pace: { weekly: 0, fiveHour: 0 },
     unusedAtReset: [],
     ...over,
