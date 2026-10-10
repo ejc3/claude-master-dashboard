@@ -5,10 +5,11 @@ export const SUBSCRIPTION_HOLD_MS = 60 * 60_000
 
 /**
  * How many subscriptions were in the pool at each step of `query`'s grid, from their weekly
- * readings as the source returned them (not zero-filled): one counts in a step when it has a
- * finite reading in that step or within SUBSCRIPTION_HOLD_MS before it, so a missed export or
- * the step CloudWatch has not filled yet does not drop it. A subscription added shows as a step
- * up; one removed, a step down an hour after its last reading.
+ * readings as the source returned them (not zero-filled; one point per bucket, at the bucket's
+ * start): one counts in a step when it has a finite reading in that step or in a bucket that
+ * ended within SUBSCRIPTION_HOLD_MS before it, so a missed export or the step CloudWatch has not
+ * filled yet does not drop it. A subscription added shows as a step up; one removed, a step down
+ * an hour after its last bucket.
  */
 export function subscriptionCount(
   readings: readonly Series[],
@@ -30,8 +31,8 @@ export function subscriptionCount(
   ) {
     let count = 0
     for (const ts of times) {
-      // A reading before the step's end and no older than the hold.
-      if (ts.some((t) => t < at + stepMs && t > at - holdMs)) count++
+      // A reading before the step's end whose bucket ended no longer than the hold ago.
+      if (ts.some((t) => t < at + stepMs && t + stepMs > at - holdMs)) count++
     }
     out.push([at, count])
   }
