@@ -76,7 +76,13 @@ function paceNote(window: QuotaWindow, now: EpochMs): string | null {
   return runOut === null ? null : `Runs out in ${formatCountdown(runOut - now)} at this pace.`
 }
 
-function WindowRow(props: { name: string; window: QuotaWindow; now: EpochMs }) {
+function WindowRow(props: {
+  name: string
+  window: QuotaWindow
+  now: EpochMs
+  /** A 5-hour window whose known reset has passed: no window is open. */
+  closed?: boolean
+}) {
   const { name, window, now } = props
   const when = useWhen()
   const elapsed = elapsedFraction(window, now)
@@ -85,12 +91,11 @@ function WindowRow(props: { name: string; window: QuotaWindow; now: EpochMs }) {
   const note = paceNote(window, now)
   const resetsAt = window.resetsAt
   // The wall-clock time needs the viewer's time zone; without it, only the countdown shows.
-  const reset =
-    resetsAt === null && window.usedFraction === 0
-      ? 'No window open'
-      : resetsAt === null || resetsAt <= now
-        ? 'Reset time unknown'
-        : `Resets in ${formatCountdown(resetsAt - now)}${when === null ? '' : `, ${when(resetsAt, now)}`}`
+  const reset = props.closed
+    ? 'No window open'
+    : resetsAt === null || resetsAt <= now
+      ? 'Reset time unknown'
+      : `Resets in ${formatCountdown(resetsAt - now)}${when === null ? '' : `, ${when(resetsAt, now)}`}`
   const description = `${name}: ${formatPercent(used)} used, ${elapsed === null ? 'time elapsed unknown' : `${formatPercent(elapsed)} of the window elapsed`}. ${reset}.`
   return (
     <div className="cmd-window">
@@ -155,6 +160,7 @@ export function RunwayCard({ status, now }: { status: ProfileStatus; now: EpochM
           name="5-hour"
           window={fiveHourAt(status.fiveHour, now) ?? status.fiveHour}
           now={now}
+          closed={status.fiveHour.resetsAt !== null && status.fiveHour.resetsAt <= now}
         />
       )}
     </article>

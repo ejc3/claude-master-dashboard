@@ -490,4 +490,20 @@ describe('the 5-hour row', () => {
     expect(container.textContent).toContain('No window open')
     expect(container.textContent).not.toContain('100%')
   })
+
+  it('says the reset time is unknown, not that no window is open, when none was read', () => {
+    const status: ProfileStatus = {
+      profile: 'alpha',
+      band: 'ok',
+      weekly: { usedFraction: 0, resetsAt: null, lengthMs: 168 * HOUR_MS },
+      fiveHour: { usedFraction: 0, resetsAt: null, lengthMs: 5 * HOUR_MS },
+      rateLimitedUntil: null,
+      tokenExpiresAt: null,
+      latencyMs: { p50: null, p95: null, p99: null },
+    }
+    const container = document.createElement('div')
+    container.innerHTML = renderToString(<RunwayCard status={status} now={NOW} />)
+    expect(container.textContent).not.toContain('No window open')
+    expect(container.textContent?.match(/Reset time unknown/g)).toHaveLength(2)
+  })
 })
