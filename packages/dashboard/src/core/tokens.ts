@@ -66,8 +66,9 @@ export interface TokenRow {
 
 /**
  * Rows from one query per token type, each grouped by the same dimension and on the same grid:
- * every key that appears in any type, with its four totals, the chosen total and trend, largest
- * chosen total first (ties by name).
+ * every key with any tokens in the range, with its four totals, the chosen total and trend,
+ * largest chosen total first (ties by name). A key that appears with no tokens of any type
+ * (a label CloudWatch still lists) has no row.
  */
 export function tokenRows(
   byType: Partial<Record<TokenType, readonly Series[]>>,
@@ -85,6 +86,7 @@ export function tokenRows(
       if (choice !== 'all' && choice !== type) continue
       for (const [t, v] of series?.points ?? []) trend.set(t, (trend.get(t) ?? 0) + v)
     }
+    if (TOKEN_TYPES.every((type) => totals[type] === 0)) continue
     const total =
       choice === 'all' ? TOKEN_TYPES.reduce((sum, type) => sum + totals[type], 0) : totals[choice]
     rows.push({

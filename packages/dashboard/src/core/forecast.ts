@@ -351,7 +351,24 @@ export function forecastSeverity(f: PoolForecast, now: EpochMs): number {
   }
 }
 
-/** The answer to "will we run out?": the most severe forecast, and its tone. */
+/** How long a run-out lasts, in words (", for 2d 2h"); nothing when no reset time is known. */
+function outFor(f: PoolForecast): string {
+  return f.clipsAt === null || f.recoversAt === null
+    ? ''
+    : `, for ${formatCountdown(f.recoversAt - f.clipsAt)}`
+}
+
+/** How long a pool that is out now stays out (", for 2d 2h"); nothing when that is unknown. */
+function outNowFor(f: PoolForecast, now: EpochMs): string {
+  return f.recoversAt === null ? '' : `, for ${formatCountdown(f.recoversAt - now)}`
+}
+
+/**
+ * The answer to "will we run out?": the most severe forecast, and its tone, with how long the
+ * gap lasts when that is known. One window only: the two forecasts are made apart (the weekly
+ * one does not see 5-hour gaps; the 5-hour one routes only to weeks with room), so a sentence
+ * joining them can be false. Each window's card says its own.
+ */
 export function forecastHeadline(
   forecasts: PoolForecast[] | null,
   now: EpochMs,
@@ -359,10 +376,14 @@ export function forecastHeadline(
   if (forecasts === null || forecasts.length === 0) {
     return { tone: 'info', headline: 'Waiting for the first reading.', window: null }
   }
+  // On a tie the weekly one leads, whatever the order given: a 5-hour forecast routes only to
+  // weeks with room, so when both are out at once it may be the weeks that are full.
+  const weeklyFirst = (f: PoolForecast) => (f.window === 'weekly' ? 0 : 1)
   const ranked = [...forecasts].sort(
     (a, b) =>
       forecastSeverity(a, now) - forecastSeverity(b, now) ||
-      (a.clipsAt ?? Number.POSITIVE_INFINITY) - (b.clipsAt ?? Number.POSITIVE_INFINITY),
+      (a.clipsAt ?? Number.POSITIVE_INFINITY) - (b.clipsAt ?? Number.POSITIVE_INFINITY) ||
+      weeklyFirst(a) - weeklyFirst(b),
   )
   const top = ranked[0] as PoolForecast
   const { state, partial } = forecastState(top, now)
@@ -383,13 +404,13 @@ export function forecastHeadline(
     case 'out':
       return {
         tone: partial ? 'warning' : 'error',
-        headline: `The pool is out of ${ALLOWANCE[window]} now${among(top)}.`,
+        headline: `The pool is out of ${ALLOWANCE[window]} now${outNowFor(top, now)}${among(top)}.`,
         window,
       }
     case 'clips':
       return {
         tone: 'warning',
-        headline: `At this pace the pool runs out of its ${ALLOWANCE[window]} in ${formatCountdown((top.clipsAt as EpochMs) - now)}${among(top)}.`,
+        headline: `At this pace the pool runs out of its ${ALLOWANCE[window]} in ${formatCountdown((top.clipsAt as EpochMs) - now)}${outFor(top)}${among(top)}.`,
         window,
       }
     case 'lasts':

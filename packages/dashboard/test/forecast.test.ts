@@ -200,12 +200,31 @@ describe('forecastHeadline', () => {
   })
 
   it('leads with the soonest run-out', () => {
-    const h = forecastHeadline([weeklyAt(NOW + 30 * HOUR_MS), fiveAt(NOW + 2 * HOUR_MS)], NOW)
+    const h = forecastHeadline([weeklyAt(null, 'horizon'), fiveAt(NOW + 2 * HOUR_MS)], NOW)
     expect(h).toEqual({
       tone: 'warning',
       headline: 'At this pace the pool runs out of its 5-hour capacity in 2h.',
       window: 'fiveHour',
     })
+  })
+
+  it('says how long the gap lasts, for the most severe window only', () => {
+    const five = {
+      ...fiveAt(NOW + 19 * MIN),
+      recoversAt: NOW + 19 * MIN + 206 * MIN,
+      unreported: 3,
+      counted: 1,
+    }
+    const weekly = { ...weeklyAt(NOW + 517 * MIN), recoversAt: NOW + 517 * MIN + 50 * HOUR_MS }
+    expect(forecastHeadline([weekly, five], NOW)).toEqual({
+      tone: 'warning',
+      headline:
+        'At this pace the pool runs out of its 5-hour capacity in 19m, for 3h 26m (the 1 reporting it).',
+      window: 'fiveHour',
+    })
+    expect(
+      forecastHeadline([{ ...fiveAt(NOW), recoversAt: NOW + 3 * HOUR_MS }], NOW).headline,
+    ).toBe('The pool is out of 5-hour capacity now, for 3h.')
   })
 
   it('says when the pool is out now', () => {
@@ -222,6 +241,46 @@ describe('forecastHeadline', () => {
       'info',
     )
     expect(forecastHeadline(null, NOW).tone).toBe('info')
+  })
+})
+
+describe('forecastHeadline from both forecasts', () => {
+  const sub = (
+    name: string,
+    weeklyUsed: number,
+    weeklyResetsIn: number,
+    fiveUsed: number,
+    fiveResetsIn: number,
+  ): ProfileStatus =>
+    profile(name, {
+      weekly: weekly(weeklyUsed, weeklyResetsIn),
+      fiveHour: { usedFraction: fiveUsed, resetsAt: NOW + fiveResetsIn, lengthMs: FIVE_HOURS_MS },
+    })
+  const both = (profiles: ProfileStatus[], smoothed = new Map<string, number>()) => [
+    poolForecast(profiles, 'weekly', NOW, smoothed, NOW),
+    poolForecast(profiles, 'fiveHour', NOW, new Map(), NOW),
+  ]
+
+  it('names the weekly gap when every week is full, in either order', () => {
+    // The 5-hour forecast is out too, only because it routes to weeks with room.
+    const forecasts = both([
+      sub('a', 1, 50 * HOUR_MS, 0.1, 3 * HOUR_MS),
+      sub('b', 1, 60 * HOUR_MS, 0.1, 3 * HOUR_MS),
+    ])
+    const headline = 'The pool is out of weekly allowance now, for 2d 2h.'
+    expect(forecastHeadline(forecasts, NOW).headline).toBe(headline)
+    expect(forecastHeadline([...forecasts].reverse(), NOW).headline).toBe(headline)
+  })
+
+  it('names the weekly gap when both are out and some weeks are what is full', () => {
+    // b's 5-hour window has room; its full week is what stops it.
+    const forecasts = both([
+      sub('a', 1, HOUR_MS, 1, 4 * HOUR_MS),
+      sub('b', 1, 2 * HOUR_MS, 0.1, 3 * HOUR_MS),
+    ])
+    const headline = 'The pool is out of weekly allowance now, for 1h.'
+    expect(forecastHeadline(forecasts, NOW).headline).toBe(headline)
+    expect(forecastHeadline([...forecasts].reverse(), NOW).headline).toBe(headline)
   })
 })
 
@@ -299,7 +358,7 @@ describe('review fixes', () => {
     expect(f).toMatchObject({ counted: 1, unreported: 1, clipsAt: NOW })
     expect(forecastHeadline([f], NOW)).toMatchObject({
       tone: 'warning',
-      headline: 'The pool is out of 5-hour capacity now (the 1 reporting it).',
+      headline: 'The pool is out of 5-hour capacity now, for 1h (the 1 reporting it).',
     })
   })
 
@@ -496,7 +555,7 @@ describe('review fixes', () => {
     const out = forecast({ window: 'fiveHour', clipsAt: NOW, recoversAt: NOW + HOUR_MS })
     expect(forecastHeadline([logins, out], NOW)).toMatchObject({
       tone: 'error',
-      headline: 'The pool is out of 5-hour capacity now.',
+      headline: 'The pool is out of 5-hour capacity now, for 1h.',
     })
     expect(forecastHeadline([logins], NOW).tone).toBe('warning')
   })

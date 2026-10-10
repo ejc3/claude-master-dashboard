@@ -35,6 +35,14 @@ function ShareCell(props: { share: number }) {
   )
 }
 
+/** One row per key with any requests in the range, most first. */
+export function requestTable(series: Series[]): Array<Series & { total: number }> {
+  return series
+    .map((s) => ({ ...s, total: s.points.reduce((sum, [, v]) => sum + v, 0) }))
+    .filter((s) => s.total > 0)
+    .sort((a, b) => b.total - a.total)
+}
+
 /** Who and what used the pool in the range, one split at a time: tokens, or requests for models. */
 export function Breakdown(props: {
   apiBase: string
@@ -88,12 +96,7 @@ export function Breakdown(props: {
         props.tokenChoice,
       )
     : []
-  const requestRows =
-    requests.state === 'ready'
-      ? requests.data
-          .map((s) => ({ ...s, total: s.points.reduce((sum, [, v]) => sum + v, 0) }))
-          .sort((a, b) => b.total - a.total)
-      : []
+  const requestRows = requests.state === 'ready' ? requestTable(requests.data) : []
   // A token query that failed shows its error, never a quiet switch to requests.
   const tokenError =
     split.tokens && typeFailure !== undefined && typeFailure.state === 'error'
