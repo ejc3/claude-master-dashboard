@@ -1163,6 +1163,13 @@ describe('the breakdown table', () => {
     const demo = createDemoSource({ now: () => NOW })
     return {
       ...demo,
+      snapshot: async () => {
+        const snapshot = await demo.snapshot()
+        return {
+          ...snapshot,
+          profiles: snapshot.profiles.map((p) => ({ ...p, profile: `team-${p.profile}` })),
+        }
+      },
       series: async (q) => {
         const series = await demo.series(q)
         return q.groupBy === 'profile'
@@ -1239,6 +1246,21 @@ describe('the breakdown table', () => {
     }
     expect(sum).toBeGreaterThan(0)
     expect(phoneTotal).toBe(formatCount(sum))
+
+    // Above the table, the same rows over time, stacked, one band per row in the table's order,
+    // named short and in each subscription's own color.
+    const panel = container.querySelector('section[aria-labelledby="cmd-breakdown-title"]')
+    const chart = panel?.querySelector('figure')
+    expect(chart?.querySelector('figcaption')?.textContent).toBe(
+      'Tokens per 5 minutes, by subscription',
+    )
+    const legend = [...(chart?.querySelectorAll('.cmd-legend-toggle') ?? [])]
+    const rowNames = [...table.querySelectorAll('tbody th .cmd-phone')].map((e) => e.textContent)
+    expect(legend.map((b) => b.textContent)).toEqual(rowNames)
+    const colors = accountColors(rowNames.map((n) => `team-${n}`))
+    expect(
+      legend.map((b) => (b.querySelector('.cmd-swatch') as HTMLElement | null)?.style.color),
+    ).toEqual(rowNames.map((n) => colors.get(`team-${n}`)))
   })
 })
 

@@ -546,6 +546,7 @@ function DashboardBody(props: DashboardProps) {
           range={range}
           stepSeconds={chosen.stepSeconds}
           rangeWords={rangeWords}
+          per={chosen.per}
           tokenChoice={tokenChoice}
           now={now}
           colors={subscriptionColors}

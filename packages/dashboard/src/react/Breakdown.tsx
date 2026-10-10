@@ -19,6 +19,7 @@ import {
 } from '../core/index'
 import { useSharedAnswers } from './answers'
 import { useCountedSeries, useSeries, useWhen } from './hooks'
+import { type ChartSeries, foldSeries, LineChart, seriesColors } from './LineChart'
 import { shortNames } from './Pool'
 import { breakdownQueries, SPLITS } from './queries'
 import { Sparkline, sharedPeak } from './Sparkline'
@@ -84,6 +85,8 @@ export function Breakdown(props: {
   stepSeconds: number
   /** The range in words, for the title ("last 24 hours"). */
   rangeWords: string
+  /** Each point's width in words, for the chart's title ("per hour"). */
+  per: string
   /** Which token type the share and trend columns use. */
   tokenChoice: TokenChoice
   now: EpochMs
@@ -148,6 +151,21 @@ export function Breakdown(props: {
     split.dimension === 'profile' ? shortNames(rows.map((r) => r.key)) : new Map<string, string>()
   const color = (key: string) =>
     split.dimension === 'profile' ? props.colors?.get(key) : undefined
+  // Each row's share over time, stacked, so the top is the total and each band one row; the
+  // smallest beyond eight fold into Other. Subscriptions keep their colors from the rest of the
+  // page (seriesColors over the known ones, as the subscription chart does), and a key that is not
+  // one (the paid API) takes a free color.
+  const folded = foldSeries(rows)
+  const chartColors = seriesColors(
+    split.dimension === 'profile' ? [...(props.colors?.keys() ?? [])] : folded.map((r) => r.key),
+    folded.map((r) => r.key),
+  )
+  const stacked: ChartSeries[] = folded.map((r) => ({
+    key: r.key,
+    label: short.get(r.key) ?? r.key,
+    color: chartColors.get(r.key) ?? 'var(--cmd-ink-3)',
+    points: r.points,
+  }))
 
   const what = showTokens
     ? props.tokenChoice === 'all'
@@ -206,6 +224,19 @@ export function Breakdown(props: {
       {failure !== null && <p className="cmd-error cmd-panel-pad">{failure.message}</p>}
       {!loading && rows.length === 0 && failure === null && (
         <p className="cmd-empty cmd-panel-pad">Nothing in this range.</p>
+      )}
+      {rows.length > 0 && (
+        <div className="cmd-panel-pad cmd-breakdown-chart">
+          <LineChart
+            title={`${what} ${props.per}, by ${split.noun}`}
+            series={stacked}
+            format={formatCount}
+            integer
+            height={180}
+            now={props.now}
+            stacked
+          />
+        </div>
       )}
       {rows.length > 0 && (
         <div className="cmd-table-wrap">
