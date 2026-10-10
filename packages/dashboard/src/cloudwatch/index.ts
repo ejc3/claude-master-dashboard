@@ -4,6 +4,7 @@ import { AwsClient } from 'aws4fetch'
 import { insightsQuery, resolveMetric } from '../core/catalog'
 import { validateSeriesQuery } from '../core/query'
 import {
+  type AlarmStatus,
   type Band,
   type EpochMs,
   FIVE_HOURS_MS,
@@ -47,6 +48,22 @@ export interface CloudWatchSourceOptions {
 }
 
 /** CloudWatch refused or failed a request; `code` is its error type, the message its text. */
+/** The alarms the dashboard shows: claude-master's, all named with this prefix. */
+export const ALARM_PREFIX = 'claude-master'
+
+interface WireAlarm {
+  AlarmName?: unknown
+  StateValue?: unknown
+  /** Epoch seconds in CloudWatch's JSON protocol. */
+  StateUpdatedTimestamp?: unknown
+}
+
+interface WireAlarms {
+  MetricAlarms?: WireAlarm[]
+  CompositeAlarms?: WireAlarm[]
+  NextToken?: string
+}
+
 export class CloudWatchError extends Error {
   readonly status: number
   readonly code: string
@@ -241,12 +258,15 @@ export function createCloudWatchSource(options: CloudWatchSourceOptions): Metric
   })
   const cache = new Map<string, CacheEntry>()
 
-  async function call(body: Record<string, unknown>): Promise<WireResponse> {
+  async function call(
+    body: Record<string, unknown>,
+    action = 'GetMetricData',
+  ): Promise<WireResponse> {
     const request = await client.sign(endpoint, {
       method: 'POST',
       headers: {
         'content-type': 'application/x-amz-json-1.0',
-        'x-amz-target': 'GraniteServiceVersion20100801.GetMetricData',
+        'x-amz-target': `GraniteServiceVersion20100801.${action}`,
       },
       body: JSON.stringify(body),
     })
@@ -338,7 +358,42 @@ export function createCloudWatchSource(options: CloudWatchSourceOptions): Metric
   const gauge = (statistic: 'MAX' | 'MIN', metric: string, groupBy: readonly string[]) =>
     gaugeQuery(namespace, statistic, `claude_master.${metric}`, { groupBy })
 
+  // The alarms, read at most once a minute (an answer, not a request in flight, as `cached`).
+  let alarmsCache: { expiresAt: EpochMs; alarms: AlarmStatus[] } | null = null
+
   return {
+    async alarms(): Promise<AlarmStatus[]> {
+      const now = clock()
+      if (alarmsCache !== null && alarmsCache.expiresAt > now) return alarmsCache.alarms
+      const alarms: AlarmStatus[] = []
+      let nextToken: string | undefined
+      do {
+        const page = (await call(
+          {
+            AlarmNamePrefix: ALARM_PREFIX,
+            AlarmTypes: ['MetricAlarm', 'CompositeAlarm'],
+            MaxRecords: 100,
+            ...(nextToken === undefined ? {} : { NextToken: nextToken }),
+          },
+          'DescribeAlarms',
+        )) as WireAlarms
+        for (const alarm of [...(page.MetricAlarms ?? []), ...(page.CompositeAlarms ?? [])]) {
+          const state = alarm.StateValue
+          if (state !== 'ALARM' && state !== 'OK' && state !== 'INSUFFICIENT_DATA') continue
+          if (typeof alarm.AlarmName !== 'string') continue
+          const updated = alarm.StateUpdatedTimestamp
+          alarms.push({
+            name: alarm.AlarmName,
+            state,
+            since: typeof updated === 'number' ? updated * 1000 : Date.parse(String(updated)),
+          })
+        }
+        nextToken = page.NextToken
+      } while (nextToken !== undefined)
+      alarmsCache = { expiresAt: clock() + cacheMs, alarms }
+      return alarms
+    },
+
     async snapshot(): Promise<Snapshot> {
       const now = clock()
       const end = Math.floor(now / 60_000) * 60_000 + 60_000

@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import {
+  type AlarmStatus,
   burnRate,
   type EpochMs,
   formatCount,
@@ -31,6 +32,7 @@ import {
   type FirstPaint,
   FirstPaintContext,
   type Loaded,
+  useAlarms,
   useCountedSeries,
   useLastReady,
   useNow,
@@ -60,6 +62,8 @@ import { RunwayCard } from './Runway'
 export interface DashboardProps {
   /** The snapshot rendered on the server, or null when the source did not answer then. */
   initialSnapshot: Snapshot | null
+  /** claude-master's alarms as the server read them, or null when it could not. */
+  initialAlarms?: AlarmStatus[] | null
   /** Where the dashboard's route handler is mounted, e.g. "/api/claude-master". */
   apiBase: string
   /** Where a viewer whose session ended signs in again; omitted, no link is shown. */
@@ -291,6 +295,15 @@ function DashboardBody(props: DashboardProps) {
           ? 'Updated just now'
           : `Updated ${formatCountdown(ageMs)} ago`
   const backupTotal = data(backup)
+  // claude-master's alarms: open now, and cleared in the last day.
+  const alarmsLoaded = useAlarms(apiBase, props.initialAlarms ?? null)
+  const alarms = data(alarmsLoaded)
+  const alarmName = (name: string) => name.replace(/^claude-master-/, '').replaceAll('-', ' ')
+  const openAlarms = (alarms ?? []).filter((a) => a.state === 'ALARM')
+  const clearedAlarms = (alarms ?? []).filter(
+    (a) => a.state === 'OK' && a.since >= now - 24 * HOUR_MS && a.since <= now,
+  )
+  const alarmsFailure = failureOf(alarmsLoaded)
   const backupOutputData = data(backupOutput)
   const backupOutputTokens =
     backupOutputData === null
@@ -424,6 +437,30 @@ function DashboardBody(props: DashboardProps) {
                   ? undefined
                   : 'None reported yet'
                 : `Most: ${topProject.key}, ${formatPercent(topProject.total / projectsAll)}`
+            }
+          />
+          <Kpi
+            label="Alarms"
+            value={
+              alarms === null
+                ? '—'
+                : openAlarms.length === 0
+                  ? 'None open'
+                  : `${openAlarms.length} open`
+            }
+            note={
+              alarms === null
+                ? alarmsFailure === null
+                  ? undefined
+                  : alarmsFailure.status === 403
+                    ? "Can't read alarms yet"
+                    : 'Alarms unavailable'
+                : [
+                    ...openAlarms.map((a) => alarmName(a.name)),
+                    ...(clearedAlarms.length === 0
+                      ? []
+                      : [`${clearedAlarms.length} cleared in 24h`]),
+                  ].join(' · ') || undefined
             }
           />
           <Kpi

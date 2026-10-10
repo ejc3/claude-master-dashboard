@@ -45,6 +45,10 @@ export function createDashboardHandler(config: DashboardHandlerConfig): {
     const endpoint = url.pathname.split('/').filter(Boolean).at(-1)
     try {
       if (endpoint === 'snapshot') return json(await config.source().snapshot())
+      if (endpoint === 'alarms') {
+        const source = config.source()
+        return json(source.alarms === undefined ? [] : await source.alarms())
+      }
       if (endpoint === 'series') {
         return json(await config.source().series(seriesQueryFromParams(url.searchParams)))
       }
@@ -52,6 +56,11 @@ export function createDashboardHandler(config: DashboardHandlerConfig): {
     } catch (error) {
       if (error instanceof BadQueryError || error instanceof UnsupportedQueryError) {
         return json({ error: error.message }, 400)
+      }
+      // A key that may not read alarms (yet): said plainly, not as the source failing.
+      const code = (error as { code?: unknown } | null)?.code
+      if (endpoint === 'alarms' && (code === 'AccessDenied' || code === 'AccessDeniedException')) {
+        return json({ error: "The dashboard's AWS key cannot read alarms yet." }, 403)
       }
       // The message, not the error: an SDK error can carry request details.
       console.error(
@@ -138,7 +147,7 @@ async function withinBudget<T>(
 export async function DashboardPage(props: DashboardPageProps): Promise<ReactNode> {
   if (!(await props.authorize())) return props.unauthorized
   const renderedAt = Date.now()
-  const [initialSnapshot, answers] = await Promise.all([
+  const [initialSnapshot, answers, initialAlarms] = await Promise.all([
     // Through a promise, so a source that throws instead of rejecting fails this read alone.
     Promise.resolve()
       .then(() => props.source().snapshot())
@@ -156,12 +165,22 @@ export async function DashboardPage(props: DashboardPageProps): Promise<ReactNod
         return series === null ? null : ([queryKey(query), series] as const)
       }),
     ),
+    // The alarms too, so the box is filled on the first paint; the browser asks if this fails.
+    withinBudget(
+      'the first alarms',
+      async () => {
+        const source = props.source()
+        return source.alarms === undefined ? [] : source.alarms()
+      },
+      props.keepAlive ?? after,
+    ),
   ])
   const firstSeries: Record<string, Series[]> = {}
   for (const answer of answers) if (answer !== null) firstSeries[answer[0]] = answer[1]
   return (
     <Dashboard
       initialSnapshot={initialSnapshot}
+      initialAlarms={initialAlarms}
       renderedAt={renderedAt}
       firstSeries={firstSeries}
       timeZone={timeZoneOrNull(props.timeZone)}

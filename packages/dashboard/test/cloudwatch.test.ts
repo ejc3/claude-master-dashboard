@@ -43,7 +43,7 @@ function fakeCloudWatch(answer: Answer) {
   const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
     const request = input as Request
     const body = JSON.parse(await request.clone().text()) as Record<string, unknown>
-    const query = (body.MetricDataQueries as Array<{ Expression: string }>)[0]
+    const query = (body.MetricDataQueries as Array<{ Expression: string }> | undefined)?.[0]
     const expression = query?.Expression ?? ''
     requests.push({ request, body, expression })
     const answered = answer(body, expression)
@@ -398,6 +398,54 @@ describe('createCloudWatchSource', () => {
     ).toBe(0)
     // No countdown read at all: the reset time is unknown, and the reading stands.
     expect(fiveHourWindow([NOW, 0.4], undefined)?.resetsAt).toBeNull()
+  })
+
+  it("reads claude-master's alarms: name, state and since when", async () => {
+    const { src, requests } = source(() => ({
+      MetricAlarms: [
+        {
+          AlarmName: 'claude-master-upstream-errors',
+          StateValue: 'ALARM',
+          StateUpdatedTimestamp: (NOW - 600_000) / 1000,
+        },
+        {
+          AlarmName: 'claude-master-server-swapping',
+          StateValue: 'OK',
+          StateUpdatedTimestamp: (NOW - 3_600_000) / 1000,
+        },
+        { AlarmName: 'claude-master-odd', StateValue: 'WEIRD', StateUpdatedTimestamp: 0 },
+      ],
+    }))
+    const alarms = await src.alarms?.()
+    expect(alarms).toEqual([
+      { name: 'claude-master-upstream-errors', state: 'ALARM', since: NOW - 600_000 },
+      { name: 'claude-master-server-swapping', state: 'OK', since: NOW - 3_600_000 },
+    ])
+    // DescribeAlarms, for claude-master's alarms only.
+    expect(requests[0]?.request.headers.get('x-amz-target')).toBe(
+      'GraniteServiceVersion20100801.DescribeAlarms',
+    )
+    expect(requests[0]?.body.AlarmNamePrefix).toBe('claude-master')
+    // Read once a minute.
+    await src.alarms?.()
+    expect(requests).toHaveLength(1)
+  })
+
+  it('answers 403 with a plain message when the key may not read alarms', async () => {
+    const { src } = source(
+      () =>
+        new Response(JSON.stringify({ __type: 'AccessDenied', message: 'not authorized' }), {
+          status: 403,
+        }),
+    )
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const GET = createDashboardHandler({ source: () => src, authorize: () => true }).GET
+    const response = await GET(new Request('https://example.test/api/claude-master/alarms'))
+    log.mockRestore()
+    expect(response.status).toBe(403)
+    expect(((await response.json()) as { error: string }).error).toBe(
+      "The dashboard's AWS key cannot read alarms yet.",
+    )
   })
 
   it('has no profiles and the clock as asOf when nothing has been exported', async () => {
