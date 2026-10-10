@@ -206,50 +206,152 @@
     --cmd-pulse-mark: var(--cmd-reserve-mark);
   }
 
-  /* The headline: the pool's state, as an alert tinted by how it reads. */
-  .cmd-alert {
+  /* The outlook: will the pool run out, and how much of it is used. A panel whose head is an
+     alert tinted by the answer, then one forecast per window. */
+  .cmd-pool {
+    background: var(--cmd-surface);
+    border: 1px solid var(--cmd-rule);
+    border-radius: var(--cmd-radius);
+    box-shadow: var(--cmd-shadow);
+    overflow: hidden;
+  }
+
+  .cmd-pool-head {
     display: grid;
     grid-template-columns: auto minmax(0, 1fr);
     gap: 10px;
     align-items: start;
-    padding: 12px 16px;
-    border: 1px solid var(--cmd-info);
-    border-radius: var(--cmd-radius);
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--cmd-info);
     background: var(--cmd-info-soft);
   }
 
   .cmd-alert-icon {
-    width: 16px;
-    height: 16px;
+    width: 18px;
+    height: 18px;
     margin-top: 2px;
     color: var(--cmd-info);
   }
 
-  .cmd-alert[data-tone="success"] {
-    border-color: var(--cmd-ok-mark);
+  .cmd-pool[data-tone="success"] .cmd-pool-head {
+    border-bottom-color: var(--cmd-ok-mark);
     background: var(--cmd-ok-soft);
   }
 
-  .cmd-alert[data-tone="success"] .cmd-alert-icon {
+  .cmd-pool[data-tone="success"] .cmd-alert-icon {
     color: var(--cmd-ok);
   }
 
-  .cmd-alert[data-tone="warning"] {
-    border-color: var(--cmd-reserve-mark);
+  .cmd-pool[data-tone="warning"] .cmd-pool-head {
+    border-bottom-color: var(--cmd-reserve-mark);
     background: var(--cmd-reserve-soft);
   }
 
-  .cmd-alert[data-tone="warning"] .cmd-alert-icon {
+  .cmd-pool[data-tone="warning"] .cmd-alert-icon {
     color: var(--cmd-reserve);
   }
 
-  .cmd-alert[data-tone="error"] {
-    border-color: var(--cmd-exhausted-mark);
+  .cmd-pool[data-tone="error"] .cmd-pool-head {
+    border-bottom-color: var(--cmd-exhausted-mark);
     background: var(--cmd-exhausted-soft);
   }
 
-  .cmd-alert[data-tone="error"] .cmd-alert-icon {
+  .cmd-pool[data-tone="error"] .cmd-alert-icon {
     color: var(--cmd-exhausted);
+  }
+
+  .cmd-forecasts {
+    display: grid;
+  }
+
+  @media (min-width: 720px) {
+    .cmd-forecasts {
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    }
+
+    .cmd-forecast + .cmd-forecast {
+      border-left: 1px solid var(--cmd-inner);
+    }
+  }
+
+  .cmd-forecast {
+    padding: 14px 16px 16px;
+    min-width: 0;
+  }
+
+  @media (max-width: 719.98px) {
+    .cmd-forecast + .cmd-forecast {
+      border-top: 1px solid var(--cmd-inner);
+    }
+  }
+
+  .cmd-forecast-value {
+    margin: 6px 0 0;
+    font-size: 1.75rem;
+    font-weight: 400;
+    line-height: 1.15;
+  }
+
+  @media (min-width: 900px) {
+    .cmd-forecast-value {
+      font-size: 2.25rem;
+    }
+  }
+
+  .cmd-forecast[data-state="clips"] .cmd-forecast-value {
+    color: var(--cmd-reserve);
+  }
+
+  .cmd-forecast[data-state="out"] .cmd-forecast-value {
+    color: var(--cmd-exhausted);
+  }
+
+  .cmd-forecast[data-state="unknown"] .cmd-forecast-value {
+    color: var(--cmd-ink-3);
+  }
+
+  .cmd-forecast-detail {
+    margin: 2px 0 0;
+    color: var(--cmd-ink-2);
+  }
+
+  .cmd-forecast-usage {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    margin: 14px 0 6px;
+    font-size: 0.8125rem;
+    color: var(--cmd-ink-3);
+  }
+
+  .cmd-forecast-usage b {
+    color: var(--cmd-ink);
+    font-weight: 600;
+  }
+
+  .cmd-pool-bar {
+    display: block;
+    height: 8px;
+    border-radius: 4px;
+    background: var(--cmd-track);
+    overflow: hidden;
+  }
+
+  .cmd-pool-fill {
+    display: block;
+    height: 100%;
+    border-radius: 0 4px 4px 0;
+    background: var(--cmd-fill);
+  }
+
+  .cmd-forecast[data-state="out"] .cmd-pool-fill {
+    background: var(--cmd-exhausted-mark);
+  }
+
+  .cmd-forecast-note {
+    margin: 8px 0 0;
+    font-size: 0.75rem;
+    color: var(--cmd-ink-3);
   }
 
   .cmd-headline {
@@ -967,13 +1069,14 @@
     .cmd-runway,
     .cmd-share,
     .cmd-status,
-    .cmd-alert {
+    .cmd-pool-bar {
       border: 1px solid CanvasText;
     }
 
     .cmd-runway-used,
     .cmd-runway-now,
     .cmd-share span,
+    .cmd-pool-fill,
     .cmd-row::before {
       background: CanvasText;
     }

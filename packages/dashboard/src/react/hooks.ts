@@ -119,3 +119,12 @@ export function useSeries(apiBase: string, query: SeriesQuery | null): Loaded<Se
   }
   return { ...loaded, data: filled.current.to }
 }
+
+/**
+ * Readings of a gauge for `query`, as the source returned them: a missing bucket stays missing,
+ * because a zero would read as a reset.
+ */
+export function useReadings(apiBase: string, query: SeriesQuery | null): Loaded<Series[]> {
+  const url = query === null ? null : `${apiBase}/series?${seriesQueryToParams(query)}`
+  return usePolled<Series[]>(url, 5 * 60_000)
+}

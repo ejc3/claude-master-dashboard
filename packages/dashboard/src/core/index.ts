@@ -8,6 +8,17 @@ export {
 } from './catalog'
 export { fillSeries, sumBetween, sumSeries } from './fill'
 export {
+  averageBurnRate,
+  burnRate,
+  FORECAST_HORIZON_MS,
+  forecastHeadline,
+  type PoolForecast,
+  type PoolTone,
+  poolForecast,
+  WEEKLY_SMOOTHING_MS,
+  type WindowKind,
+} from './forecast'
+export {
   formatCount,
   formatCountdown,
   formatDuration,
@@ -20,8 +31,6 @@ export {
   hasHeadroom,
   nextAvailable,
   nextRunOut,
-  type PoolTone,
-  poolTone,
   type RunOut,
 } from './headline'
 export {
