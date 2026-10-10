@@ -7,6 +7,7 @@ import {
   type PoolGaps,
   type ProfileStatus,
   poolGaps,
+  TRACE_STEP_MS,
   WEEK_MS,
 } from '../src/core/index'
 
@@ -265,12 +266,48 @@ describe('poolGaps: both windows in one simulation', () => {
   })
 })
 
+describe('poolGaps capacity trace', () => {
+  it('starts at what is left, falls at the pace of use, and steps up when a week resets', () => {
+    // Two subscriptions with half their week left each; one resets in a day.
+    const g = poolGaps(
+      [sub('a', [0.5, 24 * H], [0, null]), sub('b', [0.5, 100 * H], [0, null])],
+      NOW,
+      rates({ a: 0.01, b: 0.01 }),
+    )
+    const at = (h: number) => g.trace.find((p) => p.at === NOW + h * H)
+    expect(g.trace[0]).toEqual({ at: NOW, weekly: 1, fiveHour: 2 })
+    // 2% of one subscription's week an hour: 0.98 left after an hour.
+    expect(at(1)?.weekly).toBeCloseTo(0.98, 6)
+    // a's week resets at 24h: what is left jumps by a's used share.
+    const before = at(23 + 5 / 6)?.weekly ?? 0
+    const after = at(24)?.weekly ?? 0
+    expect(after - before).toBeGreaterThan(0.5)
+    // Every sample is on the grid, to the horizon.
+    expect(g.trace.every((p, i) => p.at === NOW + i * TRACE_STEP_MS)).toBe(true)
+    expect(g.trace.at(-1)?.at).toBe(NOW + GAPS_HORIZON_MS)
+  })
+
+  it('holds what is left through a gap, then shows the reset that ends it', () => {
+    // Every week full until the first resets in 50h.
+    const g = poolGaps(
+      [sub('a', [1, 50 * H], [0.1, 3 * H]), sub('b', [1, 60 * H], [0.1, 3 * H])],
+      NOW,
+    )
+    const at = (h: number) => g.trace.find((p) => p.at === NOW + h * H)
+    expect(at(10)?.weekly).toBe(0)
+    expect(at(49 + 5 / 6)?.weekly).toBe(0)
+    expect(at(50)?.weekly).toBeCloseTo(1, 6)
+  })
+})
+
 describe('gapsHeadline', () => {
   const g = (over: Partial<PoolGaps>): PoolGaps => ({
     counted: 2,
     unreported: 0,
     gaps: [],
     lasts: null,
+    trace: [],
+    capacity: 2,
     ...over,
   })
 

@@ -488,6 +488,20 @@
     }
   }
 
+  /* What is left of each window, at this pace: two charts under the headline. */
+  .cmd-capacity {
+    display: grid;
+    gap: 12px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--cmd-inner);
+  }
+
+  @media (min-width: 720px) {
+    .cmd-capacity {
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    }
+  }
+
   /* The controls sit just above the charts and table they change. */
   .cmd-toolbar {
     justify-content: flex-start;
@@ -904,6 +918,12 @@
     stroke-width: 1;
   }
 
+  /* A span of time shaded behind a chart's lines: when no subscription can take work. */
+  .cmd-band {
+    fill: var(--cmd-exhausted-mark);
+    opacity: 0.14;
+  }
+
   .cmd-area {
     opacity: 0.14;
   }
@@ -1248,6 +1268,10 @@
     .cmd-account-bar[data-level="unknown"] {
       border-style: dashed;
       outline: none;
+    }
+
+    .cmd-band {
+      fill: Highlight;
     }
   }
 }

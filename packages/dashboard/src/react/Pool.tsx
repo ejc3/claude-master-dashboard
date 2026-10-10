@@ -10,15 +10,18 @@ import {
   formatCountdown,
   formatPercent,
   gapsHeadline,
+  HOUR_MS,
   hasHeadroom,
   type PoolForecast,
   type PoolGaps,
   type PoolTone,
   type ProfileStatus,
   reportingAll,
+  TRACE_STEP_MS,
   type WindowKind,
 } from '../core'
 import { useWhen } from './hooks'
+import { LineChart } from './LineChart'
 
 const WINDOW_NAME: Record<WindowKind, string> = {
   weekly: 'Weekly allowance',
@@ -200,6 +203,51 @@ export function PoolAccounts(props: { profiles: ProfileStatus[]; now: EpochMs })
   )
 }
 
+const asPercent = (v: number) => `${Math.round(v * 100)}%`
+
+/**
+ * What is left of each window across the pool, from now to the furthest weekly reset, at this
+ * pace (the same simulation as the headline): five unused subscriptions are 500%. Shaded where
+ * no subscription can take work.
+ */
+export function CapacityOutlook(props: {
+  gaps: PoolGaps | null
+  profiles: ProfileStatus[] | null
+  now: EpochMs
+}) {
+  const { gaps, now } = props
+  if (gaps === null || gaps.trace.length === 0 || gaps.capacity === 0) return null
+  const resets = (props.profiles ?? [])
+    .map((p) => p.weekly.resetsAt)
+    .filter((t): t is EpochMs => t !== null && t > now)
+  const horizonEnd = (gaps.trace.at(-1)?.at ?? now) as EpochMs
+  // The weekly chart to the furthest weekly reset; the 5-hour one over the next day, where its
+  // windows' cycles can be read.
+  const weeklyUntil = Math.min(horizonEnd, Math.max(now + 24 * HOUR_MS, ...resets))
+  const fiveUntil = Math.min(horizonEnd, now + 24 * HOUR_MS)
+  const chart = (key: 'weekly' | 'fiveHour', until: EpochMs, title: string, color: string) => {
+    const shown = gaps.trace.filter((p) => p.at >= now - TRACE_STEP_MS && p.at <= until)
+    if (shown.length < 2) return null
+    return (
+      <LineChart
+        title={title}
+        series={[{ key, label: title, color, points: shown.map((p) => [p.at, p[key]]) }]}
+        format={asPercent}
+        max={gaps.capacity}
+        bands={gaps.gaps.map((g) => ({ start: g.start, end: g.end ?? until }))}
+        now={now}
+        area
+      />
+    )
+  }
+  return (
+    <div className="cmd-capacity">
+      {chart('weekly', weeklyUntil, 'Weekly allowance left, at this pace', 'var(--cmd-series-1)')}
+      {chart('fiveHour', fiveUntil, '5-hour capacity left, next 24 hours', 'var(--cmd-series-2)')}
+    </div>
+  )
+}
+
 /**
  * The top of the dashboard: will the pool run out, as a status line and the facts behind it,
  * each subscription's use at a glance, and one cell per window with its own forecast.
@@ -234,6 +282,7 @@ export function PoolOutlook(props: {
         </div>
         {props.profiles !== null && <PoolAccounts profiles={props.profiles} now={now} />}
       </div>
+      <CapacityOutlook gaps={props.gaps} profiles={props.profiles} now={now} />
       {forecasts !== null && (
         <div className="cmd-forecasts">
           {forecasts.map((f) => (
