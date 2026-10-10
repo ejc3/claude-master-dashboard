@@ -5,11 +5,12 @@ import {
   among,
   type EpochMs,
   FORECAST_HORIZON_MS,
-  forecastHeadline,
   forecastState,
   formatCountdown,
   formatPercent,
+  gapsHeadline,
   type PoolForecast,
+  type PoolGaps,
   type PoolTone,
   reportingAll,
   type WindowKind,
@@ -131,16 +132,18 @@ function ForecastCell(props: { forecast: PoolForecast; now: EpochMs }) {
 }
 
 /**
- * The top of the dashboard: will the pool run out, and how much of it is used. One cell per
+ * The top of the dashboard: will the pool run out, and how much of it is used. The headline
+ * comes from one simulation of both windows (when no subscription can take work); one cell per
  * window, each with its own forecast.
  */
 export function PoolOutlook(props: {
   forecasts: PoolForecast[] | null
+  gaps: PoolGaps | null
   now: EpochMs
   detail?: string | null
 }) {
   const { forecasts, now } = props
-  const { tone, headline } = forecastHeadline(forecasts, now)
+  const { tone, headline } = gapsHeadline(props.gaps, now)
   return (
     <section className="cmd-pool" data-tone={tone} aria-labelledby="cmd-pool-headline">
       <div className="cmd-pool-head">

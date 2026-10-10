@@ -1,6 +1,6 @@
 import { formatCountdown } from './format'
 import { elapsedFraction } from './pace'
-import { type EpochMs, HOUR_MS, type ProfileStatus, type QuotaWindow } from './types'
+import { type EpochMs, FIVE_HOURS_MS, HOUR_MS, type ProfileStatus, type QuotaWindow } from './types'
 
 /** Which allowance a forecast is about. */
 export type WindowKind = 'weekly' | 'fiveHour'
@@ -292,6 +292,179 @@ export function poolForecast(
   return lasting(demand <= 0 ? 'idle' : 'horizon')
 }
 
+/** A time when no subscription can take work. */
+export interface PoolGap {
+  start: EpochMs
+  /** When the first subscription can take work again; null when no reset time is known. */
+  end: EpochMs | null
+  /** Which window's reset ends it (the weekly one on a tie); null when no reset time is known. */
+  endsWith: WindowKind | null
+}
+
+/** The pool's gaps from one simulation of both windows together. */
+export interface PoolGaps {
+  /** Subscriptions with a weekly reading; the others are left out. */
+  counted: number
+  unreported: number
+  /** The gaps in the horizon, in order, that have not ended by `now`. */
+  gaps: PoolGap[]
+  /** Why there is no gap, as PoolForecast's `lasts`; null when there is one. */
+  lasts: PoolForecast['lasts']
+}
+
+/** How far ahead the gaps are looked for, and how finely. */
+export const GAPS_HORIZON_MS = 7 * 24 * HOUR_MS
+const GAPS_STEP_MS = 5 * 60_000
+/** A bound on the list; more gaps than this within a week say nothing new. */
+const MAX_GAPS = 50
+
+interface JointSlot extends Slot {
+  /**
+   * The 5-hour window. One that was not read is taken as unused, and starts when the
+   * subscription next takes work (as a 5-hour window does on its first request).
+   */
+  five: SimWindow
+}
+
+// A share that floating-point sums leave a hair under full is full.
+const FULL = 1 - 1e-9
+const isFull = (w: SimWindow) => w.used >= FULL
+
+/**
+ * When the subscription can be picked again, after whichever of its full windows resets last,
+ * and which window that is (the weekly one on a tie); null when a full window has no reset time.
+ */
+function availableAfter(s: JointSlot, t: EpochMs): { at: EpochMs; window: WindowKind } | null {
+  let at = t
+  let window: WindowKind = 'weekly'
+  const full: Array<[SimWindow, WindowKind]> = [
+    [s.weekly, 'weekly'],
+    [s.five, 'fiveHour'],
+  ]
+  for (const [w, kind] of full) {
+    if (!isFull(w)) continue
+    if (w.resetsAt === null) return null
+    if (w.resetsAt > at || (w.resetsAt === at && kind === 'weekly')) {
+      at = w.resetsAt
+      window = kind
+    }
+  }
+  return { at, window }
+}
+
+/**
+ * When no subscription can take work, from one simulation of both windows: the weekly forecast
+ * alone does not see 5-hour gaps, and the 5-hour one alone does not use up any week, so neither
+ * can say when work stops.
+ *
+ * As poolForecast, from `from` (the readings' time) in claude-master's routing order, with the
+ * pool's demand measured per window: the weekly one from the smoothed rates when given (else
+ * each week's average), the 5-hour one from each window's average so far. Work goes only to a
+ * subscription with room in both windows, and each step's work uses up both at those rates, so
+ * during a gap neither is used. Each window resets on its own clock. A subscription without a
+ * weekly reading is left out (`unreported`); one without a 5-hour reading starts an empty 5-hour
+ * window when it first takes work. Gaps that have ended by `now` are skipped; after a gap the
+ * simulation goes on from its end.
+ */
+export function poolGaps(
+  profiles: ProfileStatus[],
+  from: EpochMs,
+  smoothed: ReadonlyMap<string, number | null> = new Map(),
+  now: EpochMs = from,
+): PoolGaps {
+  const slots: JointSlot[] = []
+  let weeklyDemand = 0
+  let fiveDemand = 0
+  let counted = 0
+  const rate = (r: number | null | undefined) =>
+    r === null || r === undefined || !Number.isFinite(r) ? 0 : Math.max(0, r)
+  for (const [index, p] of profiles.entries()) {
+    const w = reading(p, 'weekly')
+    if (w === null) continue
+    counted++
+    const weekly = simWindow(w)
+    catchUp(weekly, from)
+    const f = reading(p, 'fiveHour')
+    const five: SimWindow =
+      f === null ? { used: 0, resetsAt: null, lengthMs: FIVE_HOURS_MS, known: false } : simWindow(f)
+    catchUp(five, from)
+    const smooth = smoothed.get(p.profile)
+    weeklyDemand += rate(
+      smooth !== null && smooth !== undefined && Number.isFinite(smooth)
+        ? smooth
+        : averageBurnRate(w, from),
+    )
+    if (f !== null) fiveDemand += rate(averageBurnRate(f, from))
+    const loginExpired = p.tokenExpiresAt !== null && p.tokenExpiresAt <= from
+    if (!loginExpired) slots.push({ quota: weekly, weekly, five, index })
+  }
+  const result = (gaps: PoolGap[], lasts: PoolGaps['lasts']): PoolGaps => ({
+    counted,
+    unreported: profiles.length - counted,
+    gaps,
+    lasts,
+  })
+  if (counted === 0) return result([], 'unknown')
+  if (slots.length === 0) return result([], 'logins')
+
+  const step = GAPS_STEP_MS
+  const perWeek = (weeklyDemand / HOUR_MS) * step
+  const perFive = (fiveDemand / HOUR_MS) * step
+  const idle = perWeek <= 0 && perFive <= 0
+  const open = (s: JointSlot) => !isFull(s.weekly) && !isFull(s.five)
+  const gaps: PoolGap[] = []
+  const end = from + GAPS_HORIZON_MS
+  for (let t = from; t <= end && gaps.length < MAX_GAPS; t += step) {
+    for (const s of slots) {
+      catchUp(s.weekly, t)
+      catchUp(s.five, t)
+    }
+    const ready = slots.filter(open)
+    if (ready.length === 0) {
+      // The first subscription back ends the gap; a weekly reset wins a tie.
+      let first: { at: EpochMs; window: WindowKind } | null = null
+      for (const s of slots) {
+        const back = availableAfter(s, t)
+        if (back === null) continue
+        if (
+          first === null ||
+          back.at < first.at ||
+          (back.at === first.at && back.window === 'weekly')
+        ) {
+          first = back
+        }
+      }
+      const gapEnd = first?.at ?? null
+      if (gapEnd === null || gapEnd > now) {
+        gaps.push({ start: t, end: gapEnd, endsWith: first?.window ?? null })
+      }
+      if (gapEnd === null) break
+      // On from the step at which the first subscription takes work again.
+      t = from + Math.ceil((gapEnd - from) / step) * step - step
+      continue
+    }
+    if (idle) break
+    // In claude-master's order as of this step; what one cannot take goes to the next. `left` is
+    // the share of this step's work still to place; each subscription takes what its fuller
+    // window allows.
+    ready.sort(routeOrder)
+    let left = 1
+    for (const s of ready) {
+      if (left <= 0) break
+      const byWeek = perWeek > 0 ? (1 - s.weekly.used) / perWeek : Number.POSITIVE_INFINITY
+      const byFive = perFive > 0 ? (1 - s.five.used) / perFive : Number.POSITIVE_INFINITY
+      const take = Math.min(left, byWeek, byFive)
+      if (take <= 0) continue
+      // An unread 5-hour window starts with the subscription's first work.
+      if (s.five.resetsAt === null && !s.five.known) s.five.resetsAt = t + s.five.lengthMs
+      s.weekly.used = Math.min(1, s.weekly.used + take * perWeek)
+      s.five.used = Math.min(1, s.five.used + take * perFive)
+      left -= take
+    }
+  }
+  return result(gaps, gaps.length > 0 ? null : idle ? 'idle' : 'horizon')
+}
+
 /** How the outlook reads at a glance. */
 export type PoolTone = 'success' | 'warning' | 'error' | 'info'
 
@@ -417,5 +590,67 @@ export function forecastHeadline(
       return { tone: 'success', headline: 'At this pace the pool does not run out.', window: null }
     case 'unknown':
       return { tone: 'info', headline: 'No subscription has reported its usage yet.', window: null }
+  }
+}
+
+const RESET_WORDS: Record<WindowKind, string> = {
+  weekly: 'a week resets',
+  fiveHour: 'a 5-hour window resets',
+}
+
+/** ", for 2h 15m until a 5-hour window resets", from `from`. */
+function gapLength(gap: PoolGap, from: EpochMs): string {
+  return gap.end === null || gap.endsWith === null
+    ? ', with no reset time known'
+    : `, for ${formatCountdown(gap.end - from)} until ${RESET_WORDS[gap.endsWith]}`
+}
+
+/**
+ * The answer to "will we run out?" from the pool's gaps: when no subscription can take work, for
+ * how long, and which reset ends it. The first gap, and then: after a 5-hour gap, the first
+ * one a week ends (so a weekly gap of days is not lost behind 5-hour ones, which recur every few
+ * hours); after a weekly gap, the first one that lasts longer. Partial when some
+ * subscriptions have no weekly reading, so they may still have room.
+ */
+export function gapsHeadline(
+  g: PoolGaps | null,
+  now: EpochMs,
+): { tone: PoolTone; headline: string } {
+  if (g === null) return { tone: 'info', headline: 'Waiting for the first reading.' }
+  const partial = g.unreported > 0
+  const among = partial ? ` (the ${g.counted} reporting their usage)` : ''
+  if (g.lasts === 'unknown') {
+    return { tone: 'info', headline: 'No subscription has reported its usage yet.' }
+  }
+  if (g.lasts === 'logins') {
+    return partial
+      ? {
+          tone: 'warning',
+          headline: `Every subscription reporting its usage has an expired login${among}.`,
+        }
+      : { tone: 'error', headline: 'No subscription can take work: every login has expired.' }
+  }
+  const [first, ...rest] = g.gaps
+  if (first === undefined) {
+    return { tone: 'success', headline: 'At this pace the pool does not run out.' }
+  }
+  const length = (gap: PoolGap) =>
+    gap.end === null ? Number.POSITIVE_INFINITY : gap.end - Math.max(gap.start, now)
+  // 5-hour gaps come back every few hours; after one, what matters is the first week to run out.
+  const later =
+    first.endsWith === 'fiveHour'
+      ? rest.find((gap) => gap.endsWith !== 'fiveHour')
+      : rest.find((gap) => length(gap) > length(first))
+  const out = first.start <= now
+  const lead = out
+    ? `The pool is out now${gapLength(first, now)}`
+    : `At this pace the pool runs out in ${formatCountdown(first.start - now)}${gapLength(first, first.start)}`
+  const next =
+    later === undefined
+      ? ''
+      : `; ${out ? 'at this pace it runs out again' : 'then again'} in ${formatCountdown(later.start - now)}${gapLength(later, later.start)}`
+  return {
+    tone: out && !partial ? 'error' : 'warning',
+    headline: `${lead}${next}${among}.`,
   }
 }
