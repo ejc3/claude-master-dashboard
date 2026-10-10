@@ -39,21 +39,26 @@ This app must deploy to Cloudflare Workers and to Vercel. Today it deploys to Cl
 (the Worker `claude-master-dashboard`, from `.github/workflows/deploy.yml`); both are supported
 targets, always:
 
-- **A change is done only when it works on both.** Every deploy the app has must be green
-  before merging. Do not merge a change that builds or runs on only one.
+- **A change is done only when it works on both.** Before merging, CI is green, including the
+  Cloudflare build check (`pnpm --filter web cf:check`). The Worker deploys only from `main`,
+  so after merging watch the Deploy workflow go green; a red deploy is fixed before anything
+  else merges. Never merge a change that builds or runs on only one.
 - **No platform-only code without a path on the other.** Avoid Vercel-only runtime features
-  (`@vercel/*` storage or edge APIs, Vercel-specific headers) and Node APIs the Workers runtime
-  lacks (runtime filesystem access, `fetch(..., { redirect: 'error' })`, which Workers
-  rejects). When one is unavoidable, give the other platform an equivalent and test both.
-- **Secrets live in AWS Secrets Manager** (administered from `ejc3/aws`) and are set as Worker
-  secrets from there, each on stdin: the read-only CloudWatch key from
+  (`@vercel/*` storage or edge APIs, Vercel-specific headers) and what the Workers runtime does
+  not give a Next.js app (a writable, persistent filesystem, or reading files at runtime that
+  are not bundled; `fetch(..., { redirect: 'error' })`, which Workers rejects). When one is
+  unavoidable, give the other platform an equivalent and test both.
+- **App secrets live in AWS Secrets Manager** (administered from `ejc3/aws`) and are set as
+  Worker secrets from there, each on stdin: the read-only CloudWatch key from
   `claude-master-dashboard/aws-reader`, the allowlist from `people/addresses`, the account
   aliases built from `claude-master/account-labels`, and the Access values from `terraform
   output claude_master_dashboard` in ejc3/aws. A Vercel copy takes the same values from the
   same containers. A secret changed on one platform only is a bug. Never commit one, never
-  print one.
-- **Public build-time values** (`NEXT_PUBLIC_*`) come from the repository's Actions variables
-  for the Cloudflare build; a Vercel copy must use the same values.
+  print one. A platform's own deploy credentials (the Cloudflare deploy token, Vercel tokens)
+  are not app secrets and stay with their platform.
+- **Public build-time values** (`NEXT_PUBLIC_*`) are Actions variables mapped into the build
+  step of `.github/workflows/deploy.yml` (only the names mapped there reach the build); a
+  Vercel copy must use the same values.
 
 Vercel: not deployed yet (tracked in ejc3/aws); until it is, a change must not add anything
 that would block it.
