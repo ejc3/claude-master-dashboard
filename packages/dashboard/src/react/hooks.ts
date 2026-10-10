@@ -101,12 +101,19 @@ export function useNow(everyMs: number, initial: EpochMs): EpochMs {
   const [now, setNow] = useState(initial)
   const visible = useVisible()
   // A browser clock behind the server's would move every range back a step on hydrating, and the
-  // server's answers would no longer match: the clock runs from `initial` at the earliest.
-  const behind = useRef<number | null>(null)
+  // server's answers would no longer match. So the time is never earlier than `initial` plus the
+  // time since the page started (a monotonic clock), and follows the browser's clock once that
+  // is later, as after the browser corrects it.
+  const start = useRef<{ at: EpochMs; mono: number } | null>(null)
   useEffect(() => {
     if (!visible) return
-    behind.current ??= Math.max(0, initial - Date.now())
-    const read = () => Date.now() + (behind.current ?? 0)
+    start.current ??= { at: initial, mono: performance.now() }
+    const read = () => {
+      const since = start.current
+      return since === null
+        ? Date.now()
+        : Math.max(Date.now(), since.at + (performance.now() - since.mono))
+    }
     setNow(read())
     const timer = setInterval(() => setNow(read()), everyMs)
     return () => clearInterval(timer)

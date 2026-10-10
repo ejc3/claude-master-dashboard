@@ -177,6 +177,34 @@ describe('the first paint', () => {
     expect(asked).toEqual([])
   })
 
+  it('follows the browser clock again once it catches up with the server', async () => {
+    // Ten minutes behind at first; then the browser's clock is corrected, a minute later.
+    const serverAt = Date.UTC(2026, 9, 9, 18, 5, 1)
+    vi.setSystemTime(serverAt)
+    const element = await serverPage(ZONE, createDemoSource({ now: () => serverAt }))
+    const container = document.createElement('div')
+    container.innerHTML = renderToString(element)
+    document.body.append(container)
+    vi.setSystemTime(serverAt - 10 * 60_000)
+    act(() => {
+      roots.push(hydrateRoot(container, element))
+    })
+    await act(async () => {
+      vi.setSystemTime(serverAt + 60_000)
+      await vi.advanceTimersByTimeAsync(1000)
+    })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(100)
+    })
+    // At 18:06 every range still ends at 18:05: none asks for buckets from the future.
+    const ends = vi
+      .mocked(fetch)
+      .mock.calls.map(([input]) => new URL(String(input), 'http://localhost'))
+      .filter((url) => url.pathname.endsWith('/series'))
+      .map((url) => Number(url.searchParams.get('end')))
+    expect(Math.max(0, ...ends)).toBeLessThanOrEqual(Date.UTC(2026, 9, 9, 18, 5))
+  })
+
   it('shows loading, not stale or zero numbers, after the page was away for hours', async () => {
     const { container } = await hydrated(ZONE)
     act(() => {
