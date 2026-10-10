@@ -5,6 +5,7 @@ import {
   blocked,
   type EpochMs,
   elapsedFraction,
+  fiveHourAt,
   formatCountdown,
   formatDuration,
   formatPercent,
@@ -85,9 +86,11 @@ function WindowRow(props: { name: string; window: QuotaWindow; now: EpochMs }) {
   const resetsAt = window.resetsAt
   // The wall-clock time needs the viewer's time zone; without it, only the countdown shows.
   const reset =
-    resetsAt === null || resetsAt <= now
-      ? 'Reset time unknown'
-      : `Resets in ${formatCountdown(resetsAt - now)}${when === null ? '' : `, ${when(resetsAt, now)}`}`
+    resetsAt === null && window.usedFraction === 0
+      ? 'No window open'
+      : resetsAt === null || resetsAt <= now
+        ? 'Reset time unknown'
+        : `Resets in ${formatCountdown(resetsAt - now)}${when === null ? '' : `, ${when(resetsAt, now)}`}`
   const description = `${name}: ${formatPercent(used)} used, ${elapsed === null ? 'time elapsed unknown' : `${formatPercent(elapsed)} of the window elapsed`}. ${reset}.`
   return (
     <div className="cmd-window">
@@ -148,7 +151,11 @@ export function RunwayCard({ status, now }: { status: ProfileStatus; now: EpochM
       {status.fiveHour === null ? (
         <p className="cmd-window cmd-window-none">No 5-hour reading</p>
       ) : (
-        <WindowRow name="5-hour" window={status.fiveHour} now={now} />
+        <WindowRow
+          name="5-hour"
+          window={fiveHourAt(status.fiveHour, now) ?? status.fiveHour}
+          now={now}
+        />
       )}
     </article>
   )

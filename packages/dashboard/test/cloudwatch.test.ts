@@ -5,6 +5,7 @@ import {
   createCloudWatchSource,
   DEFAULT_CACHE_MS,
   FIVE_HOUR_LOOKBACK_MS,
+  fiveHourWindow,
   foldAliases,
   gaugeQuery,
   parseAccountAliases,
@@ -12,7 +13,7 @@ import {
   selectSource,
   splitLabel,
 } from '../src/cloudwatch/index'
-import { FIVE_HOURS_MS, HOUR_MS, type MetricsSource, WEEK_MS } from '../src/core/index'
+import { FIVE_HOURS_MS, fiveHourAt, HOUR_MS, type MetricsSource, WEEK_MS } from '../src/core/index'
 import { createDemoSource } from '../src/demo/index'
 import { createDashboardHandler } from '../src/next/index'
 
@@ -343,9 +344,33 @@ describe('createCloudWatchSource', () => {
       resetsAt: old + 4 * 3600_000,
       lengthMs: FIVE_HOURS_MS,
     })
-    expect(bravo?.fiveHour).toEqual({ usedFraction: 0, resetsAt: null, lengthMs: FIVE_HOURS_MS })
+    // Passed on as read; whoever uses it judges it closed at their own time.
+    expect(bravo?.fiveHour).toEqual({
+      usedFraction: 0.7,
+      resetsAt: old + 2 * 3600_000,
+      lengthMs: FIVE_HOURS_MS,
+    })
+    expect(fiveHourAt(bravo?.fiveHour ?? null, NOW)).toEqual({
+      usedFraction: 0,
+      resetsAt: null,
+      lengthMs: FIVE_HOURS_MS,
+    })
+    expect(fiveHourAt(alpha?.fiveHour ?? null, NOW)).toEqual(alpha?.fiveHour)
     // The old reading does not make the snapshot older.
     expect(snapshot.asOf).toBe(latest)
+  })
+
+  it('reads a countdown of zero as a window that reset when it was read', () => {
+    expect(fiveHourWindow([NOW - 3600_000, 1], [NOW - 3600_000, 0])).toEqual({
+      usedFraction: 1,
+      resetsAt: NOW - 3600_000,
+      lengthMs: FIVE_HOURS_MS,
+    })
+    expect(
+      fiveHourAt(fiveHourWindow([NOW - 3600_000, 1], [NOW - 3600_000, 0]), NOW)?.usedFraction,
+    ).toBe(0)
+    // No countdown read at all: the reset time is unknown, and the reading stands.
+    expect(fiveHourWindow([NOW, 0.4], undefined)?.resetsAt).toBeNull()
   })
 
   it('has no profiles and the clock as asOf when nothing has been exported', async () => {

@@ -16,6 +16,15 @@ function blocksUntil(window: QuotaWindow | null, now: EpochMs): EpochMs | 'unkno
 }
 
 /**
+ * A 5-hour window as of `at`: as read while its reset is ahead (or unknown); once the reset has
+ * passed, no window is open (nothing used, no reset time) until the next request opens one.
+ */
+export function fiveHourAt(window: QuotaWindow | null, at: EpochMs): QuotaWindow | null {
+  if (window === null || window.resetsAt === null || window.resetsAt > at) return window
+  return { usedFraction: 0, resetsAt: null, lengthMs: window.lengthMs }
+}
+
+/**
  * Why a subscription cannot take work right now, and until when (null when unknown, e.g. a
  * login that has expired needs someone to fix it).
  */

@@ -131,19 +131,16 @@ export const SNAPSHOT_LOOKBACK_MS = 15 * 60_000
 export const FIVE_HOUR_LOOKBACK_MS = FIVE_HOURS_MS
 
 /**
- * The 5-hour window from its last reading: as read while its reset is ahead; once the reset has
- * passed, no window is open (nothing used, no reset time) until the next request opens one.
+ * The 5-hour window as last read, with its reset time even when that has passed: whoever reads
+ * it judges, at their own time, whether the window is still open (fiveHourAt). A countdown of
+ * zero or less was read as the window reset, so it reset when it was read.
  */
 export function fiveHourWindow(
   utilization: [EpochMs, number] | undefined,
   resets: [EpochMs, number] | undefined,
-  now: EpochMs,
 ): QuotaWindow | null {
   if (utilization === undefined) return null
-  const resetsAt = resets === undefined || resets[1] <= 0 ? null : resets[0] + resets[1] * 1000
-  if (resetsAt !== null && resetsAt <= now) {
-    return { usedFraction: 0, resetsAt: null, lengthMs: FIVE_HOURS_MS }
-  }
+  const resetsAt = resets === undefined ? null : resets[0] + Math.max(0, resets[1]) * 1000
   return { usedFraction: utilization[1], resetsAt, lengthMs: FIVE_HOURS_MS }
 }
 const MAX_CACHE_ENTRIES = 512
@@ -420,7 +417,7 @@ export function createCloudWatchSource(options: CloudWatchSourceOptions): Metric
                   : weeklyReset[0] + weeklyReset[1] * 1000,
               lengthMs: WEEK_MS,
             },
-            fiveHour: fiveHourWindow(utilization, resets5h, now),
+            fiveHour: fiveHourWindow(utilization, resets5h),
             rateLimitedUntil:
               cooldown === null || cooldown[1] <= 0 ? null : cooldown[0] + cooldown[1] * 1000,
             tokenExpiresAt: token === null ? null : token[0] + token[1] * 1000,

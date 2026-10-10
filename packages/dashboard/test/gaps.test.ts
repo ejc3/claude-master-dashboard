@@ -193,6 +193,20 @@ describe('poolGaps: both windows in one simulation', () => {
     )
   })
 
+  it('keeps a full 5-hour window closed until its reset, from the readings time', () => {
+    // Read at 11:55 (from), now is 12:00; the full window resets at 11:59:30. Work can start only
+    // then, so the week is used for 30 seconds before now, not five minutes.
+    const from = NOW - 5 * M
+    const profile = {
+      ...sub('a', [0.99, 48 * H], null),
+      fiveHour: { usedFraction: 1, resetsAt: NOW - 30_000, lengthMs: FIVE_HOURS_MS },
+    }
+    const g = poolGaps([profile], from, rates({ a: 0.6 }), NOW)
+    // The week (1% left at 60% an hour) lasts a minute of work: it runs out after now.
+    expect(g.gaps[0]?.start ?? 0).toBeGreaterThan(NOW)
+    expect(g.gaps[0]?.endsWith).toBe('weekly')
+  })
+
   it('keeps a rate-limited subscription out of work until the limit ends', () => {
     const g = poolGaps([sub('a', [0.3, 100 * H], null, { rateLimitedUntil: NOW + 2 * H })], NOW)
     expect(hours(g)[0]).toEqual({ start: 0, end: 2, endsWith: 'rateLimit' })
