@@ -91,9 +91,12 @@ export interface PoolForecast {
   burnPerHour: number
   /** How many counted subscriptions have a smoothed rate; the rest use their average. */
   smoothedCount: number
-  /** When every counted subscription has used this window up; `from` when that is already so. */
+  /**
+   * When claude-master can pick none of the counted subscriptions (this window or its week is
+   * full for each); `from` when that is already so.
+   */
   clipsAt: EpochMs | null
-  /** When the first of them resets after the clip, so work flows again; null when unknown. */
+  /** When the first of them can be picked again, so work flows; null when unknown. */
   recoversAt: EpochMs | null
   /**
    * Why there is no clip time: demand is nil, nothing runs out within the horizon, no
@@ -103,17 +106,19 @@ export interface PoolForecast {
 }
 
 /** One window of one subscription as the simulation moves it along. */
-interface SimWindow {
+export interface SimWindow {
   used: number
   resetsAt: EpochMs | null
   lengthMs: number
+  /** Whether the used share was read; claude-master ranks an unread week after every read one. */
+  known: boolean
 }
 
 /**
  * A subscription in the simulation: the window being forecast, and its weekly window, which is
  * what claude-master routes by (the same object when the weekly window is the one forecast).
  */
-interface Slot {
+export interface Slot {
   quota: SimWindow
   weekly: SimWindow
   /** Its place in the snapshot, claude-master's last tiebreak (the configured order). */
@@ -134,6 +139,7 @@ function simWindow(w: QuotaWindow | null): SimWindow {
     resetsAt:
       lengthMs !== null && w?.resetsAt != null && Number.isFinite(w.resetsAt) ? w.resetsAt : null,
     lengthMs: lengthMs ?? 1,
+    known: used !== null && used !== undefined && Number.isFinite(used),
   }
 }
 
@@ -152,13 +158,21 @@ function catchUp(w: SimWindow, t: EpochMs): void {
 const routable = (s: Slot) => s.quota.used < 1 && s.weekly.used < 1
 
 /**
- * claude-master's order, from the state at this step: outside the weekly reserve tier first,
- * then the soonest weekly reset (unknown last), then the configured order.
+ * claude-master's order (backendQuotaBefore), from the state at this step: outside the weekly
+ * reserve tier first, then a read week before an unread one, then the soonest weekly reset
+ * (unknown last), then the configured order.
  */
-function routeOrder(x: Slot, y: Slot): number {
+export function routeOrder(x: Slot, y: Slot): number {
   const reserve = (s: Slot) => Number(s.weekly.used >= WEEKLY_RESERVE_FROM)
+  const unread = (s: Slot) => Number(!s.weekly.known)
   const reset = (s: Slot) => s.weekly.resetsAt ?? Number.POSITIVE_INFINITY
-  return reserve(x) - reserve(y) || reset(x) - reset(y) || x.index - y.index
+  return (
+    reserve(x) - reserve(y) ||
+    unread(x) - unread(y) ||
+    // Equal resets (both unknown among them) leave the configured order to decide.
+    (reset(x) === reset(y) ? 0 : reset(x) - reset(y)) ||
+    x.index - y.index
+  )
 }
 
 /** When a subscription can be picked again: after whichever full window resets last. */
@@ -219,7 +233,6 @@ export function poolForecast(
     // A reading from before its window reset: that window is over and nothing of the new one
     // is known to be used.
     catchUp(slot.quota, from)
-    catchUp(slot.weekly, from)
     usedSum += slot.quota.used
     const smooth = smoothed.get(p.profile)
     const hasSmooth = smooth !== null && smooth !== undefined && Number.isFinite(smooth)
@@ -300,50 +313,88 @@ export function among(f: PoolForecast): string {
   return reportingAll(f) ? '' : ` (the ${f.counted} reporting it)`
 }
 
-/** The answer to "will we run out?": the soonest clip of either window, and its tone. */
+/**
+ * What a forecast says at `now`: every subscription it covers has an expired login, the pool is
+ * out, it runs out later, it lasts, or there is no reading. `partial` when it covers only the
+ * subscriptions reporting the window.
+ */
+export type ForecastState = 'logins' | 'out' | 'clips' | 'lasts' | 'unknown'
+
+export function forecastState(
+  f: PoolForecast,
+  now: EpochMs,
+): { state: ForecastState; partial: boolean } {
+  const partial = !reportingAll(f)
+  if (f.lasts === 'logins') return { state: 'logins', partial }
+  if (f.clipsAt !== null) return { state: f.clipsAt <= now ? 'out' : 'clips', partial }
+  return { state: f.lasts === 'unknown' ? 'unknown' : 'lasts', partial }
+}
+
+/**
+ * How severe a forecast is, most severe first: nothing can take work, out now, out now among
+ * some, runs out later (sooner first), logins expired among some, lasts, unknown. The headline
+ * is the most severe forecast, whatever its position or time.
+ */
+export function forecastSeverity(f: PoolForecast, now: EpochMs): number {
+  const { state, partial } = forecastState(f, now)
+  switch (state) {
+    case 'logins':
+      return partial ? 4 : 0
+    case 'out':
+      return partial ? 2 : 1
+    case 'clips':
+      return 3
+    case 'lasts':
+      return 5
+    case 'unknown':
+      return 6
+  }
+}
+
+/** The answer to "will we run out?": the most severe forecast, and its tone. */
 export function forecastHeadline(
   forecasts: PoolForecast[] | null,
   now: EpochMs,
 ): { tone: PoolTone; headline: string; window: WindowKind | null } {
-  if (forecasts === null) {
+  if (forecasts === null || forecasts.length === 0) {
     return { tone: 'info', headline: 'Waiting for the first reading.', window: null }
   }
-  const logins = forecasts.find((f) => f.lasts === 'logins')
-  if (logins !== undefined && reportingAll(logins)) {
-    return {
-      tone: 'error',
-      headline: 'No subscription can take work: every login has expired.',
-      window: logins.window,
-    }
+  const ranked = [...forecasts].sort(
+    (a, b) =>
+      forecastSeverity(a, now) - forecastSeverity(b, now) ||
+      (a.clipsAt ?? Number.POSITIVE_INFINITY) - (b.clipsAt ?? Number.POSITIVE_INFINITY),
+  )
+  const top = ranked[0] as PoolForecast
+  const { state, partial } = forecastState(top, now)
+  const window = top.window
+  switch (state) {
+    case 'logins':
+      return partial
+        ? {
+            tone: 'warning',
+            headline: `Every subscription reporting its ${ALLOWANCE[window]} has an expired login${among(top)}.`,
+            window,
+          }
+        : {
+            tone: 'error',
+            headline: 'No subscription can take work: every login has expired.',
+            window,
+          }
+    case 'out':
+      return {
+        tone: partial ? 'warning' : 'error',
+        headline: `The pool is out of ${ALLOWANCE[window]} now${among(top)}.`,
+        window,
+      }
+    case 'clips':
+      return {
+        tone: 'warning',
+        headline: `At this pace the pool runs out of its ${ALLOWANCE[window]} in ${formatCountdown((top.clipsAt as EpochMs) - now)}${among(top)}.`,
+        window,
+      }
+    case 'lasts':
+      return { tone: 'success', headline: 'At this pace the pool does not run out.', window: null }
+    case 'unknown':
+      return { tone: 'info', headline: 'No subscription has reported its usage yet.', window: null }
   }
-  const clips = forecasts
-    .filter((f): f is PoolForecast & { clipsAt: EpochMs } => f.clipsAt !== null)
-    .sort((a, b) => a.clipsAt - b.clipsAt)
-  const first = clips[0]
-  if (first !== undefined && first.clipsAt <= now) {
-    return {
-      tone: reportingAll(first) ? 'error' : 'warning',
-      headline: `The pool is out of ${ALLOWANCE[first.window]} now${among(first)}.`,
-      window: first.window,
-    }
-  }
-  if (first !== undefined) {
-    return {
-      tone: 'warning',
-      headline: `At this pace the pool runs out of its ${ALLOWANCE[first.window]} in ${formatCountdown(first.clipsAt - now)}${among(first)}.`,
-      window: first.window,
-    }
-  }
-  // Expired logins among only some subscriptions rank below any run-out, which may be an error.
-  if (logins !== undefined) {
-    return {
-      tone: 'warning',
-      headline: `Every subscription reporting its ${ALLOWANCE[logins.window]} has an expired login${among(logins)}.`,
-      window: logins.window,
-    }
-  }
-  if (forecasts.every((f) => f.lasts === 'unknown')) {
-    return { tone: 'info', headline: 'No subscription has reported its usage yet.', window: null }
-  }
-  return { tone: 'success', headline: 'At this pace the pool does not run out.', window: null }
 }

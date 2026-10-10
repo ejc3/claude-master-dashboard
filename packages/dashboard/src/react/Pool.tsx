@@ -6,6 +6,7 @@ import {
   type EpochMs,
   FORECAST_HORIZON_MS,
   forecastHeadline,
+  forecastState,
   formatCountdown,
   formatPercent,
   formatWhen,
@@ -51,6 +52,19 @@ export function rateNote(f: PoolForecast): string {
   return `smoothed over up to the last 24 hours for ${f.smoothedCount} of ${f.counted}, else ${average}`
 }
 
+/**
+ * The cell's look: 'out' (an error) when the pool is out or every login has expired, 'partial'
+ * (a warning) when that holds only among the subscriptions reporting the window.
+ */
+export function forecastCellState(
+  f: PoolForecast,
+  now: EpochMs,
+): 'out' | 'partial' | 'clips' | 'lasts' | 'unknown' {
+  const { state, partial } = forecastState(f, now)
+  if (state === 'logins' || state === 'out') return partial ? 'partial' : 'out'
+  return state
+}
+
 function ForecastCell(props: { forecast: PoolForecast; now: EpochMs }) {
   const { forecast: f, now } = props
   const hydrated = useHydrated()
@@ -58,35 +72,31 @@ function ForecastCell(props: { forecast: PoolForecast; now: EpochMs }) {
   const at = (t: EpochMs) => (hydrated ? `, ${formatWhen(t, now)}` : '')
   let value: string
   let detail: string
-  // 'partial': out among only the subscriptions reporting the window, so a warning, not an error.
-  let state: 'out' | 'partial' | 'clips' | 'lasts' | 'unknown'
-  if (f.lasts === 'logins') {
-    state = reportingAll(f) ? 'out' : 'partial'
+  const state = forecastCellState(f, now)
+  const { state: kind } = forecastState(f, now)
+  if (kind === 'logins') {
     value = 'Logins expired'
     detail = reportingAll(f)
       ? 'Log the subscriptions in again on the server.'
       : `Every subscription reporting this window${among(f)} needs logging in again.`
-  } else if (f.clipsAt !== null && f.clipsAt <= now) {
-    state = reportingAll(f) ? 'out' : 'partial'
+  } else if (kind === 'out') {
     value = 'Out now'
     detail =
       f.recoversAt === null
         ? 'No reset time is known.'
         : `Work resumes in ${formatCountdown(f.recoversAt - now)}${at(f.recoversAt)}.`
-  } else if (f.clipsAt !== null) {
-    state = 'clips'
-    value = `Runs out in ${formatCountdown(f.clipsAt - now)}`
-    const when = hydrated ? formatWhen(f.clipsAt, now) : 'Then'
+  } else if (kind === 'clips' && f.clipsAt !== null) {
+    const clipsAt = f.clipsAt
+    value = `Runs out in ${formatCountdown(clipsAt - now)}`
+    const when = hydrated ? formatWhen(clipsAt, now) : 'Then'
     detail =
       f.recoversAt === null
         ? `${when}; no reset time is known.`
-        : `${when}, for ${formatCountdown(f.recoversAt - f.clipsAt)} until the first reset.`
-  } else if (f.lasts === 'unknown') {
-    state = 'unknown'
+        : `${when}, for ${formatCountdown(f.recoversAt - clipsAt)} until the first reset.`
+  } else if (kind === 'unknown') {
     value = 'No reading'
     detail = 'No subscription reports this window yet.'
   } else {
-    state = 'lasts'
     value = f.lasts === 'idle' ? 'Not in use' : "Won't run out"
     detail = `No run-out in ${HORIZON_WORDS[f.window]} at this pace.`
   }

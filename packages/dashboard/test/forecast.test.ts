@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { routeOrder, type Slot } from '../src/core/forecast'
 import {
   averageBurnRate,
   burnRate,
@@ -12,7 +13,7 @@ import {
   WEEK_MS,
 } from '../src/core/index'
 import { lastReady } from '../src/react/hooks'
-import { rateNote } from '../src/react/Pool'
+import { forecastCellState, rateNote } from '../src/react/Pool'
 
 const NOW = Date.UTC(2026, 9, 9, 12)
 const MIN = 60_000
@@ -498,5 +499,171 @@ describe('review fixes', () => {
       headline: 'The pool is out of 5-hour capacity now.',
     })
     expect(forecastHeadline([logins], NOW).tone).toBe('warning')
+  })
+
+  it('headlines the most severe forecast, whatever its position or time', () => {
+    const f = (over: Partial<PoolForecast>): PoolForecast => ({
+      window: 'weekly',
+      counted: 2,
+      unreported: 0,
+      smoothedCount: 0,
+      used: 0.5,
+      burnPerHour: 0.1,
+      clipsAt: null,
+      recoversAt: null,
+      lasts: 'horizon',
+      ...over,
+    })
+    const five = { window: 'fiveHour' as const }
+    const cases: Array<[string, PoolForecast[], string, string]> = [
+      // Every login expired in the window that covers all, though the first covers only some.
+      [
+        'all logins after partial logins',
+        [f({ lasts: 'logins', unreported: 1 }), f({ ...five, lasts: 'logins' })],
+        'error',
+        'No subscription can take work: every login has expired.',
+      ],
+      // Out now for all in the second, out now among some in the first: same clip time.
+      [
+        'out for all after out among some',
+        [
+          f({ clipsAt: NOW, lasts: null, unreported: 1 }),
+          f({ ...five, clipsAt: NOW, lasts: null }),
+        ],
+        'error',
+        'The pool is out of 5-hour capacity now.',
+      ],
+      [
+        'out among some over a later run-out',
+        [
+          f({ clipsAt: NOW + HOUR_MS, lasts: null }),
+          f({ ...five, clipsAt: NOW, lasts: null, unreported: 1, counted: 1 }),
+        ],
+        'warning',
+        'The pool is out of 5-hour capacity now (the 1 reporting it).',
+      ],
+      [
+        'sooner run-out first',
+        [
+          f({ clipsAt: NOW + 30 * HOUR_MS, lasts: null }),
+          f({ ...five, clipsAt: NOW + 2 * HOUR_MS, lasts: null }),
+        ],
+        'warning',
+        'At this pace the pool runs out of its 5-hour capacity in 2h.',
+      ],
+      [
+        'a run-out over partial logins',
+        [
+          f({ lasts: 'logins', unreported: 1 }),
+          f({ ...five, clipsAt: NOW + HOUR_MS, lasts: null }),
+        ],
+        'warning',
+        'At this pace the pool runs out of its 5-hour capacity in 1h.',
+      ],
+      [
+        'partial logins over lasting',
+        [f({}), f({ ...five, lasts: 'logins', unreported: 1, counted: 1 })],
+        'warning',
+        'Every subscription reporting its 5-hour capacity has an expired login (the 1 reporting it).',
+      ],
+      [
+        'lasting over unknown',
+        [f({}), f({ ...five, lasts: 'unknown' })],
+        'success',
+        'At this pace the pool does not run out.',
+      ],
+      [
+        'all unknown',
+        [f({ lasts: 'unknown' }), f({ ...five, lasts: 'unknown' })],
+        'info',
+        'No subscription has reported its usage yet.',
+      ],
+    ]
+    for (const [name, forecasts, tone, headline] of cases) {
+      expect({ name, ...forecastHeadline(forecasts, NOW) }).toMatchObject({ name, tone, headline })
+      // Order does not matter.
+      expect({ name, ...forecastHeadline([...forecasts].reverse(), NOW) }).toMatchObject({
+        name,
+        tone,
+        headline,
+      })
+    }
+  })
+
+  it('styles the cell as an error only when the state covers every subscription', () => {
+    const f = (over: Partial<PoolForecast>): PoolForecast => ({
+      window: 'weekly',
+      counted: 1,
+      unreported: 0,
+      smoothedCount: 0,
+      used: 1,
+      burnPerHour: 0.1,
+      clipsAt: null,
+      recoversAt: null,
+      lasts: null,
+      ...over,
+    })
+    expect(forecastCellState(f({ lasts: 'logins' }), NOW)).toBe('out')
+    expect(forecastCellState(f({ lasts: 'logins', unreported: 1 }), NOW)).toBe('partial')
+    expect(forecastCellState(f({ clipsAt: NOW }), NOW)).toBe('out')
+    expect(forecastCellState(f({ clipsAt: NOW, unreported: 1 }), NOW)).toBe('partial')
+    expect(forecastCellState(f({ clipsAt: NOW + HOUR_MS }), NOW)).toBe('clips')
+    expect(forecastCellState(f({ lasts: 'horizon' }), NOW)).toBe('lasts')
+    expect(forecastCellState(f({ lasts: 'unknown' }), NOW)).toBe('unknown')
+  })
+
+  it('lets a week that resets inside the 5-hour horizon take work again', () => {
+    // a's week is full for an hour; then a takes work with all its 5-hour room, so b's 0.4
+    // never has to last on its own.
+    const f = poolForecast(
+      [
+        profile('a', {
+          weekly: weekly(1, HOUR_MS),
+          fiveHour: { usedFraction: 0, resetsAt: NOW + FIVE_HOURS_MS, lengthMs: FIVE_HOURS_MS },
+        }),
+        profile('b', {
+          weekly: weekly(0.2),
+          fiveHour: { usedFraction: 0.6, resetsAt: NOW + FIVE_HOURS_MS, lengthMs: FIVE_HOURS_MS },
+        }),
+      ],
+      'fiveHour',
+      NOW,
+      rates({ a: 0, b: 0.2 }),
+    )
+    expect(f).toMatchObject({ clipsAt: null, lasts: 'horizon' })
+  })
+
+  it('takes work again only after the later of two full windows resets', () => {
+    const f = poolForecast(
+      [
+        profile('a', {
+          weekly: weekly(1, 3 * HOUR_MS),
+          fiveHour: { usedFraction: 1, resetsAt: NOW + HOUR_MS, lengthMs: FIVE_HOURS_MS },
+        }),
+      ],
+      'fiveHour',
+      NOW,
+    )
+    expect(f).toMatchObject({ clipsAt: NOW, recoversAt: NOW + 3 * HOUR_MS })
+  })
+
+  it('orders as claude-master: reserve tier, read week, soonest reset, configured order', () => {
+    const slot = (index: number, used: number, resetsAt: number | null, known = true): Slot => {
+      const weekly = { used, resetsAt, lengthMs: WEEK_MS, known }
+      return { quota: weekly, weekly, index }
+    }
+    const order = (...slots: Slot[]) => [...slots].sort(routeOrder).map((s) => s.index)
+    // Under the reserve tier first, whatever the reset.
+    expect(order(slot(0, 0.95, NOW + HOUR_MS), slot(1, 0.5, NOW + 100 * HOUR_MS))).toEqual([1, 0])
+    // A read week before an unread one that resets sooner.
+    expect(order(slot(0, 0, NOW + HOUR_MS, false), slot(1, 0.2, NOW + 120 * HOUR_MS))).toEqual([
+      1, 0,
+    ])
+    // Soonest reset; an unknown reset after a known one.
+    expect(
+      order(slot(0, 0.2, null), slot(1, 0.2, NOW + 120 * HOUR_MS), slot(2, 0.2, NOW + HOUR_MS)),
+    ).toEqual([2, 1, 0])
+    // Otherwise the configured order.
+    expect(order(slot(1, 0.2, null), slot(0, 0.2, null))).toEqual([0, 1])
   })
 })
