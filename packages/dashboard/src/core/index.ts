@@ -43,6 +43,7 @@ export {
 export {
   type Blocked,
   blocked,
+  fiveHourAt,
   hasHeadroom,
   LOGIN_OVERDUE_MS,
   loginOverdue,

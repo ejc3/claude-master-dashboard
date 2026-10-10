@@ -4,6 +4,8 @@ import {
   CloudWatchError,
   createCloudWatchSource,
   DEFAULT_CACHE_MS,
+  FIVE_HOUR_LOOKBACK_MS,
+  fiveHourWindow,
   foldAliases,
   gaugeQuery,
   parseAccountAliases,
@@ -11,7 +13,7 @@ import {
   selectSource,
   splitLabel,
 } from '../src/cloudwatch/index'
-import { FIVE_HOURS_MS, HOUR_MS, type MetricsSource, WEEK_MS } from '../src/core/index'
+import { FIVE_HOURS_MS, fiveHourAt, HOUR_MS, type MetricsSource, WEEK_MS } from '../src/core/index'
 import { createDemoSource } from '../src/demo/index'
 import { createDashboardHandler } from '../src/next/index'
 
@@ -273,9 +275,18 @@ describe('createCloudWatchSource', () => {
     expect(expressions).toContain(
       'SELECT MAX("claude_master.sessions.tracked") FROM "ClaudeMaster"',
     )
-    for (const { body } of requests) {
+    for (const { body, expression } of requests) {
       expect(body.EndTime).toBe(SEC(NOW + 60_000))
-      expect(body.StartTime).toBe(SEC(NOW + 60_000 - SNAPSHOT_LOOKBACK_MS))
+      // The 5-hour reading is looked for over its whole window; the rest over minutes.
+      expect(body.StartTime).toBe(
+        SEC(
+          NOW +
+            60_000 -
+            (expression.includes('anthropic.ratelimit')
+              ? FIVE_HOUR_LOOKBACK_MS
+              : SNAPSHOT_LOOKBACK_MS),
+        ),
+      )
     }
     expect(snapshot.asOf).toBe(latest)
     expect(snapshot.sessions).toBe(94)
@@ -305,6 +316,61 @@ describe('createCloudWatchSource', () => {
     expect(bravo.fiveHour).toBeNull()
     expect(bravo.rateLimitedUntil).toBe(latest + 420_000)
     expect(bravo.latencyMs).toEqual({ p50: null, p95: null, p99: null })
+  })
+
+  it('keeps a 5-hour reading from hours ago while its window runs, and none once it has reset', async () => {
+    // A subscription whose 5-hour window filled stops serving, so its reading stops coming.
+    const latest = t0 + 9 * 60_000
+    const old = NOW - 3 * 3600_000
+    const answers = snapshotAnswers()
+    const { src } = source((body, expression) => {
+      if (!expression.includes('anthropic.ratelimit')) return answers(body, expression)
+      return {
+        MetricDataResults: [
+          // alpha: full, read three hours ago, resets an hour from now.
+          result('alpha utilization', [[old, 1]]),
+          result('alpha resets_in_seconds', [[old, 4 * 3600]]),
+          // bravo: read three hours ago, reset an hour ago: no window open now.
+          result('bravo utilization', [[old, 0.7]]),
+          result('bravo resets_in_seconds', [[old, 2 * 3600]]),
+        ],
+        Messages: [],
+      }
+    })
+    const snapshot = await src.snapshot()
+    const [alpha, bravo] = snapshot.profiles
+    expect(alpha?.fiveHour).toEqual({
+      usedFraction: 1,
+      resetsAt: old + 4 * 3600_000,
+      lengthMs: FIVE_HOURS_MS,
+    })
+    // Passed on as read; whoever uses it judges it closed at their own time.
+    expect(bravo?.fiveHour).toEqual({
+      usedFraction: 0.7,
+      resetsAt: old + 2 * 3600_000,
+      lengthMs: FIVE_HOURS_MS,
+    })
+    expect(fiveHourAt(bravo?.fiveHour ?? null, NOW)).toEqual({
+      usedFraction: 0,
+      resetsAt: null,
+      lengthMs: FIVE_HOURS_MS,
+    })
+    expect(fiveHourAt(alpha?.fiveHour ?? null, NOW)).toEqual(alpha?.fiveHour)
+    // The old reading does not make the snapshot older.
+    expect(snapshot.asOf).toBe(latest)
+  })
+
+  it('reads a countdown of zero as a window that reset when it was read', () => {
+    expect(fiveHourWindow([NOW - 3600_000, 1], [NOW - 3600_000, 0])).toEqual({
+      usedFraction: 1,
+      resetsAt: NOW - 3600_000,
+      lengthMs: FIVE_HOURS_MS,
+    })
+    expect(
+      fiveHourAt(fiveHourWindow([NOW - 3600_000, 1], [NOW - 3600_000, 0]), NOW)?.usedFraction,
+    ).toBe(0)
+    // No countdown read at all: the reset time is unknown, and the reading stands.
+    expect(fiveHourWindow([NOW, 0.4], undefined)?.resetsAt).toBeNull()
   })
 
   it('has no profiles and the clock as asOf when nothing has been exported', async () => {
