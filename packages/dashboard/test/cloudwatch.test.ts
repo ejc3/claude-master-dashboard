@@ -213,7 +213,7 @@ describe('createCloudWatchSource', () => {
     expect(calls).not.toHaveBeenCalled()
   })
 
-  it('answers the same query once a minute, concurrent callers included', async () => {
+  it('answers the same query from its answer for a minute, never by sharing a request in flight', async () => {
     let now = NOW
     const { src, calls } = source(() => ({ MetricDataResults: [result('q', [[t0, 1]])] }), {
       now: () => now,
@@ -223,13 +223,18 @@ describe('createCloudWatchSource', () => {
       range: { start: t0, end: NOW },
       stepSeconds: 300,
     }
+    // Concurrent callers (on Workers, other requests) each ask: a promise in flight belongs to
+    // the request that made it, and waiting on it from another one is cancelled with it.
     await Promise.all([src.series(query), src.series(query), src.series(query)])
-    expect(calls).toHaveBeenCalledTimes(1)
-    await src.series({ ...query, range: { start: t0 - 300_000, end: NOW } })
-    expect(calls).toHaveBeenCalledTimes(2)
-    now += DEFAULT_CACHE_MS
+    expect(calls).toHaveBeenCalledTimes(3)
+    // Once answered, the answer is shared for a minute.
     await src.series(query)
     expect(calls).toHaveBeenCalledTimes(3)
+    await src.series({ ...query, range: { start: t0 - 300_000, end: NOW } })
+    expect(calls).toHaveBeenCalledTimes(4)
+    now += DEFAULT_CACHE_MS
+    await src.series(query)
+    expect(calls).toHaveBeenCalledTimes(5)
   })
 
   it('does not keep a failure: the next caller asks again', async () => {
