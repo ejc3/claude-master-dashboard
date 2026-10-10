@@ -42,19 +42,29 @@ describe('dashboard.css', () => {
     // A state selector that sets `background` on a mark outranks the forced-colors rule for it,
     // and the mark is then painted Canvas: a full bar looks empty.
     // Anywhere in the file outside the forced-colors block, in any form of the property.
+    // The marks are whatever the forced-colors block paints CanvasText, so a mark added there
+    // is guarded here too.
     const forced = block('  @media (forced-colors: active)')
-    const marks = /\.cmd-runway-used|::before|\.cmd-pool-fill|&/
-    const offenders = rules(css.replace(forced, ''))
-      .filter(([selector]) => /\[data-/.test(selector) && marks.test(selector))
-      .filter(([, body]) => /(^|;|\s)background(-color)?\s*:/.test(body))
-      .map(([selector]) => selector)
-    expect(offenders).toEqual([])
     const canvasText = rules(forced)
       .filter(([, body]) => /background:\s*CanvasText/.test(body))
       .flatMap(([selector]) => selector.split(',').map((x) => x.trim()))
     for (const mark of ['.cmd-runway-used', '.cmd-row::before', '.cmd-pulse']) {
       expect(canvasText).toContain(mark)
     }
+    // The class (or pseudo-element) each mark selector ends in.
+    const tails = canvasText.map((selector) => selector.split(/\s+/).at(-1) ?? selector)
+    const targets = (selector: string) =>
+      selector
+        .split(',')
+        .map((x) => x.trim().split(/\s+/).at(-1) ?? '')
+        .some((tail) => tails.some((t) => tail.endsWith(t.replace(/^\.cmd-row/, ''))))
+    const offenders = rules(css.replace(forced, ''))
+      .filter(
+        ([selector]) => /\[data-/.test(selector) && (targets(selector) || selector.includes('&')),
+      )
+      .filter(([, body]) => /(^|;|\s)background(-color)?\s*:/.test(body))
+      .map(([selector]) => selector)
+    expect(offenders).toEqual([])
   })
 
   it('keeps pressed controls readable in forced colors', () => {

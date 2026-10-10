@@ -194,7 +194,7 @@
     width: 8px;
     height: 8px;
     border-radius: 50%;
-    background: var(--cmd-ok-mark);
+    background: var(--cmd-pulse-mark, var(--cmd-ok-mark));
     flex: none;
   }
 
@@ -202,8 +202,8 @@
     color: var(--cmd-reserve);
   }
 
-  .cmd-freshness[data-stale="true"] .cmd-pulse {
-    background: var(--cmd-reserve-mark);
+  .cmd-freshness[data-stale="true"] {
+    --cmd-pulse-mark: var(--cmd-reserve-mark);
   }
 
   /* The headline: the pool's state, as an alert tinted by how it reads. */

@@ -8,7 +8,7 @@ import {
   timeTicks,
   valueTicks,
 } from '../src/react/LineChart'
-import { sparkBars, sparkHeights } from '../src/react/Sparkline'
+import { sharedPeak, sparkBars, sparkHeights } from '../src/react/Sparkline'
 
 const NOW = Date.UTC(2026, 9, 9, 12, 7)
 
@@ -136,5 +136,17 @@ describe('sparkline scale', () => {
     expect(bars).toHaveLength(24)
     expect(bars.reduce((a, b) => a + b, 0)).toBe(50)
     expect(sparkHeights([0, 0.001, 100])).toEqual([0, 1.5, 26])
+  })
+})
+
+describe('sharedPeak', () => {
+  it('takes the tallest bar of rows that draw a sparkline only', () => {
+    const drawn: Array<[number, number]> = [
+      [0, 1],
+      [1, 2],
+    ]
+    // One point draws no sparkline: its 50 must not shrink the drawn row's bars.
+    expect(sharedPeak([{ points: drawn }, { points: [[0, 50]] }])).toBe(2)
+    expect(sharedPeak([])).toBe(0)
   })
 })

@@ -16,6 +16,17 @@ export function sparkBars(points: Array<[EpochMs, number]>): number[] {
 }
 
 /**
+ * The shared scale for a table of sparklines: the tallest bar of any row that draws one (rows
+ * with fewer than two points draw none, so they set no scale).
+ */
+export function sharedPeak(rows: Array<{ points: Array<[EpochMs, number]> }>): number {
+  return Math.max(
+    0,
+    ...rows.filter((r) => r.points.length >= 2).flatMap((r) => sparkBars(r.points)),
+  )
+}
+
+/**
  * Bar heights out of 26: `maxBar` (the tallest bar of any row in a table, from sparkBars) sets a
  * shared scale, so rows compare by height; by default the tallest bar here fills the height. A
  * bar with anything in it stays visible.
