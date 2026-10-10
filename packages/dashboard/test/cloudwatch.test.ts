@@ -4,7 +4,9 @@ import {
   CloudWatchError,
   createCloudWatchSource,
   DEFAULT_CACHE_MS,
+  foldAliases,
   gaugeQuery,
+  parseAccountAliases,
   SNAPSHOT_LOOKBACK_MS,
   selectSource,
   splitLabel,
@@ -394,5 +396,115 @@ describe('DashboardPage', () => {
       demoData: true,
     })) as { props: { demoData?: boolean } }
     expect(element.props.demoData).toBe(true)
+  })
+})
+
+describe('account aliases', () => {
+  const t1 = t0 + 5 * 60_000
+  const byPerson = () => ({
+    MetricDataResults: [
+      result('acct-0000aaaa', [[t0, 2]]),
+      result('alpha', [
+        [t0, 1],
+        [t1, 3],
+      ]),
+      result('acct-0000cccc', [[t0, 5]]),
+    ],
+  })
+  const query = {
+    metric: 'requests' as const,
+    groupBy: 'client_account' as const,
+    range: { start: NOW - HOUR_MS, end: NOW },
+    stepSeconds: 300,
+  }
+
+  it('reads one acct-<hash>=NAME line per person and counts, never names, the malformed ones', () => {
+    const warn = vi.fn()
+    const aliases = parseAccountAliases(
+      '# people\nacct-0000aaaa=alpha\n\n acct-0000bbbb = bravo \nnot-a-code=x\nacct-0000dddd=\nacct-ZZ=y',
+      warn,
+    )
+    expect([...aliases]).toEqual([
+      ['acct-0000aaaa', 'alpha'],
+      ['acct-0000bbbb', 'bravo'],
+    ])
+    expect(warn).toHaveBeenCalledTimes(1)
+    const message = warn.mock.calls[0]?.[0] as string
+    expect(message).toBe(
+      'claude-master dashboard: 3 malformed lines in DASHBOARD_ACCOUNT_ALIASES ignored',
+    )
+    expect(message).not.toContain('not-a-code')
+    expect(parseAccountAliases(undefined, warn).size).toBe(0)
+    expect(warn).toHaveBeenCalledTimes(1)
+  })
+
+  it('gives each person one series when the aliases are set, summing a shared bucket', async () => {
+    const fake = fakeCloudWatch(byPerson)
+    const src = createCloudWatchSource({
+      accessKeyId: 'AKIAEXAMPLE',
+      secretAccessKey: 'example-secret',
+      region: 'us-test-1',
+      fetch: fake.fetchImpl,
+      now: () => NOW,
+      accountAliases: new Map([['acct-0000aaaa', 'alpha']]),
+    })
+    const series = await src.series(query)
+    expect(series).toEqual([
+      {
+        key: 'alpha',
+        points: [
+          [t0, 3],
+          [t1, 3],
+        ],
+      },
+      { key: 'acct-0000cccc', points: [[t0, 5]] },
+    ])
+  })
+
+  it('changes nothing without aliases, or for a split other than by person', async () => {
+    const { src } = source(byPerson)
+    expect((await src.series(query)).map((s) => s.key)).toEqual([
+      'acct-0000aaaa',
+      'alpha',
+      'acct-0000cccc',
+    ])
+    const fake = fakeCloudWatch(byPerson)
+    const aliased = createCloudWatchSource({
+      accessKeyId: 'AKIAEXAMPLE',
+      secretAccessKey: 'example-secret',
+      region: 'us-test-1',
+      fetch: fake.fetchImpl,
+      now: () => NOW,
+      accountAliases: new Map([['acct-0000aaaa', 'alpha']]),
+    })
+    const byProfile = await aliased.series({ ...query, groupBy: 'profile' })
+    expect(byProfile.map((s) => s.key)).toEqual(['acct-0000aaaa', 'alpha', 'acct-0000cccc'])
+  })
+
+  it('takes the larger value, not the sum, for a metric that is not a SUM', () => {
+    const folded = foldAliases(
+      [
+        { key: 'acct-0000aaaa', points: [[t0, 4]] },
+        { key: 'alpha', points: [[t0, 7]] },
+      ],
+      new Map([['acct-0000aaaa', 'alpha']]),
+      'AVG',
+    )
+    expect(folded).toEqual([{ key: 'alpha', points: [[t0, 7]] }])
+  })
+
+  it('is read from DASHBOARD_ACCOUNT_ALIASES by selectSource', async () => {
+    const fake = fakeCloudWatch(byPerson)
+    const chosen = selectSource(
+      {
+        AWS_ACCESS_KEY_ID: 'AKIAEXAMPLE',
+        AWS_SECRET_ACCESS_KEY: 'x',
+        AWS_REGION: 'us-test-1',
+        DASHBOARD_ACCOUNT_ALIASES: 'acct-0000aaaa=alpha\nacct-0000cccc=charlie',
+      },
+      createDemoSource({ now: () => NOW }),
+      { warn: vi.fn(), fetch: fake.fetchImpl, now: () => NOW },
+    )
+    expect((await chosen.source.series(query)).map((s) => s.key)).toEqual(['alpha', 'charlie'])
   })
 })

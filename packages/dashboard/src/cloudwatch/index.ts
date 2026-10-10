@@ -38,6 +38,11 @@ export interface CloudWatchSourceOptions {
   fetch?: typeof fetch
   /** Overrides the regional endpoint. */
   endpoint?: string
+  /**
+   * Account codes to people's names (`acct-<hash>` -> name). Points exported before the server
+   * labelled accounts carry the code; a person's series under both is shown once, under the name.
+   */
+  accountAliases?: ReadonlyMap<string, string>
 }
 
 /** CloudWatch refused or failed a request; `code` is its error type, the message its text. */
@@ -50,6 +55,66 @@ export class CloudWatchError extends Error {
     this.status = status
     this.code = code
   }
+}
+
+const ALIAS_LINE = /^(acct-[0-9a-f]+)\s*=\s*(\S(?:.*\S)?)$/
+
+/**
+ * Reads DASHBOARD_ACCOUNT_ALIASES: one `acct-<hash>=NAME` line per person. Blank lines and `#`
+ * comments are skipped; a malformed line is ignored, and how many were is logged, never which.
+ */
+export function parseAccountAliases(
+  text: string | undefined,
+  warn: (message: string) => void = console.warn,
+): Map<string, string> {
+  const aliases = new Map<string, string>()
+  if (text === undefined) return aliases
+  let malformed = 0
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim()
+    if (line === '' || line.startsWith('#')) continue
+    const match = ALIAS_LINE.exec(line)
+    if (match === null || (match[2] as string).length > 64) {
+      malformed++
+      continue
+    }
+    aliases.set(match[1] as string, match[2] as string)
+  }
+  if (malformed > 0) {
+    warn(
+      `claude-master dashboard: ${malformed} malformed line${malformed === 1 ? '' : 's'} in DASHBOARD_ACCOUNT_ALIASES ignored`,
+    )
+  }
+  return aliases
+}
+
+/**
+ * Renames each series by the aliases and merges the ones that land on the same name: summed at
+ * a shared timestamp for a SUM metric, the larger value otherwise. A key not in the map stays.
+ */
+export function foldAliases(
+  series: Series[],
+  aliases: ReadonlyMap<string, string>,
+  statistic: string,
+): Series[] {
+  if (aliases.size === 0) return series
+  const merged = new Map<string, Map<EpochMs, number>>()
+  for (const s of series) {
+    const key = aliases.get(s.key) ?? s.key
+    const points = merged.get(key) ?? new Map<EpochMs, number>()
+    for (const [at, value] of s.points) {
+      const prior = points.get(at)
+      points.set(
+        at,
+        prior === undefined ? value : statistic === 'SUM' ? prior + value : Math.max(prior, value),
+      )
+    }
+    merged.set(key, points)
+  }
+  return [...merged.entries()].map(([key, points]) => ({
+    key,
+    points: [...points.entries()].sort((a, b) => a[0] - b[0]),
+  }))
 }
 
 export const DEFAULT_NAMESPACE = 'ClaudeMaster'
@@ -144,6 +209,7 @@ export function createCloudWatchSource(options: CloudWatchSourceOptions): Metric
   const clock = options.now ?? Date.now
   const fetchImpl = options.fetch ?? fetch
   const endpoint = options.endpoint ?? `https://monitoring.${options.region}.amazonaws.com/`
+  const aliases = options.accountAliases ?? new Map<string, string>()
   const client = new AwsClient({
     accessKeyId: options.accessKeyId,
     secretAccessKey: options.secretAccessKey,
@@ -366,10 +432,13 @@ export function createCloudWatchSource(options: CloudWatchSourceOptions): Metric
         query.stepSeconds,
       )
       // Without GROUP BY, CloudWatch labels the one result with the query id.
-      return results.map((result) => ({
+      const series = results.map((result) => ({
         key: query.groupBy === undefined ? 'total' : result.label,
         points: result.points,
       }))
+      return query.groupBy === 'client_account'
+        ? foldAliases(series, aliases, resolved.statistic)
+        : series
     },
   }
 }
@@ -385,6 +454,7 @@ export interface SourceSelection {
  * CloudWatch when AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY and AWS_REGION are all set, otherwise
  * the given demo source (and a warning naming what is missing, so an empty deployment is not
  * mistaken for a configured one). A CloudWatch failure later is an error, never a fallback.
+ * DASHBOARD_ACCOUNT_ALIASES, when set, folds account codes into people's names.
  */
 export function selectSource(
   env: Record<string, string | undefined>,
@@ -400,7 +470,13 @@ export function selectSource(
   if (accessKeyId && secretAccessKey && region) {
     return {
       kind: 'cloudwatch',
-      source: createCloudWatchSource({ ...rest, accessKeyId, secretAccessKey, region }),
+      source: createCloudWatchSource({
+        accountAliases: parseAccountAliases(env.DASHBOARD_ACCOUNT_ALIASES, warn),
+        ...rest,
+        accessKeyId,
+        secretAccessKey,
+        region,
+      }),
     }
   }
   const missing = [
