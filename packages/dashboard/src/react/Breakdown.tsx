@@ -64,7 +64,8 @@ export function requestTable(series: Series[]): Array<Series & { total: number }
  * a time is 0 there, so the bands add up to the total at every point), the smallest beyond eight
  * folded into Other, named by `labels`. A key in `known` (the page's subscription colors) keeps its
  * color; any other key takes a color from all the rows' keys, so a row folding into Other does not
- * repaint the rest.
+ * repaint the rest. Past eight keys some share a slot, and the ones shown are kept apart first
+ * (seriesColors' rule, as on the subscription chart), so a color can then move.
  */
 export function stackedRows(
   rows: ReadonlyArray<{ key: string; points: ReadonlyArray<[EpochMs, number]> }>,

@@ -1239,12 +1239,17 @@ describe('the breakdown table', () => {
       'output',
     ])
     let sum = 0
+    // Every subscription's tokens in the last bucket, which the stacked chart's readout totals.
+    const lastBucket = new Map<number, number>()
     for (const u of served) {
-      const series = (await source.series(seriesQueryFromParams(u.searchParams))).find(
-        (s) => s.key === key,
-      )
+      const answer = await source.series(seriesQueryFromParams(u.searchParams))
+      const series = answer.find((s) => s.key === key)
       sum += series?.points.reduce((total, [, v]) => total + v, 0) ?? 0
+      for (const s of answer) {
+        for (const [t, v] of s.points) lastBucket.set(t, (lastBucket.get(t) ?? 0) + v)
+      }
     }
+    const latest = Math.max(...lastBucket.keys())
     expect(sum).toBeGreaterThan(0)
     expect(phoneTotal).toBe(formatCount(sum))
 
@@ -1262,6 +1267,10 @@ describe('the breakdown table', () => {
     expect(
       legend.map((b) => (b.querySelector('.cmd-swatch') as HTMLElement | null)?.style.color),
     ).toEqual(rowNames.map((n) => colors.get(`team-${n}`)))
+    // Stacked: the readout adds the bands up to the pool's total at the latest point.
+    expect(chart?.querySelector('[role="slider"]')?.getAttribute('aria-valuetext')).toMatch(
+      new RegExp(`, total ${formatCount(lastBucket.get(latest) ?? 0).replace('.', '\\.')}$`),
+    )
   })
 })
 
