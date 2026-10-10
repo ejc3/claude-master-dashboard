@@ -706,6 +706,10 @@
     color: var(--cmd-ink-3);
   }
 
+  .cmd-row-meta:empty {
+    display: none;
+  }
+
   .cmd-row-meta [data-warn="true"] {
     color: var(--cmd-reserve);
     font-weight: 500;
@@ -1049,10 +1053,14 @@
     padding: 0;
     min-inline-size: 0;
     border: 0;
-    border-bottom: 1px solid var(--cmd-rule);
+    /* One row that scrolls sideways on a narrow screen; the rule is drawn inside so the scroll
+       does not clip the chosen tab's mark. */
+    box-shadow: inset 0 -1px var(--cmd-rule);
     display: flex;
-    flex-wrap: wrap;
-    gap: 0 20px;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+    gap: 0 16px;
   }
 
   .cmd-tabs button {
@@ -1065,6 +1073,8 @@
     border: 0;
     padding: 8px 0 10px;
     min-height: 40px;
+    flex-shrink: 0;
+    white-space: nowrap;
     cursor: pointer;
   }
 
@@ -1081,7 +1091,7 @@
     position: absolute;
     left: 0;
     right: 0;
-    bottom: -1px;
+    bottom: 0;
     height: 3px;
     border-radius: 3px 3px 0 0;
     background: var(--cmd-accent);
@@ -1141,6 +1151,19 @@
 
   .cmd-trend {
     width: 132px;
+  }
+
+  /* A phone gets the name, the total and the share; wider screens get each type and the trend. */
+  @media (max-width: 719.98px) {
+    .cmd-full {
+      display: none;
+    }
+  }
+
+  @media (min-width: 720px) {
+    .cmd-phone {
+      display: none;
+    }
   }
 
   .cmd-spark {

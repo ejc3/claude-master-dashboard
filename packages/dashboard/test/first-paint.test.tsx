@@ -14,7 +14,7 @@ import {
   timeZoneOrNull,
 } from '../src/core/index'
 import { createDemoSource } from '../src/demo/index'
-import { DashboardPage, FIRST_QUERIES_BUDGET_MS } from '../src/next/index'
+import { createDashboardHandler, DashboardPage, FIRST_QUERIES_BUDGET_MS } from '../src/next/index'
 import { keepWhileLoading, type Loaded } from '../src/react/hooks'
 import { LineChart, seriesColors } from '../src/react/LineChart'
 import {
@@ -129,6 +129,7 @@ describe('the first paint', () => {
       'Output',
       'Cache read',
       'Cache write',
+      'Tokens',
       'Share',
       'Trend',
     ])
@@ -509,7 +510,7 @@ describe('answers shown together, while a moved range loads', () => {
 })
 
 describe('the status badge', () => {
-  it('says a subscription Anthropic is rate-limiting is rate limited, and when it takes work again', () => {
+  it('says a subscription Anthropic is rate-limiting is rate limited, and when it is back', () => {
     const status: ProfileStatus = {
       profile: 'alpha',
       band: 'ok',
@@ -524,7 +525,7 @@ describe('the status badge', () => {
     const badge = container.querySelector('.cmd-status')
     expect(badge?.textContent).toBe('Rate limited')
     expect(badge?.getAttribute('data-status')).toBe('rate-limited')
-    expect(container.textContent).toContain('Takes work again in 1h 46m')
+    expect(container.textContent).toContain('Back in 1h 46m')
     expect(container.textContent).not.toMatch(/cool/i)
   })
 })
@@ -1153,5 +1154,97 @@ describe('the active projects box', () => {
     // The demo's three projects; work no launch named a project for ("none") is not one.
     expect(box?.querySelector('.cmd-kpi-value')?.textContent).toBe('3')
     expect(box?.querySelector('.cmd-kpi-note')?.textContent).toMatch(/^Most: web-app, \d+%$/)
+  })
+})
+
+describe('the breakdown table', () => {
+  // Subscriptions named as a team names them, with a shared prefix.
+  function prefixedSource(): MetricsSource {
+    const demo = createDemoSource({ now: () => NOW })
+    return {
+      ...demo,
+      series: async (q) => {
+        const series = await demo.series(q)
+        return q.groupBy === 'profile'
+          ? series.map((s) => ({ ...s, key: `team-${s.key}` }))
+          : series
+      },
+    }
+  }
+
+  it('gives a phone the name, the total and the share, and a shorter name for subscriptions', async () => {
+    const source = prefixedSource()
+    const { GET } = createDashboardHandler({ source: () => source, authorize: () => true })
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string) => GET(new Request(new URL(url, 'https://dashboard.example')))),
+    )
+    const element = await serverPage(ZONE, source)
+    const container = document.createElement('div')
+    container.innerHTML = renderToString(element)
+    document.body.append(container)
+    act(() => {
+      roots.push(hydrateRoot(container, element))
+    })
+    const tab = [...container.querySelectorAll('.cmd-tabs button')].find(
+      (b) => b.querySelector('.cmd-full')?.textContent === 'Subscriptions',
+    ) as HTMLButtonElement
+    expect(tab.querySelector('.cmd-phone')?.textContent).toBe('Subs')
+    await act(async () => {
+      tab.click()
+      await vi.advanceTimersByTimeAsync(100)
+    })
+    const table = container.querySelector('.cmd-table') as HTMLTableElement
+    const head = [...table.querySelectorAll('thead th')]
+    // Each token type and the trend only on a wide screen; the total only on a phone.
+    expect(head.map((th) => th.className)).toEqual([
+      '',
+      'cmd-num cmd-full',
+      'cmd-num cmd-full',
+      'cmd-num cmd-full',
+      'cmd-num cmd-full',
+      'cmd-num cmd-phone',
+      '',
+      'cmd-full',
+    ])
+    expect(head[0]?.querySelector('.cmd-full')?.textContent).toBe('Subscription')
+    expect(head[0]?.querySelector('.cmd-phone')?.textContent).toBe('Sub')
+    const first = table.querySelector('tbody tr') as HTMLTableRowElement
+    const name = first.querySelector('th')
+    expect(name?.querySelector('.cmd-full')?.textContent).toMatch(/^team-/)
+    expect(name?.querySelector('.cmd-phone')?.textContent).toBe(
+      name?.querySelector('.cmd-full')?.textContent?.slice('team-'.length),
+    )
+    // The phone's total is the sum of the wide screen's columns.
+    const cells = [...first.querySelectorAll('td.cmd-num')]
+    const phoneTotal = cells.find((td) => td.classList.contains('cmd-phone'))?.textContent
+    expect(phoneTotal).toMatch(/\d/)
+    expect(cells.filter((td) => td.classList.contains('cmd-full'))).toHaveLength(4)
+  })
+})
+
+describe('a subscription row', () => {
+  it('says Available, and nothing about latency or a used-up window twice', () => {
+    const base: ProfileStatus = {
+      profile: 'alpha',
+      band: 'ok',
+      weekly: { usedFraction: 0.3, resetsAt: NOW + 50 * HOUR_MS, lengthMs: 168 * HOUR_MS },
+      fiveHour: null,
+      rateLimitedUntil: null,
+      tokenExpiresAt: null,
+      latencyMs: { p50: 1000, p95: 5000, p99: 9000 },
+    }
+    const render = (status: ProfileStatus) => {
+      const container = document.createElement('div')
+      container.innerHTML = renderToString(<RunwayCard status={status} now={NOW} />)
+      return container
+    }
+    const ok = render(base)
+    expect(ok.querySelector('.cmd-status')?.textContent).toBe('Available')
+    expect(ok.textContent).not.toMatch(/p95|headroom/)
+    const usedUp = render({ ...base, weekly: { ...base.weekly, usedFraction: 1 } })
+    expect(usedUp.querySelector('.cmd-status')?.textContent).toBe('Used up')
+    expect(usedUp.textContent).toContain('Back in 2d')
+    expect(usedUp.textContent).not.toContain('Used up until the reset')
   })
 })

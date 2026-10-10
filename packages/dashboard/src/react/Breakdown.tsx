@@ -19,6 +19,7 @@ import {
 } from '../core/index'
 import { useSharedAnswers } from './answers'
 import { useCountedSeries, useSeries, useWhen } from './hooks'
+import { shortNames } from './Pool'
 import { breakdownQueries, SPLITS } from './queries'
 import { Sparkline, sharedPeak } from './Sparkline'
 
@@ -55,6 +56,25 @@ export function requestTable(series: Series[]): Array<Series & { total: number }
     .map((s) => ({ ...s, total: s.points.reduce((sum, [, v]) => sum + v, 0) }))
     .filter((s) => s.total > 0)
     .sort((a, b) => b.total - a.total)
+}
+
+/** A row's name: in full, and on a phone without the prefix every subscription shares. */
+function RowHead(props: { name: string; short: string; color: string | undefined }) {
+  return (
+    <th scope="row" className="cmd-row-head">
+      {props.color !== undefined && (
+        <span className="cmd-swatch" style={{ color: props.color }} aria-hidden="true" />
+      )}
+      {props.short === props.name ? (
+        props.name
+      ) : (
+        <>
+          <span className="cmd-full">{props.name}</span>
+          <span className="cmd-phone">{props.short}</span>
+        </>
+      )}
+    </th>
+  )
 }
 
 /** Who and what used the pool in the range, one split at a time: tokens, or requests for models. */
@@ -124,6 +144,10 @@ export function Breakdown(props: {
   // One scale for every row's trend (the tallest bar of any row), so a small series does not
   // look as busy as a large one and the busiest row's peak fills its height.
   const peak = sharedPeak(rows)
+  const short =
+    split.dimension === 'profile' ? shortNames(rows.map((r) => r.key)) : new Map<string, string>()
+  const color = (key: string) =>
+    split.dimension === 'profile' ? props.colors?.get(key) : undefined
 
   const what = showTokens
     ? props.tokenChoice === 'all'
@@ -165,7 +189,14 @@ export function Breakdown(props: {
               aria-pressed={s.dimension === split.dimension}
               onClick={() => setSplit(s)}
             >
-              {s.label}
+              {s.shortLabel === s.label ? (
+                s.label
+              ) : (
+                <>
+                  <span className="cmd-full">{s.label}</span>
+                  <span className="cmd-phone">{s.shortLabel}</span>
+                </>
+              )}
             </button>
           ))}
         </fieldset>
@@ -181,62 +212,69 @@ export function Breakdown(props: {
           <table className="cmd-table">
             <thead>
               <tr>
-                <th scope="col">{split.column}</th>
+                <th scope="col">
+                  {split.shortColumn === split.column ? (
+                    split.column
+                  ) : (
+                    <>
+                      <span className="cmd-full">{split.column}</span>
+                      <span className="cmd-phone">{split.shortColumn}</span>
+                    </>
+                  )}
+                </th>
                 {showTokens ? (
-                  TOKEN_TYPES.map((t) => (
-                    <th scope="col" className="cmd-num" key={t}>
-                      {TOKEN_LABELS[t]}
+                  <>
+                    {TOKEN_TYPES.map((t) => (
+                      <th scope="col" className="cmd-num cmd-full" key={t}>
+                        {TOKEN_LABELS[t]}
+                      </th>
+                    ))}
+                    <th scope="col" className="cmd-num cmd-phone">
+                      {what}
                     </th>
-                  ))
+                  </>
                 ) : (
                   <th scope="col" className="cmd-num">
                     Requests
                   </th>
                 )}
                 <th scope="col">Share</th>
-                <th scope="col">Trend</th>
+                <th scope="col" className="cmd-full">
+                  Trend
+                </th>
               </tr>
             </thead>
             <tbody>
               {showTokens
                 ? tokenTable.map((r) => (
                     <tr key={r.key}>
-                      <th scope="row" className="cmd-row-head">
-                        {split.dimension === 'profile' && props.colors?.has(r.key) && (
-                          <span
-                            className="cmd-swatch"
-                            style={{ color: props.colors.get(r.key) }}
-                            aria-hidden="true"
-                          />
-                        )}
-                        {r.key}
-                      </th>
+                      <RowHead
+                        name={r.key}
+                        short={short.get(r.key) ?? r.key}
+                        color={color(r.key)}
+                      />
                       {TOKEN_TYPES.map((t) => (
-                        <td className="cmd-num" key={t}>
+                        <td className="cmd-num cmd-full" key={t}>
                           {formatCount(r.byType[t])}
                         </td>
                       ))}
+                      <td className="cmd-num cmd-phone">{formatCount(r.total)}</td>
                       <ShareCell share={all === 0 ? 0 : r.total / all} />
-                      <td className="cmd-trend">
+                      <td className="cmd-trend cmd-full">
                         <Sparkline points={r.points} maxBar={peak} />
                       </td>
                     </tr>
                   ))
                 : requestRows.map((r) => (
                     <tr key={r.key}>
-                      <th scope="row" className="cmd-row-head">
-                        {split.dimension === 'profile' && props.colors?.has(r.key) && (
-                          <span
-                            className="cmd-swatch"
-                            style={{ color: props.colors.get(r.key) }}
-                            aria-hidden="true"
-                          />
-                        )}
-                        {r.key}
-                      </th>
+                      <RowHead
+                        name={r.key}
+                        short={short.get(r.key) ?? r.key}
+                        color={color(r.key)}
+                      />
                       <td className="cmd-num">{formatCount(r.total)}</td>
                       <ShareCell share={all === 0 ? 0 : r.total / all} />
-                      <td className="cmd-trend">
+                      <td className="cmd-trend cmd-full">
                         <Sparkline points={r.points} maxBar={peak} />
                       </td>
                     </tr>
