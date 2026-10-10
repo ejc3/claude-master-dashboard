@@ -57,7 +57,7 @@ const share = (f: number | null | undefined) =>
 
 /**
  * A tiny bar: how much of a window is used, in the subscription's own color (the same as in the
- * charts); a full one is outlined in the warning color; dashed and empty when there is no reading.
+ * charts); dashed and empty when there is no reading. A full bar says it is used up by itself.
  */
 function UsedBar(props: { used: number | null; window: WindowKind; color: string }) {
   const { used } = props
