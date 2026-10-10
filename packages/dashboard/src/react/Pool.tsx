@@ -259,6 +259,7 @@ export function CapacityOutlook(props: {
         max={charts.capacity}
         bands={charts.bands}
         bandLabel="No subscription can take work"
+        table={false}
         now={now}
         area
       />

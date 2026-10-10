@@ -1,6 +1,14 @@
 'use client'
 
-import { type KeyboardEvent, memo, type PointerEvent, useId, useRef, useState } from 'react'
+import {
+  type KeyboardEvent,
+  memo,
+  type PointerEvent,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+} from 'react'
 import { type EpochMs, formatWhen } from '../core'
 import { useWhen, useWidth } from './hooks'
 
@@ -29,6 +37,8 @@ interface Props {
   bandLabel?: string
   /** The axis maximum, when the scale is fixed (e.g. the pool's full capacity). */
   max?: number
+  /** Offer the table view; off where a table of the samples tells nothing (the readout still does). */
+  table?: boolean
 }
 
 const PAD = { top: 8, right: 8, bottom: 22, left: 44 }
@@ -63,6 +73,7 @@ export const LineChart = memo(function LineChart({
   now,
   bands = [],
   bandLabel = 'Shaded',
+  table = true,
   max: fixedMax,
 }: Props) {
   const [ref, width] = useWidth<HTMLDivElement>()
@@ -97,10 +108,28 @@ export const LineChart = memo(function LineChart({
     }
     setActive(best)
   }
-  const onPointer = (event: PointerEvent<HTMLDivElement>) => {
-    setTouch(event.pointerType !== 'mouse')
+  // A mouse reads wherever it hovers. A finger reads only where it taps: a touch that ends as a
+  // tap (a scroll cancels it instead), so scrolling past a chart opens nothing.
+  const onHover = (event: PointerEvent<HTMLDivElement>) => {
+    if (event.pointerType !== 'mouse') return
+    setTouch(false)
     pick(event.clientX)
   }
+  const onTap = (event: PointerEvent<HTMLDivElement>) => {
+    if (event.pointerType === 'mouse') return
+    setTouch(true)
+    pick(event.clientX)
+  }
+  // A tapped readout stays until a tap anywhere else, as a popover does.
+  const shown = active !== null && touch
+  useEffect(() => {
+    if (!shown) return
+    const away = (event: Event) => {
+      if (!plotRef.current?.contains(event.target as Node)) setActive(null)
+    }
+    document.addEventListener('pointerdown', away)
+    return () => document.removeEventListener('pointerdown', away)
+  }, [shown])
   const onKey = (event: KeyboardEvent<HTMLDivElement>) => {
     if (times.length === 0) return
     const lastIndex = times.length - 1
@@ -153,15 +182,17 @@ export const LineChart = memo(function LineChart({
     <figure className="cmd-panel" style={{ margin: 0 }}>
       <div className="cmd-panel-head">
         <figcaption className="cmd-panel-title">{title}</figcaption>
-        <button
-          type="button"
-          className="cmd-toggle"
-          aria-expanded={showTable}
-          aria-controls={tableId}
-          onClick={() => setShowTable((v) => !v)}
-        >
-          {showTable ? 'Show chart' : 'Show table'}
-        </button>
+        {table && (
+          <button
+            type="button"
+            className="cmd-toggle"
+            aria-expanded={showTable}
+            aria-controls={tableId}
+            onClick={() => setShowTable((v) => !v)}
+          >
+            {showTable ? 'Show chart' : 'Show table'}
+          </button>
+        )}
       </div>
       {series.length > 1 && (
         <ul className="cmd-legend">
@@ -333,8 +364,9 @@ export const LineChart = memo(function LineChart({
             aria-valuemax={Math.max(0, times.length - 1)}
             aria-valuenow={Math.max(0, readIndex)}
             aria-valuetext={valueText}
-            onPointerMove={onPointer}
-            onPointerDown={onPointer}
+            onPointerMove={onHover}
+            onPointerDown={onHover}
+            onPointerUp={onTap}
             onPointerLeave={(event) => {
               if (event.pointerType === 'mouse') setActive(null)
             }}
@@ -346,7 +378,15 @@ export const LineChart = memo(function LineChart({
               className="cmd-tooltip"
               data-touch={touch}
               aria-hidden="true"
-              style={flip ? { right: width - tooltipLeft + 10 } : { left: tooltipLeft + 10 }}
+              style={
+                // On touch it sits above the chart across its width, so the finger does not
+                // hide it and a long label cannot run off the screen.
+                touch
+                  ? { left: 0, right: 0 }
+                  : flip
+                    ? { right: width - tooltipLeft + 10 }
+                    : { left: tooltipLeft + 10 }
+              }
             >
               {series.map((s) => (
                 <div className="cmd-tooltip-row" key={s.key}>

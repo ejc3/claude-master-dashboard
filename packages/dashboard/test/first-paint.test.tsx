@@ -16,6 +16,7 @@ import {
 import { createDemoSource } from '../src/demo/index'
 import { DashboardPage, FIRST_QUERIES_BUDGET_MS } from '../src/next/index'
 import { keepWhileLoading, type Loaded } from '../src/react/hooks'
+import { LineChart } from '../src/react/LineChart'
 import { CapacityOutlook, PoolAccounts, shortNames } from '../src/react/Pool'
 import { chartQuery, firstQueries } from '../src/react/queries'
 import { RunwayCard } from '../src/react/Runway'
@@ -634,29 +635,31 @@ describe('the capacity charts', () => {
       'Weekly allowance left, at this pace',
       '5-hour capacity left, next 24 hours',
     ])
-    const rows = (figure: Element) => {
-      act(() => (figure.querySelector('button') as HTMLButtonElement).click())
-      return [...figure.querySelectorAll('tbody tr')].map(
-        (r) => r.querySelector('td:nth-child(2)')?.textContent,
-      )
+    // No table view on these charts; the readout reads each point.
+    expect(figures.every((f) => f.querySelector('button') === null)).toBe(true)
+    const readout = (figure: Element, key: string) => {
+      const slider = figure.querySelector('[role="slider"]') as HTMLElement
+      act(() => {
+        slider.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }))
+      })
+      return slider
     }
-    const weekly = rows(figures[0] as Element)
-    const five = rows(figures[1] as Element)
+    const weekly = figures[0] as Element
+    const five = figures[1] as Element
     // Weekly hourly from now to the hour after the reset 60 hours out (so its step shows); 5-hour
     // every ten minutes over the next 24 hours.
-    expect(weekly).toHaveLength(62)
-    // Listed newest first: the last row is after the reset at 60 hours, so its step shows.
-    expect(weekly[0]).toBe('158%')
-    // From the sample at or before now (on the ten-minute grid) over the next 24 hours.
-    expect(five).toHaveLength(24 * 6)
-    // Newest last in time, listed first: the weekly line starts at what is left now, 100%.
-    expect(weekly.at(-1)).toBe('100%')
-    expect(five.at(-1)).toBe('160%')
+    expect(readout(weekly, 'End').getAttribute('aria-valuemax')).toBe(String(62 - 1))
+    expect(readout(five, 'End').getAttribute('aria-valuemax')).toBe(String(24 * 6 - 1))
+    // The last weekly point is after the reset at 60 hours: its step up shows.
+    expect(readout(weekly, 'End').getAttribute('aria-valuetext')).toMatch(/158%$/)
+    // The first points: what is left now.
+    expect(readout(weekly, 'Home').getAttribute('aria-valuetext')).toMatch(/100%$/)
+    expect(readout(five, 'Home').getAttribute('aria-valuetext')).toMatch(/160%$/)
   })
 })
 
 describe('a gap in the capacity charts', () => {
-  it('is in the table and the readout, not only shaded', () => {
+  it('is in the readout, not only shaded', () => {
     // Every week full until the first resets in 30 hours: no subscription can take work until then.
     const profile = (name: string, resetIn: number): ProfileStatus => ({
       profile: name,
@@ -681,14 +684,112 @@ describe('a gap in the capacity charts', () => {
       slider.dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true }))
     })
     expect(slider.getAttribute('aria-valuetext')).toContain('No subscription can take work')
-    // The table has a column for it: yes inside the gap, nothing after.
-    act(() => (weekly.querySelector('button') as HTMLButtonElement).click())
-    const head = [...weekly.querySelectorAll('thead th')].map((e) => e.textContent)
-    expect(head.at(-1)).toBe('No subscription can take work')
-    const marks = [...weekly.querySelectorAll('tbody tr')].map(
-      (r) => r.querySelector('td:last-child')?.textContent,
+    // And at the last point, after the gap, it does not.
+    act(() => {
+      slider.dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true }))
+    })
+    expect(slider.getAttribute('aria-valuetext')).not.toContain('No subscription can take work')
+  })
+})
+
+describe('a chart readout on touch', () => {
+  it('opens on a tap, not a scroll, stays, and goes with a tap anywhere else', () => {
+    const container = document.createElement('div')
+    document.body.append(container)
+    const root = createRoot(container)
+    roots.push(root)
+    act(() =>
+      root.render(
+        <LineChart
+          title="Requests"
+          series={[
+            {
+              key: 'a',
+              label: 'Requests',
+              color: 'red',
+              points: [
+                [NOW, 1],
+                [NOW + 60_000, 2],
+              ],
+            },
+          ]}
+          format={String}
+          now={NOW}
+        />,
+      ),
     )
-    expect(marks.at(-1)).toBe('Yes')
-    expect(marks[0]).toBe('')
+    const slider = container.querySelector('[role="slider"]') as HTMLElement
+    const tap = (target: Element, type: string) => {
+      const event = new MouseEvent(type, { bubbles: true, clientX: 0 })
+      Object.defineProperty(event, 'pointerType', { value: 'touch' })
+      act(() => {
+        target.dispatchEvent(event)
+      })
+    }
+    // A finger moving over the chart (a scroll, which ends in a cancel) opens nothing.
+    tap(slider, 'pointerdown')
+    tap(slider, 'pointermove')
+    tap(slider, 'pointercancel')
+    expect(container.querySelector('.cmd-tooltip')).toBeNull()
+    // A tap opens it, and it stays.
+    tap(slider, 'pointerdown')
+    tap(slider, 'pointerup')
+    act(() => {
+      vi.advanceTimersByTime(60_000)
+    })
+    expect(container.querySelector('.cmd-tooltip')).not.toBeNull()
+    // Tapping the chart again moves it, and it stays.
+    tap(slider, 'pointerdown')
+    tap(slider, 'pointerup')
+    expect(container.querySelector('.cmd-tooltip')).not.toBeNull()
+    // A tap anywhere else closes it.
+    tap(document.body, 'pointerdown')
+    expect(container.querySelector('.cmd-tooltip')).toBeNull()
+  })
+})
+
+describe('a chart readout with a mouse', () => {
+  it('follows the pointer and goes when it leaves', () => {
+    const container = document.createElement('div')
+    document.body.append(container)
+    const root = createRoot(container)
+    roots.push(root)
+    act(() =>
+      root.render(
+        <LineChart
+          title="Requests"
+          series={[
+            {
+              key: 'a',
+              label: 'Requests',
+              color: 'red',
+              points: [
+                [NOW, 1],
+                [NOW + 60_000, 2],
+              ],
+            },
+          ]}
+          format={String}
+          now={NOW}
+        />,
+      ),
+    )
+    const slider = container.querySelector('[role="slider"]') as HTMLElement
+    const mouse = (type: string) => {
+      const event = new MouseEvent(type, {
+        bubbles: true,
+        clientX: 0,
+        relatedTarget: document.body,
+      })
+      Object.defineProperty(event, 'pointerType', { value: 'mouse' })
+      act(() => {
+        slider.dispatchEvent(event)
+      })
+    }
+    mouse('pointermove')
+    expect(container.querySelector('.cmd-tooltip')).not.toBeNull()
+    // React reads leaving from a pointerout to outside the element.
+    mouse('pointerout')
+    expect(container.querySelector('.cmd-tooltip')).toBeNull()
   })
 })
