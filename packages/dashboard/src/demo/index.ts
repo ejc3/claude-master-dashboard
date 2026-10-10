@@ -82,6 +82,8 @@ interface DemoProfile {
   cooldownMs: number | null
   tokenLeftMs: number
   latencyScale: number
+  /** How long ago the subscription joined the pool: it has no weekly reading before then. */
+  joinedAgoMs?: number
 }
 
 const PROFILES: readonly DemoProfile[] = [
@@ -128,6 +130,9 @@ const PROFILES: readonly DemoProfile[] = [
     cooldownMs: 7 * MINUTE_MS,
     tokenLeftMs: 6 * HOUR_MS,
     latencyScale: 1.3,
+    // Added a day and a bit ago, outside the forecast's day of smoothing: the 7-day range shows
+    // the pool's step up.
+    joinedAgoMs: 30 * HOUR_MS,
   },
 ]
 
@@ -250,6 +255,8 @@ export function createDemoSource(options: DemoOptions = {}): MetricsSource {
       case 'weeklyResetsInSeconds':
       case 'tokenExpiresInSeconds': {
         const values = PROFILES.map((p) => {
+          if (metric === 'weeklyUsed' && p.joinedAgoMs !== undefined && m < now - p.joinedAgoMs)
+            return Number.NaN
           if (metric === 'weeklyUsed')
             return usedAt(p.weeklyUsed, now + p.weeklyResetsInMs, WEEK_MS, now, m)
           if (metric === 'weeklyResetsInSeconds')
@@ -349,7 +356,11 @@ export function createDemoSource(options: DemoOptions = {}): MetricsSource {
           const values = minute(query.metric, query.groupBy, m, now, query.tokenType)
           for (const [i, v] of values.entries()) perKey[i]?.push(v)
         }
-        for (const [i, values] of perKey.entries()) points[i]?.push([at, reduce(statistic, values)])
+        // A key with no reading in the bucket has no point, as in CloudWatch.
+        for (const [i, values] of perKey.entries()) {
+          const read = values.filter(Number.isFinite)
+          if (read.length > 0) points[i]?.push([at, reduce(statistic, read)])
+        }
       }
       return keys.map((key, i) => ({ key, points: points[i] ?? [] }))
     },

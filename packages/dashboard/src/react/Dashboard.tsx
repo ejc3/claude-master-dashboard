@@ -15,6 +15,7 @@ import {
   type Series,
   type SeriesQuery,
   type Snapshot,
+  subscriptionCount,
   sumBetween,
   sumSeries,
   TOKEN_CHOICES,
@@ -146,6 +147,28 @@ function DashboardBody(props: DashboardProps) {
       ? tokenCoverage(tokensByProfile.firstAt, range, chosen.stepSeconds)
       : null
   const errors = useSeries(apiBase, inRange({ metric: 'errors' }))
+  // Each subscription's weekly readings over the range, as returned (not zero-filled): how many
+  // subscriptions the pool had, so a step up in capacity shows when one was added.
+  const subsQuery = inRange({ metric: 'weeklyUsed', groupBy: 'profile' })
+  const subsData = data(useReadings(apiBase, subsQuery))
+  const { start: subsStart, end: subsEnd } = subsQuery.range
+  const subsLine: ChartSeries[] = useMemo(
+    () =>
+      subsData === null
+        ? []
+        : [
+            {
+              key: 'subscriptions',
+              label: 'Subscriptions',
+              color: 'var(--cmd-series-1)',
+              points: subscriptionCount(subsData, {
+                range: { start: subsStart, end: subsEnd },
+                stepSeconds: chosen.stepSeconds,
+              }),
+            },
+          ],
+    [subsData, subsStart, subsEnd, chosen.stepSeconds],
+  )
   // The paid backup's key number is always the last day's: its controls are further down.
   const backup = useSeries(apiBase, chartQuery(now, '24h', { metric: 'backupRequests' }))
   // What the paid API's work cost: its output tokens, the subscription named api-backup.
@@ -539,6 +562,18 @@ function DashboardBody(props: DashboardProps) {
               />
             )}
           </div>
+          {subsLine.length > 0 && (
+            <div className="cmd-charts-wide">
+              <LineChart
+                title={`Subscriptions in the pool · ${subsLine[0]?.points.at(-1)?.[1] ?? 0} now`}
+                series={subsLine}
+                format={(v) => String(Math.round(v))}
+                integer
+                height={120}
+                now={now}
+              />
+            </div>
+          )}
         </div>
 
         <Breakdown
