@@ -10,6 +10,11 @@ describe('Dashboard wiring', () => {
     expect(source).toMatch(/failureOf\(usedReadings\)/)
   })
 
+  it('colors the tokens chart from the subscriptions alone, as everywhere else', () => {
+    // With the shown keys (the paid API among them) in the list, every subscription shifted.
+    expect(source).toMatch(/seriesColors\(\s*knownProfiles,\s*folded\.map/)
+  })
+
   it('shows one forecast: no per-window forecast beside the joint one', () => {
     // Two models on one page gave two different run-out times.
     expect(source).not.toMatch(/poolForecast\(/)

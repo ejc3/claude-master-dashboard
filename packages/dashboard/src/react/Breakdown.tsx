@@ -67,6 +67,8 @@ export function Breakdown(props: {
   /** Which token type the share and trend columns use. */
   tokenChoice: TokenChoice
   now: EpochMs
+  /** Each subscription's color, shown by its name when the table is split by subscription. */
+  colors?: Map<string, string>
 }) {
   const when = useWhen()
   const [split, setSplit] = useState(SPLITS[0] as (typeof SPLITS)[number])
@@ -200,6 +202,13 @@ export function Breakdown(props: {
                 ? tokenTable.map((r) => (
                     <tr key={r.key}>
                       <th scope="row" className="cmd-row-head">
+                        {split.dimension === 'profile' && props.colors?.has(r.key) && (
+                          <span
+                            className="cmd-swatch"
+                            style={{ color: props.colors.get(r.key) }}
+                            aria-hidden="true"
+                          />
+                        )}
                         {r.key}
                       </th>
                       {TOKEN_TYPES.map((t) => (
@@ -216,6 +225,13 @@ export function Breakdown(props: {
                 : requestRows.map((r) => (
                     <tr key={r.key}>
                       <th scope="row" className="cmd-row-head">
+                        {split.dimension === 'profile' && props.colors?.has(r.key) && (
+                          <span
+                            className="cmd-swatch"
+                            style={{ color: props.colors.get(r.key) }}
+                            aria-hidden="true"
+                          />
+                        )}
                         {r.key}
                       </th>
                       <td className="cmd-num">{formatCount(r.total)}</td>

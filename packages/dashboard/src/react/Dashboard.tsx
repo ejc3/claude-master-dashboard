@@ -40,7 +40,7 @@ import {
   useSnapshot,
 } from './hooks'
 import { type ChartSeries, foldSeries, LineChart, seriesColors } from './LineChart'
-import { PoolOutlook } from './Pool'
+import { accountColors, PoolOutlook } from './Pool'
 import type { PollFailure } from './poller'
 import {
   backupOutputQuery,
@@ -185,13 +185,16 @@ function DashboardBody(props: DashboardProps) {
     : byProfileData
   const knownKey = (snapshot?.profiles ?? []).map((p) => p.profile).join('\n')
   const knownProfiles = useMemo(() => knownKey.split('\n').filter((n) => n !== ''), [knownKey])
+  // One color per subscription for every chart, bar and row.
+  const subscriptionColors = useMemo(() => accountColors(knownProfiles), [knownProfiles])
 
   const profileLines: ChartSeries[] = useMemo(() => {
     if (chartData === null) return []
     const folded = foldSeries(chartData)
-    // Colors come from every known subscription, so one missing from this range shifts none.
+    // Colors come from the known subscriptions alone (accountColors' rule), so a subscription has
+    // the same color here as everywhere else on the page.
     const colors = seriesColors(
-      [...knownProfiles, ...folded.map((s) => s.key)],
+      knownProfiles,
       folded.map((s) => s.key),
     )
     return folded.map((s) => ({
@@ -430,7 +433,12 @@ function DashboardBody(props: DashboardProps) {
             </span>
           </div>
           {(snapshot?.profiles ?? []).map((p) => (
-            <RunwayCard key={p.profile} status={p} now={now} />
+            <RunwayCard
+              key={p.profile}
+              status={p}
+              now={now}
+              color={subscriptionColors.get(p.profile)}
+            />
           ))}
         </section>
 
@@ -486,6 +494,7 @@ function DashboardBody(props: DashboardProps) {
           rangeWords={rangeWords}
           tokenChoice={tokenChoice}
           now={now}
+          colors={subscriptionColors}
         />
       </div>
     </div>
