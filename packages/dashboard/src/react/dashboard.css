@@ -275,106 +275,46 @@
     color: var(--cmd-exhausted);
   }
 
-  .cmd-forecasts {
-    display: grid;
-  }
-
-  @media (min-width: 720px) {
-    .cmd-forecasts {
-      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    }
-
-    .cmd-forecast + .cmd-forecast {
-      border-left: 1px solid var(--cmd-inner);
-    }
-  }
-
-  .cmd-forecast {
-    padding: 14px 16px 16px;
-    min-width: 0;
-  }
-
-  @media (max-width: 719.98px) {
-    .cmd-forecast + .cmd-forecast {
-      border-top: 1px solid var(--cmd-inner);
-    }
-  }
-
-  .cmd-forecast-value {
-    margin: 6px 0 0;
-    font-size: 1.75rem;
-    font-weight: 400;
-    line-height: 1.15;
-  }
-
-  @media (min-width: 900px) {
-    .cmd-forecast-value {
-      font-size: 2.25rem;
-    }
-  }
-
-  .cmd-forecast[data-state="clips"] .cmd-forecast-value,
-  .cmd-forecast[data-state="partial"] .cmd-forecast-value {
-    color: var(--cmd-reserve);
-  }
-
-  .cmd-forecast[data-state="out"] .cmd-forecast-value {
-    color: var(--cmd-exhausted);
-  }
-
-  .cmd-forecast[data-state="unknown"] .cmd-forecast-value {
-    color: var(--cmd-ink-3);
-  }
-
-  .cmd-forecast-detail {
-    margin: 2px 0 0;
+  /* How the forecast is worked out: closed until asked for. */
+  .cmd-method {
+    margin-top: 6px;
+    font-size: 0.8125rem;
     color: var(--cmd-ink-2);
   }
 
-  .cmd-forecast-usage {
-    display: flex;
-    justify-content: space-between;
-    gap: 12px;
-    margin: 14px 0 6px;
-    font-size: 0.8125rem;
+  .cmd-method summary {
+    cursor: pointer;
     color: var(--cmd-ink-3);
+    width: fit-content;
   }
 
-  .cmd-forecast-usage b {
-    color: var(--cmd-ink);
-    font-weight: 600;
+  .cmd-method ul {
+    margin: 4px 0 0;
+    padding-left: 1.1em;
+    display: grid;
+    gap: 2px;
+    max-width: 72ch;
   }
 
-  .cmd-pool-bar {
-    display: block;
-    height: 8px;
-    border-radius: 4px;
-    background: var(--cmd-track);
-    overflow: hidden;
-  }
-
-  .cmd-pool-fill {
-    display: block;
-    height: 100%;
-    border-radius: 0 4px 4px 0;
-    background: var(--cmd-pool-fill, var(--cmd-fill));
-  }
-
-  .cmd-forecast[data-state="out"] {
-    --cmd-pool-fill: var(--cmd-exhausted-mark);
-  }
-
-  .cmd-forecast-note {
-    margin: 8px 0 0;
+  .cmd-capacity-note {
+    grid-column: 1 / -1;
+    margin: 0;
     font-size: 0.75rem;
     color: var(--cmd-ink-3);
   }
 
+  /* The answer to "when do I run out": the largest words on the page. */
   .cmd-headline {
     font-weight: 600;
-    font-size: 1rem;
-    line-height: 1.35;
+    font-size: 1.25rem;
+    line-height: 1.3;
     margin: 0;
+  }
+
+  @media (min-width: 900px) {
+    .cmd-headline {
+      font-size: 1.5rem;
+    }
   }
 
   /* The facts behind the headline, one per line. */
@@ -391,6 +331,7 @@
   .cmd-accounts {
     grid-column: 2;
     display: flex;
+    flex-wrap: wrap;
     align-items: flex-end;
     gap: 10px;
     min-width: 0;
@@ -416,10 +357,54 @@
   }
 
   .cmd-account {
+    min-width: 36px;
+  }
+
+  /* Each subscription's bars are a button: hover or tap shows its detail. */
+  .cmd-account > button {
     display: grid;
     justify-items: center;
     gap: 3px;
-    min-width: 36px;
+    width: 100%;
+    padding: 2px 4px;
+    border: 0;
+    border-radius: 4px;
+    background: none;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+  }
+
+  .cmd-account > button[aria-expanded="true"] {
+    background: color-mix(in srgb, var(--cmd-ink) 8%, transparent);
+  }
+
+  .cmd-account > button:focus-visible {
+    outline: 2px solid var(--cmd-fill);
+    outline-offset: 1px;
+  }
+
+  .cmd-account-detail {
+    flex-basis: 100%;
+    margin-top: 4px;
+    padding: 8px 12px;
+    border: 1px solid var(--cmd-rule);
+    border-radius: var(--cmd-radius);
+    background: var(--cmd-surface);
+    font-size: 0.8125rem;
+  }
+
+  .cmd-account-detail p {
+    margin: 0 0 4px;
+  }
+
+  .cmd-account-detail ul {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: grid;
+    gap: 2px;
+    color: var(--cmd-ink-2);
   }
 
   .cmd-account-name {
@@ -1229,7 +1214,6 @@
     .cmd-runway,
     .cmd-share,
     .cmd-status,
-    .cmd-pool-bar,
     .cmd-account-bar {
       border: 1px solid CanvasText;
     }
@@ -1237,7 +1221,6 @@
     .cmd-runway-used,
     .cmd-runway-now,
     .cmd-share span,
-    .cmd-pool-fill,
     .cmd-account-bar > span,
     .cmd-row::before {
       background: CanvasText;

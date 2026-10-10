@@ -17,7 +17,7 @@ import { createDemoSource } from '../src/demo/index'
 import { DashboardPage, FIRST_QUERIES_BUDGET_MS } from '../src/next/index'
 import { keepWhileLoading, type Loaded } from '../src/react/hooks'
 import { LineChart } from '../src/react/LineChart'
-import { CapacityOutlook, PoolAccounts, shortNames } from '../src/react/Pool'
+import { CapacityOutlook, calendarHref, PoolAccounts, shortNames } from '../src/react/Pool'
 import { chartQuery, firstQueries } from '../src/react/queries'
 import { RunwayCard } from '../src/react/Runway'
 
@@ -118,7 +118,9 @@ describe('the first paint', () => {
       'Trend',
     ])
     // The weekly burn rate from the last day's readings, not each window's average.
-    expect(text).toContain('smoothed over up to the last 24 hours')
+    // The headline from the joint forecast, and how it is worked out.
+    expect(text).toMatch(/Runs out in \S+|Out now|Won't run out/)
+    expect(text).toContain('How this is worked out')
     // The person table, filled.
     expect(
       container.querySelectorAll('section[aria-labelledby="cmd-breakdown-title"] tbody tr').length,
@@ -129,7 +131,13 @@ describe('the first paint', () => {
     const charts = [...container.querySelectorAll<HTMLElement>('.cmd-chart')]
     // The two capacity charts at the top, then the two traffic charts.
     expect(charts).toHaveLength(4)
-    for (const chart of charts) expect(chart.style.minHeight).toBe('200px')
+    // Each holds its plot's height (the capacity charts are shorter) before it is measured.
+    expect(charts.map((chart) => chart.style.minHeight)).toEqual([
+      '160px',
+      '160px',
+      '200px',
+      '200px',
+    ])
   })
 
   it('does not change when the browser takes over', async () => {
@@ -235,9 +243,10 @@ describe('the first paint', () => {
 
   it('without a reported time zone, renders countdowns only and adds clock times in the browser', async () => {
     const { container, serverText, recoverable } = await hydrated(undefined)
-    expect(serverText).toMatch(/Then[,;]/)
+    // The run-out's clock times ("21:57 until 22:09") need the viewer's zone.
+    expect(serverText).not.toMatch(/\d{2}:\d{2} until /)
     expect(recoverable).toEqual([])
-    expect(container.textContent).not.toMatch(/Then[,;]/)
+    expect(container.textContent).toMatch(/\d{2}:\d{2} until /)
     // The browser reports its zone for the next visit.
     expect(document.cookie).toContain(`cmd-tz=${encodeURIComponent(ZONE)}`)
   })
@@ -591,9 +600,9 @@ describe('the account bars', () => {
       ['ok', 'ok'],
     ])
     // Read out in full for a screen reader.
-    expect(items[0]?.textContent).toContain('team-alpha: week 52%, 5-hour 96%')
+    expect(items[0]?.textContent).toContain('alpha: week 52% used, 5-hour 96% used')
     expect(items[1]?.textContent).toContain(
-      'team-bravo: week 100%, 5-hour no reading, cannot take work now',
+      'bravo: week 100% used, 5-hour no reading, not available',
     )
   })
 
@@ -631,9 +640,10 @@ describe('the capacity charts', () => {
     roots.push(root)
     act(() => root.render(<CapacityOutlook gaps={gaps} profiles={profiles} now={NOW} />))
     const figures = [...container.querySelectorAll('figure')]
+    // What is left of the whole pool now, in each title.
     expect(figures.map((f) => f.querySelector('figcaption')?.textContent)).toEqual([
-      'Weekly allowance left, at this pace',
-      '5-hour capacity left, next 24 hours',
+      'Weekly limit left · 50%',
+      '5-hour limit left, next 24h · 80%',
     ])
     // No table view on these charts; the readout reads each point.
     expect(figures.every((f) => f.querySelector('button') === null)).toBe(true)
@@ -651,10 +661,10 @@ describe('the capacity charts', () => {
     expect(readout(weekly, 'End').getAttribute('aria-valuemax')).toBe(String(62 - 1))
     expect(readout(five, 'End').getAttribute('aria-valuemax')).toBe(String(24 * 6 - 1))
     // The last weekly point is after the reset at 60 hours: its step up shows.
-    expect(readout(weekly, 'End').getAttribute('aria-valuetext')).toMatch(/158%$/)
-    // The first points: what is left now.
-    expect(readout(weekly, 'Home').getAttribute('aria-valuetext')).toMatch(/100%$/)
-    expect(readout(five, 'Home').getAttribute('aria-valuetext')).toMatch(/160%$/)
+    expect(readout(weekly, 'End').getAttribute('aria-valuetext')).toMatch(/79%$/)
+    // The first points: what is left now, as a share of the whole pool (two subscriptions).
+    expect(readout(weekly, 'Home').getAttribute('aria-valuetext')).toMatch(/50%$/)
+    expect(readout(five, 'Home').getAttribute('aria-valuetext')).toMatch(/80%$/)
   })
 })
 
@@ -683,12 +693,12 @@ describe('a gap in the capacity charts', () => {
     act(() => {
       slider.dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true }))
     })
-    expect(slider.getAttribute('aria-valuetext')).toContain('No subscription can take work')
+    expect(slider.getAttribute('aria-valuetext')).toContain('None available')
     // And at the last point, after the gap, it does not.
     act(() => {
       slider.dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true }))
     })
-    expect(slider.getAttribute('aria-valuetext')).not.toContain('No subscription can take work')
+    expect(slider.getAttribute('aria-valuetext')).not.toContain('None available')
   })
 })
 
@@ -791,5 +801,75 @@ describe('a chart readout with a mouse', () => {
     // React reads leaving from a pointerout to outside the element.
     mouse('pointerout')
     expect(container.querySelector('.cmd-tooltip')).toBeNull()
+  })
+})
+
+describe("a subscription's detail", () => {
+  const sub = (profile: string, extra: Partial<ProfileStatus> = {}): ProfileStatus => ({
+    profile,
+    band: 'ok',
+    weekly: { usedFraction: 0.54, resetsAt: NOW + 76 * HOUR_MS, lengthMs: 168 * HOUR_MS },
+    fiveHour: { usedFraction: 0.96, resetsAt: NOW + 64 * 60_000, lengthMs: 5 * HOUR_MS },
+    rateLimitedUntil: null,
+    tokenExpiresAt: null,
+    latencyMs: { p50: null, p95: null, p99: null },
+    ...extra,
+  })
+
+  it('opens on a tap with when each limit resets, as calendar links, and closes with a tap away', () => {
+    const container = document.createElement('div')
+    document.body.append(container)
+    const root = createRoot(container)
+    roots.push(root)
+    act(() =>
+      root.render(
+        <PoolAccounts
+          profiles={[
+            sub('team-alpha'),
+            sub('team-bravo', {
+              weekly: { usedFraction: 1, resetsAt: NOW + 50 * HOUR_MS, lengthMs: 168 * HOUR_MS },
+            }),
+          ]}
+          now={NOW}
+        />,
+      ),
+    )
+    const [alpha, bravo] = [...container.querySelectorAll<HTMLButtonElement>('.cmd-account button')]
+    if (alpha === undefined || bravo === undefined) throw new Error('no buttons')
+    expect(container.querySelector('.cmd-account-detail')).toBeNull()
+    act(() => alpha.click())
+    const detail = container.querySelector('.cmd-account-detail') as HTMLElement
+    expect(detail.textContent).toContain('team-alpha · Available')
+    expect(detail.textContent).toContain('Weekly 54% used · resets')
+    expect(detail.textContent).toContain('5-hour 96% used · resets')
+    expect(detail.textContent).toContain('(in 1h 4m)')
+    // Each reset time adds a reminder to a calendar.
+    const links = [...detail.querySelectorAll('a')]
+    expect(links).toHaveLength(2)
+    expect(links[1]?.getAttribute('href')).toMatch(/^data:text\/calendar/)
+    expect(alpha.getAttribute('aria-expanded')).toBe('true')
+    // Another subscription's tap shows its own.
+    act(() => bravo.click())
+    expect(container.querySelector('.cmd-account-detail')?.textContent).toContain(
+      'team-bravo · Used up · back in 2d',
+    )
+    // A tap anywhere else closes it.
+    act(() => {
+      document.body.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true }))
+    })
+    expect(container.querySelector('.cmd-account-detail')).toBeNull()
+  })
+})
+
+describe('calendarHref', () => {
+  it('is an iCalendar event at the time, in UTC, with the title', () => {
+    const at = Date.UTC(2026, 9, 16, 21, 59)
+    const ics = decodeURIComponent(
+      calendarHref('alpha: weekly limit resets', at).split(',')[1] ?? '',
+    )
+    expect(ics).toContain('BEGIN:VEVENT')
+    expect(ics).toContain('DTSTART:20261016T215900Z')
+    expect(ics).toContain('DTEND:20261016T221400Z')
+    expect(ics).toContain('SUMMARY:alpha: weekly limit resets')
   })
 })
