@@ -50,7 +50,11 @@ const hours = (g: PoolGaps) =>
     end: gap.end === null ? null : (gap.end - NOW) / H,
     endsWith: gap.endsWith,
   }))
-const headline = (g: PoolGaps) => gapsHeadline(g, NOW).headline
+/** The status line and its facts, as one string: "headline | fact | fact". */
+const headline = (g: PoolGaps) => {
+  const h = gapsHeadline(g, NOW)
+  return [h.headline, ...h.facts].join(' | ')
+}
 
 describe('poolGaps: both windows in one simulation', () => {
   it('a pool much like a real one: 5-hour gaps soon, then a week of days', () => {
@@ -73,7 +77,7 @@ describe('poolGaps: both windows in one simulation', () => {
       { start: 11 + 56 / 60, end: 58, endsWith: 'weekly' },
     ])
     expect(headline(g)).toBe(
-      'At this pace the pool runs out in 2h, for 1h 45m until a 5-hour window resets; then again in 11h 56m, for 1d 22h until a week resets.',
+      'On pace to run out in 2h | Out for 1h 45m, until a 5-hour window resets | Then again in 11h 56m, for 1d 22h, until a week resets',
     )
     expect(gapsHeadline(g, NOW).tone).toBe('warning')
   })
@@ -84,7 +88,7 @@ describe('poolGaps: both windows in one simulation', () => {
       NOW,
     )
     expect(hours(g)[0]).toEqual({ start: 0, end: 50, endsWith: 'weekly' })
-    expect(headline(g)).toMatch(/^The pool is out now, for 2d 2h until a week resets/)
+    expect(headline(g)).toMatch(/^Out of capacity now \| Work resumes in 2d 2h, when a week resets/)
     expect(gapsHeadline(g, NOW).tone).toBe('error')
   })
 
@@ -107,7 +111,7 @@ describe('poolGaps: both windows in one simulation', () => {
       endsWith: 'weekly',
     })
     expect(headline(g)).toBe(
-      'At this pace the pool runs out in 30m, for 4h until a 5-hour window resets; then again in 15h 16m, for 1d 10h until a week resets.',
+      'On pace to run out in 30m | Out for 4h, until a 5-hour window resets | Then again in 15h 16m, for 1d 10h, until a week resets',
     )
   })
 
@@ -119,7 +123,7 @@ describe('poolGaps: both windows in one simulation', () => {
     )
     expect(hours(g)[0]).toEqual({ start: 1, end: 50, endsWith: 'weekly' })
     expect((hours(g)[1]?.start ?? Infinity) >= 50).toBe(true)
-    expect(headline(g)).toBe('At this pace the pool runs out in 1h, for 2d 1h until a week resets.')
+    expect(headline(g)).toBe('On pace to run out in 1h | Out for 2d 1h, until a week resets')
   })
 
   it('keeps the others working through one subscription’s gap', () => {
@@ -136,7 +140,9 @@ describe('poolGaps: both windows in one simulation', () => {
     // The week resets in an hour, but the 5-hour window is full for four.
     const one = poolGaps([sub('a', [1, H], [1, 4 * H])], NOW)
     expect(hours(one)[0]).toEqual({ start: 0, end: 4, endsWith: 'fiveHour' })
-    expect(headline(one)).toBe('The pool is out now, for 4h until a 5-hour window resets.')
+    expect(headline(one)).toBe(
+      'Out of capacity now | Work resumes in 4h, when a 5-hour window resets',
+    )
     // With a second subscription whose week resets in two hours, that ends it.
     const two = poolGaps([sub('a', [1, H], [1, 4 * H]), sub('b', [1, 2 * H], [0.1, 3 * H])], NOW)
     expect(hours(two)[0]).toEqual({ start: 0, end: 2, endsWith: 'weekly' })
@@ -151,9 +157,7 @@ describe('poolGaps: both windows in one simulation', () => {
       rates({ a: 0.001, b: 0.001 }),
     )
     expect(hours(g)[0]).toEqual({ start: 2, end: 5, endsWith: 'fiveHour' })
-    expect(headline(g)).toBe(
-      'At this pace the pool runs out in 2h, for 3h until a 5-hour window resets.',
-    )
+    expect(headline(g)).toBe('On pace to run out in 2h | Out for 3h, until a 5-hour window resets')
     // a's window resets five minutes in, while its week is full: the next opens when work
     // resumes at 4h, not on the old window's five-hour clock.
     const c = sub('c', [0.3, 100 * H], [0.5, H], { tokenExpiresAt: NOW - H })
@@ -172,14 +176,12 @@ describe('poolGaps: both windows in one simulation', () => {
     )
     const g = poolGaps(subs, NOW, new Map(subs.map((s) => [s.profile, 0.012])))
     expect(g.gaps.length).toBeGreaterThan(50)
-    expect(headline(g)).toMatch(/; then again in 4d 19h, for 1d 10h until a week resets\.$/)
+    expect(headline(g)).toMatch(/ \| Then again in 4d 19h, for 1d 10h, until a week resets$/)
   })
 
   it('finds a run-out of a few minutes, as the 5-hour card does', () => {
     const g = poolGaps([sub('a', [0.1, 100 * H], [0.99, 4.5 * M])], NOW)
-    expect(headline(g)).toBe(
-      'At this pace the pool runs out in 4m, for 30s until a 5-hour window resets.',
-    )
+    expect(headline(g)).toBe('On pace to run out in 4m | Out for 30s, until a 5-hour window resets')
   })
 
   it('after a short weekly gap, names the next weekly one that lasts longer, past 5-hour ones', () => {
@@ -189,7 +191,7 @@ describe('poolGaps: both windows in one simulation', () => {
       rates({ a: 0.02, b: 0.02 }),
     )
     expect(headline(g)).toBe(
-      'The pool is out now, for 10m until a week resets; at this pace it runs out again in 2d 13h, for 10h 50m until a week resets.',
+      'Out of capacity now | Work resumes in 10m, when a week resets | Then again in 2d 13h, for 10h 50m, until a week resets',
     )
   })
 
@@ -210,7 +212,7 @@ describe('poolGaps: both windows in one simulation', () => {
   it('keeps a rate-limited subscription out of work until the limit ends', () => {
     const g = poolGaps([sub('a', [0.3, 100 * H], null, { rateLimitedUntil: NOW + 2 * H })], NOW)
     expect(hours(g)[0]).toEqual({ start: 0, end: 2, endsWith: 'rateLimit' })
-    expect(headline(g)).toBe('The pool is out now, for 2h until a rate limit ends.')
+    expect(headline(g)).toBe('Out of capacity now | Work resumes in 2h, when a rate limit ends')
   })
 
   it('a pool hit by its 5-hour limits: out within minutes, not "two can take work"', () => {
@@ -229,7 +231,7 @@ describe('poolGaps: both windows in one simulation', () => {
     )
     expect(hours(g)[0]).toEqual({ start: 4 / 60, end: 1, endsWith: 'fiveHour' })
     expect(headline(g)).toMatch(
-      /^At this pace the pool runs out in 4m, for 56m until a 5-hour window resets/,
+      /^On pace to run out in 4m \| Out for 56m, until a 5-hour window resets/,
     )
   })
 
@@ -275,24 +277,31 @@ describe('gapsHeadline', () => {
   it('says when nothing runs out, or nothing is known', () => {
     expect(gapsHeadline(null, NOW)).toEqual({
       tone: 'info',
-      headline: 'Waiting for the first reading.',
+      headline: 'Waiting for the first reading',
+      facts: [],
     })
-    expect(gapsHeadline(g({ lasts: 'unknown' }), NOW).tone).toBe('info')
+    expect(gapsHeadline(g({ lasts: 'unknown' }), NOW)).toEqual({
+      tone: 'info',
+      headline: 'No weekly usage reported yet',
+      facts: [],
+    })
     expect(gapsHeadline(g({ lasts: 'horizon' }), NOW)).toEqual({
       tone: 'success',
-      headline: 'At this pace the pool does not run out in the next 7 days.',
+      headline: 'Not on pace to run out in the next 7 days',
+      facts: [],
     })
   })
 
   it('says every login has expired, among the reporting ones when some do not report', () => {
     expect(gapsHeadline(g({ lasts: 'logins' }), NOW)).toEqual({
       tone: 'error',
-      headline: 'No subscription can take work: every login has expired.',
+      headline: 'Every login has expired',
+      facts: ['Log the subscriptions in again'],
     })
     expect(gapsHeadline(g({ lasts: 'logins', counted: 1, unreported: 1 }), NOW)).toEqual({
       tone: 'warning',
-      headline:
-        'Every subscription reporting its weekly usage has an expired login (the 1 reporting their weekly usage).',
+      headline: 'Every login has expired',
+      facts: ['Counting the 1 that report their weekly usage'],
     })
   })
 
@@ -304,27 +313,35 @@ describe('gapsHeadline', () => {
     })
     expect(gapsHeadline(out, NOW)).toEqual({
       tone: 'warning',
-      headline:
-        'The pool is out now, for 2h until a week resets (the 3 reporting their weekly usage).',
+      headline: 'Out of capacity now',
+      facts: [
+        'Work resumes in 2h, when a week resets',
+        'Counting the 3 that report their weekly usage',
+      ],
     })
   })
 
   it('says when no reset time is known', () => {
-    expect(
-      gapsHeadline(g({ gaps: [{ start: NOW + H, end: null, endsWith: null }] }), NOW).headline,
-    ).toBe('At this pace the pool runs out in 1h, with no reset time known.')
+    expect(gapsHeadline(g({ gaps: [{ start: NOW + H, end: null, endsWith: null }] }), NOW)).toEqual(
+      {
+        tone: 'warning',
+        headline: 'On pace to run out in 1h',
+        facts: ['No reset time is known'],
+      },
+    )
   })
 
   it('names a later gap only when a week ends it and it lasts longer', () => {
     const week = { start: NOW + H, end: NOW + 30 * H, endsWith: 'weekly' as const }
     const shorter = { start: NOW + 40 * H, end: NOW + 44 * H, endsWith: 'fiveHour' as const }
     const longer = { start: NOW + 50 * H, end: NOW + 100 * H, endsWith: 'weekly' as const }
-    expect(gapsHeadline(g({ gaps: [week, shorter] }), NOW).headline).toBe(
-      'At this pace the pool runs out in 1h, for 1d 5h until a week resets.',
-    )
-    expect(gapsHeadline(g({ gaps: [week, shorter, longer] }), NOW).headline).toBe(
-      'At this pace the pool runs out in 1h, for 1d 5h until a week resets; then again in 2d 2h, for 2d 2h until a week resets.',
-    )
+    expect(gapsHeadline(g({ gaps: [week, shorter] }), NOW).facts).toEqual([
+      'Out for 1d 5h, until a week resets',
+    ])
+    expect(gapsHeadline(g({ gaps: [week, shorter, longer] }), NOW).facts).toEqual([
+      'Out for 1d 5h, until a week resets',
+      'Then again in 2d 2h, for 2d 2h, until a week resets',
+    ])
   })
 })
 
@@ -367,8 +384,11 @@ describe('poolGaps invariants (seeded)', () => {
         previousEnd = gap.end ?? Number.POSITIVE_INFINITY
       }
       expect(g.lasts === null, `seed ${seed}`).toBe(g.gaps.length > 0)
-      // The headline always reads as a sentence.
-      expect(gapsHeadline(g, NOW).headline, `seed ${seed}`).toMatch(/^[A-Z].*\.$/)
+      // The status line and each fact start with a capital and are not sentences.
+      const h = gapsHeadline(g, NOW)
+      for (const line of [h.headline, ...h.facts]) {
+        expect(line, `seed ${seed}`).toMatch(/^[A-Z][^.]*[^.]$/)
+      }
     }
   })
 })

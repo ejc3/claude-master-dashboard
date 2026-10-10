@@ -377,6 +377,122 @@
     margin: 0;
   }
 
+  /* The facts behind the headline, one per line. */
+  .cmd-facts {
+    margin: 4px 0 0;
+    padding: 0;
+    list-style: none;
+    color: var(--cmd-ink-2);
+    display: grid;
+    gap: 2px;
+  }
+
+  /* Each subscription's week and 5-hour use: two tiny bars and a short name. */
+  .cmd-accounts {
+    grid-column: 2;
+    display: flex;
+    align-items: flex-end;
+    gap: 10px;
+    min-width: 0;
+  }
+
+  .cmd-accounts ul {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 12px;
+    min-width: 0;
+  }
+
+  .cmd-accounts-key {
+    margin: 0;
+    font-size: 0.6875rem;
+    line-height: 1.1;
+    color: var(--cmd-ink-3);
+    white-space: nowrap;
+    padding-bottom: 16px;
+  }
+
+  .cmd-account {
+    display: grid;
+    justify-items: center;
+    gap: 3px;
+    min-width: 36px;
+  }
+
+  .cmd-account-name {
+    font-size: 0.6875rem;
+    line-height: 1.1;
+    color: var(--cmd-ink-2);
+    max-width: 64px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .cmd-account[data-open="false"] .cmd-account-name {
+    color: var(--cmd-ink-3);
+    text-decoration: line-through;
+    text-decoration-color: color-mix(in srgb, var(--cmd-ink-3) 60%, transparent);
+  }
+
+  .cmd-account-bars {
+    display: flex;
+    align-items: flex-end;
+    gap: 3px;
+    height: 28px;
+  }
+
+  .cmd-account-bar {
+    position: relative;
+    display: block;
+    width: 7px;
+    height: 100%;
+    border-radius: 2px;
+    background: var(--cmd-track);
+    overflow: hidden;
+  }
+
+  .cmd-account-bar > span {
+    position: absolute;
+    inset: auto 0 0;
+    border-radius: 2px 2px 0 0;
+    background: var(--cmd-account-fill, var(--cmd-fill));
+  }
+
+  .cmd-account-bar[data-level="high"] {
+    --cmd-account-fill: var(--cmd-reserve-mark);
+  }
+
+  .cmd-account-bar[data-level="full"] {
+    --cmd-account-fill: var(--cmd-exhausted-mark);
+  }
+
+  .cmd-account-bar[data-level="unknown"] {
+    background: none;
+    outline: 1px dashed var(--cmd-ink-3);
+    outline-offset: -1px;
+  }
+
+  @media (min-width: 720px) {
+    .cmd-pool-head {
+      grid-template-columns: auto minmax(0, 1fr) auto;
+    }
+
+    .cmd-accounts {
+      grid-column: 3;
+      grid-row: 1;
+      align-self: center;
+    }
+  }
+
+  /* The controls sit just above the charts and table they change. */
+  .cmd-toolbar {
+    justify-content: flex-start;
+  }
+
   .cmd-subline {
     margin: 2px 0 0;
     color: var(--cmd-ink-2);
@@ -1092,7 +1208,8 @@
     .cmd-runway,
     .cmd-share,
     .cmd-status,
-    .cmd-pool-bar {
+    .cmd-pool-bar,
+    .cmd-account-bar {
       border: 1px solid CanvasText;
     }
 
@@ -1100,6 +1217,7 @@
     .cmd-runway-now,
     .cmd-share span,
     .cmd-pool-fill,
+    .cmd-account-bar > span,
     .cmd-row::before {
       background: CanvasText;
     }
@@ -1124,6 +1242,12 @@
       forced-color-adjust: none;
       background: Highlight;
       color: HighlightText;
+    }
+
+    /* No reading: a dashed border, never the solid one of a 0% bar. */
+    .cmd-account-bar[data-level="unknown"] {
+      border-style: dashed;
+      outline: none;
     }
   }
 }

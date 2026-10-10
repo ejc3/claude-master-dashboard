@@ -40,7 +40,6 @@ import {
   useReportTimeZone,
   useSeries,
   useSnapshot,
-  useWhen,
 } from './hooks'
 import { type ChartSeries, foldSeries, LineChart, seriesColors } from './LineChart'
 import { PoolOutlook } from './Pool'
@@ -119,7 +118,6 @@ export function Dashboard(props: DashboardProps) {
 function DashboardBody(props: DashboardProps) {
   const { initialSnapshot, apiBase, signInHref, title = 'claude-master', demoData = false } = props
   useReportTimeZone()
-  const when = useWhen()
   const now = useNow(1000, props.renderedAt ?? initialSnapshot?.asOf ?? 0)
   const snapshotLoaded = useSnapshot(apiBase, initialSnapshot)
   const snapshot = data(snapshotLoaded) ?? initialSnapshot
@@ -144,7 +142,8 @@ function DashboardBody(props: DashboardProps) {
       ? tokenCoverage(tokensByProfile.firstAt, range, chosen.stepSeconds)
       : null
   const errors = useSeries(apiBase, inRange({ metric: 'errors' }))
-  const backup = useSeries(apiBase, inRange({ metric: 'backupRequests' }))
+  // The paid backup's key number is always the last day's: its controls are further down.
+  const backup = useSeries(apiBase, chartQuery(now, '24h', { metric: 'backupRequests' }))
 
   // Key numbers have their own five-minute queries, whatever the range (kpiRange).
   const kpiRequests = useSeries(apiBase, kpiQuery(now, 'requests'))
@@ -246,12 +245,12 @@ function DashboardBody(props: DashboardProps) {
   const next = profilesNow === null || ready > 0 ? null : nextAvailable(profilesNow, now)
   const outlookDetail =
     profilesNow === null
-      ? 'The metrics source did not answer yet; this page retries every minute.'
+      ? 'The metrics source has not answered yet; this page retries every minute'
       : profilesNow.length === 0
-        ? 'Readings arrive a few minutes after claude-master starts exporting metrics.'
+        ? 'Readings arrive a few minutes after claude-master starts exporting metrics'
         : `${ready} of ${profilesNow.length} subscriptions can take work now${
             next === null ? '' : `; ${next.profile} again in ${formatCountdown(next.at - now)}`
-          }.`
+          }`
 
   const failures = [
     failureOf(snapshotLoaded),
@@ -296,11 +295,7 @@ function DashboardBody(props: DashboardProps) {
     </fieldset>
   )
   const chartNote =
-    tokenRangeCoverage === 'none'
-      ? 'No token counts for this range yet; showing requests.'
-      : tokenRangeCoverage === 'partial' && tokensByProfile.firstAt !== null
-        ? `Token counts start ${when === null ? 'partway through this range' : when(tokensByProfile.firstAt, now)}; nothing was counted before.`
-        : null
+    tokenRangeCoverage === 'none' ? 'No token counts for this range yet; showing requests.' : null
   const chartTitle = showTokens
     ? `${tokenChoice === 'all' ? 'Tokens' : `${tokenChoiceLabel(tokenChoice)} tokens`} ${chosen.per}, by subscription`
     : `Requests ${chosen.per}, by subscription`
@@ -340,10 +335,6 @@ function DashboardBody(props: DashboardProps) {
               {snapshotFailure !== null && !signedOut ? '; the last refresh failed' : ''}
             </span>
           </div>
-          <div className="cmd-controls">
-            {tokenControl}
-            {rangeControl}
-          </div>
         </header>
 
         {signedOut && (
@@ -353,7 +344,13 @@ function DashboardBody(props: DashboardProps) {
           </p>
         )}
 
-        <PoolOutlook forecasts={forecasts} gaps={gaps} now={now} detail={outlookDetail} />
+        <PoolOutlook
+          forecasts={forecasts}
+          gaps={gaps}
+          profiles={profilesNow}
+          now={now}
+          detail={outlookDetail}
+        />
 
         <section className="cmd-kpis" aria-label="Traffic">
           {tokensLastHour === null || tokensLastHourTotal === null ? (
@@ -402,13 +399,36 @@ function DashboardBody(props: DashboardProps) {
             }
           />
           <Kpi
-            label={`Paid API backup, ${rangeWords}`}
+            label="Paid API backup, last 24 hours"
             value={formatCount(
               backupTotal === null ? null : sumBetween(sumSeries(backupTotal), 0, Infinity),
             )}
             note="Requests no subscription could take"
           />
         </section>
+
+        <section className="cmd-panel cmd-stream" aria-labelledby="cmd-subscriptions">
+          <div className="cmd-panel-header cmd-stream-columns">
+            <h2 className="cmd-panel-label" id="cmd-subscriptions">
+              Subscriptions
+            </h2>
+            <span className="cmd-panel-label cmd-wide-only" aria-hidden="true">
+              Weekly allowance
+            </span>
+            <span className="cmd-panel-label cmd-wide-only" aria-hidden="true">
+              5-hour window
+            </span>
+          </div>
+          {(snapshot?.profiles ?? []).map((p) => (
+            <RunwayCard key={p.profile} status={p} now={now} />
+          ))}
+        </section>
+
+        {/* Above what they change: the charts and the table below. */}
+        <div className="cmd-controls cmd-toolbar">
+          {tokenControl}
+          {rangeControl}
+        </div>
 
         <div className="cmd-charts">
           <div>
@@ -448,23 +468,6 @@ function DashboardBody(props: DashboardProps) {
             )}
           </div>
         </div>
-
-        <section className="cmd-panel cmd-stream" aria-labelledby="cmd-subscriptions">
-          <div className="cmd-panel-header cmd-stream-columns">
-            <h2 className="cmd-panel-label" id="cmd-subscriptions">
-              Subscriptions
-            </h2>
-            <span className="cmd-panel-label cmd-wide-only" aria-hidden="true">
-              Weekly allowance
-            </span>
-            <span className="cmd-panel-label cmd-wide-only" aria-hidden="true">
-              5-hour window
-            </span>
-          </div>
-          {(snapshot?.profiles ?? []).map((p) => (
-            <RunwayCard key={p.profile} status={p} now={now} />
-          ))}
-        </section>
 
         <Breakdown
           apiBase={apiBase}

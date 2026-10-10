@@ -86,4 +86,11 @@ describe('dashboard.css', () => {
     const rule = rules(css).find(([selector]) => selector === '.cmd-banner a')
     expect(rule?.[1]).toMatch(/color:\s*var\(--cmd-accent-strong\)/)
   })
+
+  it('draws a bar with no reading dashed in forced colors, unlike a 0% one', () => {
+    const forced = block('  @media (forced-colors: active)')
+    expect(forced).toMatch(
+      /\.cmd-account-bar\[data-level="unknown"\]\s*\{[^}]*border-style:\s*dashed/,
+    )
+  })
 })

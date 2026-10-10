@@ -35,6 +35,20 @@ function ShareCell(props: { share: number }) {
   )
 }
 
+/**
+ * The range the table's title names: the chosen one, or "since 02:15" when the token counts start
+ * partway through it, so the totals are not read as covering the whole range.
+ */
+export function tableRangeWords(
+  coverage: 'none' | 'partial' | 'full' | null,
+  firstAt: EpochMs | null,
+  rangeWords: string,
+  clock: ((at: EpochMs) => string) | null,
+): string {
+  if (coverage !== 'partial' || firstAt === null) return rangeWords
+  return `since ${clock === null ? 'token counting began' : clock(firstAt)}`
+}
+
 /** One row per key with any requests in the range, most first. */
 export function requestTable(series: Series[]): Array<Series & { total: number }> {
   return series
@@ -118,9 +132,7 @@ export function Breakdown(props: {
     ? 'claude-master does not count tokens by model; this view counts requests.'
     : coverage === 'none'
       ? 'No token counts for this range yet; showing requests.'
-      : coverage === 'partial' && firstAt !== null
-        ? `Token counts start ${when === null ? 'partway through this range' : when(firstAt, props.now)}; nothing was counted before.`
-        : null
+      : null
   const loading = tokensPending || (!showTokens && requests.state === 'loading')
   const requestsFailure =
     !showTokens && tokenError === null && requests.state === 'error' ? requests.failure : null
@@ -130,7 +142,13 @@ export function Breakdown(props: {
     <section className="cmd-panel cmd-panel-flush" aria-labelledby="cmd-breakdown-title">
       <div className="cmd-panel-head cmd-panel-pad">
         <h2 className="cmd-panel-title" id="cmd-breakdown-title">
-          {what} by {split.noun}, {props.rangeWords}
+          {what} by {split.noun},{' '}
+          {tableRangeWords(
+            showTokens ? coverage : null,
+            firstAt,
+            props.rangeWords,
+            when === null ? null : (at) => when(at, props.now),
+          )}
         </h2>
       </div>
       <div className="cmd-panel-pad">

@@ -18,7 +18,7 @@ import {
   UnsupportedQueryError,
 } from '../src/core/index'
 import { createDemoSource } from '../src/demo/index'
-import { requestTable } from '../src/react/Breakdown'
+import { requestTable, tableRangeWords } from '../src/react/Breakdown'
 
 const NOW = Date.UTC(2026, 9, 10, 6)
 const STEP = 300
@@ -213,6 +213,16 @@ describe('token helpers', () => {
       ['bravo', 5],
       ['alpha', 3],
     ])
+  })
+
+  it("names the table's range from when token counts start, when that is partway through", () => {
+    const clock = () => '02:15'
+    expect(tableRangeWords('partial', NOW - HOUR_MS, 'last 7 days', clock)).toBe('since 02:15')
+    expect(tableRangeWords('partial', NOW - HOUR_MS, 'last 7 days', null)).toBe(
+      'since token counting began',
+    )
+    expect(tableRangeWords('full', NOW - HOUR_MS, 'last 7 days', clock)).toBe('last 7 days')
+    expect(tableRangeWords(null, NOW - HOUR_MS, 'last 7 days', clock)).toBe('last 7 days')
   })
 
   it('sums each type over a window from a query split by type', () => {

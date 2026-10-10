@@ -5,13 +5,16 @@ import {
   among,
   type EpochMs,
   FORECAST_HORIZON_MS,
+  fiveHourAt,
   forecastState,
   formatCountdown,
   formatPercent,
   gapsHeadline,
+  hasHeadroom,
   type PoolForecast,
   type PoolGaps,
   type PoolTone,
+  type ProfileStatus,
   reportingAll,
   type WindowKind,
 } from '../core'
@@ -131,19 +134,86 @@ function ForecastCell(props: { forecast: PoolForecast; now: EpochMs }) {
   )
 }
 
+/** The names without what they all start with ("claude-colin", "claude-thao" → "colin", "thao"). */
+export function shortNames(names: string[]): Map<string, string> {
+  let prefix = names[0] ?? ''
+  for (const n of names) while (!n.startsWith(prefix)) prefix = prefix.slice(0, -1)
+  // Only up to a separator, and never the whole of a name.
+  const cut =
+    Math.max(prefix.lastIndexOf('-'), prefix.lastIndexOf('_'), prefix.lastIndexOf('.')) + 1
+  return new Map(
+    names.map((n) => [n, names.length > 1 && cut > 0 && cut < n.length ? n.slice(cut) : n]),
+  )
+}
+
+const share = (f: number | null | undefined) =>
+  f === null || f === undefined || !Number.isFinite(f) ? null : Math.min(1, Math.max(0, f))
+
+/** A tiny bar: how much of a window is used; dashed and empty when there is no reading. */
+function UsedBar(props: { used: number | null; window: WindowKind }) {
+  const { used } = props
+  const level = used === null ? 'unknown' : used >= 1 ? 'full' : used >= 0.9 ? 'high' : 'ok'
+  return (
+    <span className="cmd-account-bar" data-window={props.window} data-level={level}>
+      {used !== null && <span style={{ height: `${used * 100}%` }} />}
+    </span>
+  )
+}
+
+/** Each subscription's weekly and 5-hour use, as two tiny bars, and whether it can take work. */
+export function PoolAccounts(props: { profiles: ProfileStatus[]; now: EpochMs }) {
+  const names = shortNames(props.profiles.map((p) => p.profile))
+  if (props.profiles.length === 0) return null
+  return (
+    <div className="cmd-accounts">
+      <p className="cmd-accounts-key" aria-hidden="true">
+        Week, 5-hour
+      </p>
+      <ul aria-label="Each subscription's weekly and 5-hour use">
+        {props.profiles.map((p) => {
+          const weekly = share(p.weekly.usedFraction)
+          // As of now: a read window whose reset has passed is no window open.
+          const five = share(fiveHourAt(p.fiveHour, props.now)?.usedFraction)
+          const words = `${p.profile}: week ${formatPercent(weekly)}, 5-hour ${
+            five === null ? 'no reading' : formatPercent(five)
+          }${hasHeadroom(p, props.now) ? '' : ', cannot take work now'}`
+          return (
+            <li
+              key={p.profile}
+              className="cmd-account"
+              data-open={hasHeadroom(p, props.now)}
+              title={words}
+            >
+              <span className="cmd-account-bars" aria-hidden="true">
+                <UsedBar used={weekly} window="weekly" />
+                <UsedBar used={five} window="fiveHour" />
+              </span>
+              <span className="cmd-account-name" aria-hidden="true">
+                {names.get(p.profile)}
+              </span>
+              <span className="cmd-visually-hidden">{words}</span>
+            </li>
+          )
+        })}
+      </ul>
+    </div>
+  )
+}
+
 /**
- * The top of the dashboard: will the pool run out, and how much of it is used. The headline
- * comes from one simulation of both windows (when no subscription can take work); one cell per
- * window, each with its own forecast.
+ * The top of the dashboard: will the pool run out, as a status line and the facts behind it,
+ * each subscription's use at a glance, and one cell per window with its own forecast.
  */
 export function PoolOutlook(props: {
   forecasts: PoolForecast[] | null
   gaps: PoolGaps | null
+  profiles: ProfileStatus[] | null
   now: EpochMs
   detail?: string | null
 }) {
   const { forecasts, now } = props
-  const { tone, headline } = gapsHeadline(props.gaps, now)
+  const { tone, headline, facts } = gapsHeadline(props.gaps, now)
+  const lines = props.detail == null ? facts : [...facts, props.detail]
   return (
     <section className="cmd-pool" data-tone={tone} aria-labelledby="cmd-pool-headline">
       <div className="cmd-pool-head">
@@ -154,8 +224,15 @@ export function PoolOutlook(props: {
           <h2 className="cmd-headline" id="cmd-pool-headline">
             {headline}
           </h2>
-          {props.detail != null && <p className="cmd-subline">{props.detail}</p>}
+          {lines.length > 0 && (
+            <ul className="cmd-facts">
+              {lines.map((line) => (
+                <li key={line}>{line}</li>
+              ))}
+            </ul>
+          )}
         </div>
+        {props.profiles !== null && <PoolAccounts profiles={props.profiles} now={now} />}
       </div>
       {forecasts !== null && (
         <div className="cmd-forecasts">
