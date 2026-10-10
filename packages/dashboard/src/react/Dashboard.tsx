@@ -7,17 +7,16 @@ import {
   formatCount,
   formatCountdown,
   formatPercent,
-  formatWhen,
   fromFirstBucket,
   HOUR_MS,
   hasHeadroom,
   nextAvailable,
   poolForecast,
+  type Series,
   type SeriesQuery,
   type Snapshot,
   sumBetween,
   sumSeries,
-  type TimeRange,
   TOKEN_CHOICES,
   TOKEN_LABELS,
   TOKEN_TYPES,
@@ -29,17 +28,32 @@ import {
 } from '../core'
 import { Breakdown } from './Breakdown'
 import {
+  type FirstPaint,
+  FirstPaintContext,
   type Loaded,
   useCountedSeries,
   useLastReady,
   useNow,
   useReadings,
+  useReportTimeZone,
   useSeries,
   useSnapshot,
+  useWhen,
 } from './hooks'
 import { type ChartSeries, foldSeries, LineChart, seriesColors } from './LineChart'
 import { PoolOutlook } from './Pool'
 import type { PollFailure } from './poller'
+import {
+  chartQuery,
+  FIRST_RANGE,
+  type FirstSeries,
+  kpiHourEnd,
+  kpiQuery,
+  kpiTokensQuery,
+  RANGES,
+  type RangeName,
+  readingsQuery,
+} from './queries'
 import { RunwayCard } from './Runway'
 
 export interface DashboardProps {
@@ -52,22 +66,15 @@ export interface DashboardProps {
   title?: string
   /** True when the source is the demo fixture: a label says so, so made-up numbers never pass for real ones. */
   demoData?: boolean
-}
-
-type RangeName = '24h' | '7d'
-
-const RANGES: Record<RangeName, { label: string; ms: number; stepSeconds: number; per: string }> = {
-  '24h': { label: 'Last 24 hours', ms: 24 * HOUR_MS, stepSeconds: 300, per: 'per 5 minutes' },
-  '7d': { label: 'Last 7 days', ms: 7 * 24 * HOUR_MS, stepSeconds: 3600, per: 'per hour' },
-}
-
-const KPI_STEP_SECONDS = 300
-const STEP_MS = KPI_STEP_SECONDS * 1000
-
-// Step-aligned, so every viewer and every refresh within a step asks for the same range.
-function rangeEnding(now: EpochMs, ms: number, stepSeconds: number): TimeRange {
-  const end = Math.floor(now / (stepSeconds * 1000)) * stepSeconds * 1000
-  return { start: end - ms, end }
+  /**
+   * When the server rendered the page. The first render in the browser uses this clock, so it
+   * asks for the same ranges and shows the same countdowns as the server's.
+   */
+  renderedAt?: EpochMs
+  /** The server's answers to the first queries (firstQueries), by queryKey. */
+  firstSeries?: FirstSeries
+  /** The viewer's time zone as the browser last reported it, or null when not yet known. */
+  timeZone?: string | null
 }
 
 /** Sums points into whole hours. */
@@ -95,22 +102,34 @@ function Kpi(props: { label: string; value: string; note?: string | undefined })
 }
 
 export function Dashboard(props: DashboardProps) {
+  const { firstSeries = {}, timeZone = null } = props
+  const firstPaint = useMemo<FirstPaint>(
+    () => ({ series: firstSeries, timeZone }),
+    [firstSeries, timeZone],
+  )
+  return (
+    <FirstPaintContext.Provider value={firstPaint}>
+      <DashboardBody {...props} />
+    </FirstPaintContext.Provider>
+  )
+}
+
+function DashboardBody(props: DashboardProps) {
   const { initialSnapshot, apiBase, signInHref, title = 'claude-master', demoData = false } = props
-  const now = useNow(1000, initialSnapshot?.asOf ?? 0)
+  useReportTimeZone()
+  const when = useWhen()
+  const now = useNow(1000, props.renderedAt ?? initialSnapshot?.asOf ?? 0)
   const snapshotLoaded = useSnapshot(apiBase, initialSnapshot)
   const snapshot = data(snapshotLoaded) ?? initialSnapshot
-  const [rangeName, setRangeName] = useState<RangeName>('24h')
+  const [rangeName, setRangeName] = useState<RangeName>(FIRST_RANGE)
   const [tokenChoice, setTokenChoice] = useState<TokenChoice>('all')
   const chosen = RANGES[rangeName]
   const tokenType = tokenChoice === 'all' ? {} : { tokenType: tokenChoice }
 
   // The request URLs change once per step, not every second (useSeries keys on the URL).
-  const range = rangeEnding(now, chosen.ms, chosen.stepSeconds)
-  const inRange = (q: Omit<SeriesQuery, 'range' | 'stepSeconds'>): SeriesQuery => ({
-    ...q,
-    range,
-    stepSeconds: chosen.stepSeconds,
-  })
+  const inRange = (q: Omit<SeriesQuery, 'range' | 'stepSeconds'>): SeriesQuery =>
+    chartQuery(now, rangeName, q)
+  const range = inRange({ metric: 'requests' }).range
   const byProfile = useSeries(apiBase, inRange({ metric: 'requests', groupBy: 'profile' }))
   // Tokens are what matters; requests are the fallback for a range with no token counts yet
   // (before the release that counts them).
@@ -125,45 +144,38 @@ export function Dashboard(props: DashboardProps) {
   const errors = useSeries(apiBase, inRange({ metric: 'errors' }))
   const backup = useSeries(apiBase, inRange({ metric: 'backupRequests' }))
 
-  // Key numbers have their own five-minute queries, whatever the range: the last full hour
-  // ends one bucket ago, because the newest bucket is still filling (CloudWatch runs minutes
-  // behind), and "the hour before" is the hour before that.
-  const kpiRange = rangeEnding(now, 2 * HOUR_MS + STEP_MS, KPI_STEP_SECONDS)
-  const kpiQuery = (metric: 'requests' | 'errors'): SeriesQuery => ({
-    metric,
-    range: kpiRange,
-    stepSeconds: KPI_STEP_SECONDS,
-  })
-  const kpiRequests = useSeries(apiBase, kpiQuery('requests'))
-  const kpiErrors = useSeries(apiBase, kpiQuery('errors'))
-  const kpiTokens = useCountedSeries(apiBase, {
-    metric: 'tokens',
-    groupBy: 'type',
-    range: kpiRange,
-    stepSeconds: KPI_STEP_SECONDS,
-  })
-  const hourEnd = kpiRange.end - STEP_MS
+  // Key numbers have their own five-minute queries, whatever the range (kpiRange).
+  const kpiRequests = useSeries(apiBase, kpiQuery(now, 'requests'))
+  const kpiErrors = useSeries(apiBase, kpiQuery(now, 'errors'))
+  const kpiTokens = useCountedSeries(apiBase, kpiTokensQuery(now))
+  // Each answer's hours come from the range it answers: while a moved range loads, the last
+  // answer stays on show, and its last full hour ends where it did when it arrived.
+  const hourEndOf = (loaded: Loaded<unknown>) =>
+    loaded.state === 'ready' && loaded.range !== undefined ? kpiHourEnd(loaded.range) : null
+  const requestsEnd = hourEndOf(kpiRequests)
+  const errorsEnd = hourEndOf(kpiErrors)
+  const tokensEnd = hourEndOf(kpiTokens.loaded)
   const kpiTokensData = data(kpiTokens.loaded)
   const tokensLastHour =
-    kpiTokensData === null || kpiTokens.firstAt === null
+    kpiTokensData === null || kpiTokens.firstAt === null || tokensEnd === null
       ? null
-      : tokensBetween(kpiTokensData, hourEnd - HOUR_MS, hourEnd)
+      : tokensBetween(kpiTokensData, tokensEnd - HOUR_MS, tokensEnd)
   const tokensLastHourTotal =
     tokensLastHour === null ? null : TOKEN_TYPES.reduce((sum, t) => sum + tokensLastHour[t], 0)
-  const kpiRequestsTotal = data(kpiRequests)
-  const kpiErrorsTotal = data(kpiErrors)
-  const requestsLastHour =
-    kpiRequestsTotal === null
+  const total = (series: Series[] | null) => (series === null ? null : sumSeries(series))
+  const kpiRequestsTotal = total(data(kpiRequests))
+  const kpiErrorsTotal = total(data(kpiErrors))
+  const lastHour = (points: Array<[EpochMs, number]> | null, end: EpochMs | null, back = 0) =>
+    points === null || end === null
       ? null
-      : sumBetween(sumSeries(kpiRequestsTotal), hourEnd - HOUR_MS, hourEnd)
-  const requestsHourBefore =
-    kpiRequestsTotal === null
-      ? null
-      : sumBetween(sumSeries(kpiRequestsTotal), hourEnd - 2 * HOUR_MS, hourEnd - HOUR_MS)
-  const errorsLastHour =
-    kpiErrorsTotal === null
-      ? null
-      : sumBetween(sumSeries(kpiErrorsTotal), hourEnd - HOUR_MS, hourEnd)
+      : sumBetween(points, end - (back + 1) * HOUR_MS, end - back * HOUR_MS)
+  const requestsLastHour = lastHour(kpiRequestsTotal, requestsEnd)
+  const requestsHourBefore = lastHour(kpiRequestsTotal, requestsEnd, 1)
+  // The error rate needs one hour both answers cover: the earlier of their last full hours.
+  const rateEnd =
+    requestsEnd === null || errorsEnd === null ? null : Math.min(requestsEnd, errorsEnd)
+  const errorsLastHour = lastHour(kpiErrorsTotal, rateEnd)
+  const requestsForRate = lastHour(kpiRequestsTotal, rateEnd)
 
   const byProfileData = data(byProfile)
   const tokensByProfileData = data(tokensByProfile.loaded)
@@ -209,13 +221,9 @@ export function Dashboard(props: DashboardProps) {
 
   // The weekly burn rate is smoothed over the last day of used-share readings; the 5-hour one is
   // each window's average so far (no history of it is exported yet).
-  const smoothingRange = rangeEnding(now, WEEKLY_SMOOTHING_MS, 600)
-  const usedReadings = useReadings(apiBase, {
-    metric: 'weeklyUsed',
-    groupBy: 'profile',
-    range: smoothingRange,
-    stepSeconds: 600,
-  })
+  const usedQuery = readingsQuery(now)
+  const smoothingRange = usedQuery.range
+  const usedReadings = useReadings(apiBase, usedQuery)
   // The last readings stay in use while the next range loads: the range moves every 10 minutes.
   const usedData = useLastReady(usedReadings)
   const smoothed = useMemo(() => {
@@ -291,7 +299,7 @@ export function Dashboard(props: DashboardProps) {
     tokenRangeCoverage === 'none'
       ? 'No token counts for this range yet; showing requests.'
       : tokenRangeCoverage === 'partial' && tokensByProfile.firstAt !== null
-        ? `Token counts start ${formatWhen(tokensByProfile.firstAt, now)}; nothing was counted before.`
+        ? `Token counts start ${when === null ? 'partway through this range' : when(tokensByProfile.firstAt, now)}; nothing was counted before.`
         : null
   const chartTitle = showTokens
     ? `${tokenChoice === 'all' ? 'Tokens' : `${tokenChoiceLabel(tokenChoice)} tokens`} ${chosen.per}, by subscription`
@@ -372,9 +380,9 @@ export function Dashboard(props: DashboardProps) {
           <Kpi
             label="Error rate, last hour"
             value={formatPercent(
-              requestsLastHour === null || errorsLastHour === null || requestsLastHour === 0
+              requestsForRate === null || errorsLastHour === null || requestsForRate === 0
                 ? null
-                : errorsLastHour / requestsLastHour,
+                : errorsLastHour / requestsForRate,
             )}
             note={
               errorsLastHour === null

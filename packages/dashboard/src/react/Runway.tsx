@@ -8,13 +8,13 @@ import {
   formatCountdown,
   formatDuration,
   formatPercent,
-  formatWhen,
+  loginOverdue,
   type ProfileStatus,
   pace,
   projectedExhaustion,
   type QuotaWindow,
 } from '../core'
-import { useHydrated } from './hooks'
+import { useWhen } from './hooks'
 
 /** What the card's badge says: the band, overridden by anything that stops work right now. */
 export type CardStatus = 'ok' | 'low' | 'used-up' | 'cooling' | 'login' | 'unknown'
@@ -77,17 +77,17 @@ function paceNote(window: QuotaWindow, now: EpochMs): string | null {
 
 function WindowRow(props: { name: string; window: QuotaWindow; now: EpochMs }) {
   const { name, window, now } = props
-  const hydrated = useHydrated()
+  const when = useWhen()
   const elapsed = elapsedFraction(window, now)
   const used = window.usedFraction === null ? null : Math.min(1, Math.max(0, window.usedFraction))
   const p = pace(window, now)
   const note = paceNote(window, now)
   const resetsAt = window.resetsAt
-  // The wall-clock time depends on the viewer's time zone, so it appears after hydration.
+  // The wall-clock time needs the viewer's time zone; without it, only the countdown shows.
   const reset =
     resetsAt === null || resetsAt <= now
       ? 'Reset time unknown'
-      : `Resets in ${formatCountdown(resetsAt - now)}${hydrated ? `, ${formatWhen(resetsAt, now)}` : ''}`
+      : `Resets in ${formatCountdown(resetsAt - now)}${when === null ? '' : `, ${when(resetsAt, now)}`}`
   const description = `${name}: ${formatPercent(used)} used, ${elapsed === null ? 'time elapsed unknown' : `${formatPercent(elapsed)} of the window elapsed`}. ${reset}.`
   return (
     <div className="cmd-window">
@@ -136,9 +136,10 @@ export function RunwayCard({ status, now }: { status: ProfileStatus; now: EpochM
             <span data-warn="true">Takes work again in {formatCountdown(b.until - now)}</span>
           )}
           {card === 'login' && <span data-warn="true">Log the profile in again on the server</span>}
-          {status.tokenExpiresAt !== null && status.tokenExpiresAt > now && (
-            // Access tokens renew on their own; an expired one is reported above.
-            <span>Login renews in {formatCountdown(status.tokenExpiresAt - now)}</span>
+          {loginOverdue(status, now) && status.tokenExpiresAt !== null && (
+            <span data-warn="true">
+              Login not renewed; expires in {formatCountdown(status.tokenExpiresAt - now)}
+            </span>
           )}
           <span>p95 {formatDuration(status.latencyMs.p95)}</span>
         </p>

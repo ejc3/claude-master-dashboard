@@ -4,11 +4,14 @@ import type { ReactNode } from 'react'
 import {
   BadQueryError,
   type MetricsSource,
+  type Series,
   type Snapshot,
   seriesQueryFromParams,
+  timeZoneOrNull,
   UnsupportedQueryError,
 } from '../core/index'
 import { Dashboard } from '../react/Dashboard'
+import { firstQueries, queryKey } from '../react/queries'
 
 export interface DashboardHandlerConfig {
   /** Where the numbers come from; called per request, so a host can choose by environment. */
@@ -73,26 +76,82 @@ export interface DashboardPageProps {
   title?: string
   /** True when the numbers are made up (the demo source); the page then says so. */
   demoData?: boolean
+  /**
+   * The viewer's time zone as the browser reported it: the value of the TIME_ZONE_COOKIE cookie.
+   * Validated here; without it, wall-clock times appear once the page is running in the browser.
+   */
+  timeZone?: string | undefined
+}
+
+const failed = (what: string, error: unknown) =>
+  console.error(
+    `claude-master dashboard: ${what} failed:`,
+    error instanceof Error ? error.message : String(error),
+  )
+
+/**
+ * How long the page waits for the first queries before it is sent. One that takes longer is left
+ * to the browser, which asks for it itself; the snapshot is always awaited.
+ */
+export const FIRST_QUERIES_BUDGET_MS = 2_500
+
+/** The answer, or null when it fails (thrown or rejected) or misses the budget. */
+async function withinBudget<T>(what: string, run: () => Promise<T>): Promise<T | null> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const late = new Promise<null>((resolve) => {
+    timer = setTimeout(() => {
+      console.warn(`claude-master dashboard: ${what} missed the page's budget; the browser asks`)
+      resolve(null)
+    }, FIRST_QUERIES_BUDGET_MS)
+  })
+  try {
+    return await Promise.race([
+      Promise.resolve()
+        .then(run)
+        .catch((error: unknown) => {
+          failed(what, error)
+          return null
+        }),
+      late,
+    ])
+  } finally {
+    clearTimeout(timer)
+  }
 }
 
 /**
- * A server component: renders the first snapshot on the server, then hands over to the browser.
- * When the source does not answer, the page still renders and the browser keeps polling.
+ * A server component: renders the page with the snapshot and the answers to every query it opens
+ * with, so the browser takes over a page that is already complete and hydrating it changes
+ * nothing on screen. What the source does not answer here, the browser asks for itself.
  */
 export async function DashboardPage(props: DashboardPageProps): Promise<ReactNode> {
   if (!(await props.authorize())) return props.unauthorized
-  let initialSnapshot: Snapshot | null = null
-  try {
-    initialSnapshot = await props.source().snapshot()
-  } catch (error) {
-    console.error(
-      'claude-master dashboard: the first snapshot failed:',
-      error instanceof Error ? error.message : String(error),
-    )
-  }
+  const renderedAt = Date.now()
+  const [initialSnapshot, answers] = await Promise.all([
+    // Through a promise, so a source that throws instead of rejecting fails this read alone.
+    Promise.resolve()
+      .then(() => props.source().snapshot())
+      .catch((error: unknown): Snapshot | null => {
+        failed('the first snapshot', error)
+        return null
+      }),
+    Promise.all(
+      firstQueries(renderedAt).map(async (query) => {
+        const series = await withinBudget(`the first ${query.metric} query`, () =>
+          props.source().series(query),
+        )
+        return series === null ? null : ([queryKey(query), series] as const)
+      }),
+    ),
+  ])
+  const firstSeries: Record<string, Series[]> = {}
+  for (const answer of answers) if (answer !== null) firstSeries[answer[0]] = answer[1]
   return (
     <Dashboard
       initialSnapshot={initialSnapshot}
+      renderedAt={renderedAt}
+      firstSeries={firstSeries}
+      timeZone={timeZoneOrNull(props.timeZone)}
       apiBase={props.apiBase}
       {...(props.signInHref === undefined ? {} : { signInHref: props.signInHref })}
       {...(props.title === undefined ? {} : { title: props.title })}

@@ -2,7 +2,7 @@
 
 import { type KeyboardEvent, memo, type PointerEvent, useId, useRef, useState } from 'react'
 import { type EpochMs, formatWhen } from '../core'
-import { useHydrated, useWidth } from './hooks'
+import { useWhen, useWidth } from './hooks'
 
 export interface ChartSeries {
   key: string
@@ -57,7 +57,7 @@ export const LineChart = memo(function LineChart({
   now,
 }: Props) {
   const [ref, width] = useWidth<HTMLDivElement>()
-  const hydrated = useHydrated()
+  const when = useWhen()
   const [active, setActive] = useState<number | null>(null)
   const [touch, setTouch] = useState(false)
   const [showTable, setShowTable] = useState(false)
@@ -134,7 +134,7 @@ export const LineChart = memo(function LineChart({
   const valueText =
     readTime === undefined
       ? 'No data'
-      : `${hydrated ? formatWhen(readTime, now) : 'Latest'}: ${series.map((s) => `${s.label} ${format(s.points[readIndex]?.[1] ?? 0)}`).join(', ')}`
+      : `${when === null ? 'Latest' : when(readTime, now)}: ${series.map((s) => `${s.label} ${format(s.points[readIndex]?.[1] ?? 0)}`).join(', ')}`
   const tooltipLeft = activeTime === null ? 0 : x(activeTime)
   const flip = tooltipLeft > width / 2
 
@@ -193,7 +193,9 @@ export const LineChart = memo(function LineChart({
           </table>
         </div>
       ) : (
-        <div className="cmd-chart" ref={ref}>
+        // The plot needs the measured width, so it draws once the page runs in the browser; its
+        // height is held from the start, so nothing below moves when it does.
+        <div className="cmd-chart" ref={ref} style={{ minHeight: height }}>
           {width > 0 && (
             <svg viewBox={`0 0 ${width} ${height}`} height={height} aria-hidden="true">
               {ticksY.map((v) => (

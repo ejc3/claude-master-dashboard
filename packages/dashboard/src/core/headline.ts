@@ -1,5 +1,5 @@
 import { projectedExhaustion } from './pace'
-import type { EpochMs, ProfileStatus, QuotaWindow } from './types'
+import { type EpochMs, HOUR_MS, type ProfileStatus, type QuotaWindow } from './types'
 
 export interface RunOut {
   profile: string
@@ -83,4 +83,17 @@ export function nextAvailable(
     }
   }
   return soonest
+}
+
+/**
+ * claude-master renews a subscription's login once less than four hours of it are left, checking
+ * every quarter of an hour. Less than this left means a renewal is overdue: worth a warning before
+ * the login expires and the subscription stops taking work.
+ */
+export const LOGIN_OVERDUE_MS = 3 * HOUR_MS
+
+/** Whether the login is still valid but should have been renewed by now. */
+export function loginOverdue(profile: ProfileStatus, now: EpochMs): boolean {
+  const at = profile.tokenExpiresAt
+  return at !== null && at > now && at - now < LOGIN_OVERDUE_MS
 }
