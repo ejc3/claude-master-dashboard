@@ -127,7 +127,9 @@ describe('the first paint', () => {
     // The headline from the joint forecast, and how it is worked out.
     expect(text).toMatch(/Runs out in \S+|Out now|Won't run out/)
     // The pace the forecast assumes, in one line.
-    expect(text).toMatch(/At [\d.]+% of a weekly limit and [\d.]+% of a 5-hour limit an hour/)
+    expect(text).toMatch(
+      /\d of \d available now · using [\d.]+% of a weekly limit and [\d.]+% of a 5-hour limit an hour/,
+    )
     // The person table, filled.
     expect(
       container.querySelectorAll('section[aria-labelledby="cmd-breakdown-title"] tbody tr').length,
@@ -916,7 +918,8 @@ describe('the banner', () => {
 
   it('says the pace, and what weekly resets will leave unused', () => {
     const text = render().textContent ?? ''
-    expect(text).toContain('At 2.0% of a weekly limit and 0% of a 5-hour limit an hour')
+    // No availability line here (no detail): the pace stands alone.
+    expect(text).toContain('Using 2.0% of a weekly limit and 0% of a 5-hour limit an hour')
     // a resets in 10h with about 60% unused; b's reset is later, after a's work moves to it.
     expect(text).toMatch(/Unused at weekly resets: \d+% · a \d+%/)
   })
@@ -981,5 +984,41 @@ describe("the banner's run-out line", () => {
     const facts = [...container.querySelectorAll('.cmd-facts li')].map((e) => e.textContent)
     expect(container.querySelector('.cmd-headline')?.textContent).toBe('Runs out in 1h for 2d')
     expect(facts.some((f) => / until /.test(f ?? ''))).toBe(false)
+  })
+})
+
+describe('the paid API box', () => {
+  it('shows the output tokens the paid API produced in the last day, with its requests', async () => {
+    const demo = createDemoSource({ now: () => NOW })
+    const source: MetricsSource = {
+      snapshot: () => demo.snapshot(),
+      series: async (q) => {
+        const answer = await demo.series(q)
+        if (q.metric === 'tokens' && q.groupBy === 'profile' && q.tokenType === 'output') {
+          return [
+            ...answer,
+            {
+              key: 'api-backup',
+              points: [
+                [q.range.start, 1000],
+                [q.range.start + 300_000, 500],
+              ],
+            },
+          ]
+        }
+        return answer
+      },
+    }
+    const container = document.createElement('div')
+    container.innerHTML = renderToString(await serverPage(ZONE, source))
+    const box = [...container.querySelectorAll('.cmd-kpi')].find((e) =>
+      e.textContent?.startsWith('Paid API output tokens, last 24 hours'),
+    )
+    expect(box?.querySelector('.cmd-kpi-value')?.textContent).toBe('1,500')
+    expect(box?.querySelector('.cmd-kpi-note')?.textContent).toMatch(
+      /^\d[\d.,K]* requests no subscription could take$/,
+    )
+    // Conversations name their window.
+    expect(container.textContent).toContain('Conversations, last 30 days')
   })
 })

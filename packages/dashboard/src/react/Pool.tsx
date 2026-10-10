@@ -370,15 +370,13 @@ export function PoolOutlook(props: {
   const { tone, headline, facts } = gapsHeadline(props.gaps, now)
   const forecasting =
     props.gaps !== null && props.gaps.lasts !== 'unknown' && props.gaps.lasts !== 'logins'
-  // The formula, briefly: the pace carried forward.
+  // The formula, briefly: the pace carried forward, on the availability line.
   const pace =
     forecasting && props.gaps !== null
-      ? [
-          `At ${formatPercent(props.gaps.pace.weekly)} of a weekly limit and ${formatPercent(
-            props.gaps.pace.fiveHour,
-          )} of a 5-hour limit an hour`,
-        ]
-      : []
+      ? `using ${formatPercent(props.gaps.pace.weekly)} of a weekly limit and ${formatPercent(
+          props.gaps.pace.fiveHour,
+        )} of a 5-hour limit an hour`
+      : null
   // Tokens left on the table: what weekly resets will throw away at this pace.
   const lost = props.gaps?.unusedAtReset ?? []
   const names = shortNames((props.profiles ?? []).map((p) => p.profile))
@@ -399,7 +397,13 @@ export function PoolOutlook(props: {
             .join(', ')}`,
         ]
       : []
-  const lines = [...facts, ...(props.detail == null ? [] : [props.detail]), ...pace, ...unused]
+  const status =
+    props.detail == null
+      ? pace === null
+        ? []
+        : [pace.charAt(0).toUpperCase() + pace.slice(1)]
+      : [pace === null ? props.detail : `${props.detail} · ${pace}`]
+  const lines = [...facts, ...status, ...unused]
   return (
     <section className="cmd-pool" data-tone={tone} aria-labelledby="cmd-pool-headline">
       <div className="cmd-pool-head">
