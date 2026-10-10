@@ -148,8 +148,8 @@ describe('the first paint', () => {
     expect(text).not.toMatch(/Then[,;]/)
     // Each chart holds its plot's height before the browser measures its width and draws it.
     const charts = [...container.querySelectorAll<HTMLElement>('.cmd-chart')]
-    // The two capacity charts at the top, then the two traffic charts.
-    expect(charts).toHaveLength(4)
+    // The two capacity charts at the top, the two traffic charts, then the breakdown's.
+    expect(charts).toHaveLength(5)
     // Each holds its plot's height (the capacity charts are shorter) before it is measured.
     // The stacked weekly chart is a little taller than the 5-hour one.
     expect(charts.map((chart) => chart.style.minHeight)).toEqual([
@@ -157,6 +157,7 @@ describe('the first paint', () => {
       '160px',
       '200px',
       '200px',
+      '180px',
     ])
   })
 
