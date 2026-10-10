@@ -27,7 +27,7 @@ describe('Headline wiring', () => {
     )
     // The other tab: the same forecast with no more use.
     expect(source).toMatch(/poolGaps\(profilesNow, asOf, smoothed, gapsAt, true\)/)
-    expect(pool).toMatch(/gapsHeadline\(\s*props\.gaps,\s*now,/)
+    expect(pool).toMatch(/gapsHeadline\(props\.gaps, now\)/)
     expect(pool).not.toMatch(/forecastHeadline\(/)
   })
 
