@@ -43,6 +43,7 @@ import { type ChartSeries, foldSeries, LineChart, seriesColors } from './LineCha
 import { PoolOutlook } from './Pool'
 import type { PollFailure } from './poller'
 import {
+  backupOutputQuery,
   chartQuery,
   FIRST_RANGE,
   type FirstSeries,
@@ -142,6 +143,8 @@ function DashboardBody(props: DashboardProps) {
   const errors = useSeries(apiBase, inRange({ metric: 'errors' }))
   // The paid backup's key number is always the last day's: its controls are further down.
   const backup = useSeries(apiBase, chartQuery(now, '24h', { metric: 'backupRequests' }))
+  // What the paid API's work cost: its output tokens, the subscription named api-backup.
+  const backupOutput = useSeries(apiBase, backupOutputQuery(now))
 
   // Key numbers have their own five-minute queries, whatever the range (kpiRange).
   const kpiRequests = useSeries(apiBase, kpiQuery(now, 'requests'))
@@ -274,6 +277,14 @@ function DashboardBody(props: DashboardProps) {
           ? 'Updated just now'
           : `Updated ${formatCountdown(ageMs)} ago`
   const backupTotal = data(backup)
+  const backupOutputData = data(backupOutput)
+  const backupOutputTokens =
+    backupOutputData === null
+      ? null
+      : (backupOutputData.find((s) => s.key === 'api-backup')?.points ?? []).reduce(
+          (sum, [, v]) => sum + v,
+          0,
+        )
   const rangeWords = rangeName === '24h' ? 'last 24 hours' : 'last 7 days'
 
   const tokenControl = (
@@ -387,20 +398,22 @@ function DashboardBody(props: DashboardProps) {
             }
           />
           <Kpi
-            label="Conversations now"
+            label="Conversations, last 30 days"
             value={formatCount(snapshot?.sessions ?? null)}
             note={
               snapshot?.activeConnections == null
                 ? undefined
-                : `${formatCount(snapshot.activeConnections)} open connections`
+                : `${formatCount(snapshot.activeConnections)} connections open now`
             }
           />
           <Kpi
-            label="Paid API backup, last 24 hours"
-            value={formatCount(
-              backupTotal === null ? null : sumBetween(sumSeries(backupTotal), 0, Infinity),
-            )}
-            note="Requests no subscription could take"
+            label="Paid API output tokens, last 24 hours"
+            value={formatCount(backupOutputTokens)}
+            note={
+              backupTotal === null
+                ? undefined
+                : `${formatCount(sumBetween(sumSeries(backupTotal), 0, Infinity))} requests no subscription could take`
+            }
           />
         </section>
 

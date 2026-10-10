@@ -152,6 +152,11 @@ export function readingsQuery(now: EpochMs): SeriesQuery {
   }
 }
 
+/** Output tokens by subscription over the last day: the paid API's (api-backup) is what it cost. */
+export function backupOutputQuery(now: EpochMs): SeriesQuery {
+  return chartQuery(now, '24h', { metric: 'tokens', groupBy: 'profile', tokenType: 'output' })
+}
+
 /** Every query the page makes when it opens at `now`: the range and split it opens with. */
 export function firstQueries(now: EpochMs): SeriesQuery[] {
   const split = SPLITS[0]
@@ -166,6 +171,7 @@ export function firstQueries(now: EpochMs): SeriesQuery[] {
     chartQuery(now, FIRST_RANGE, { metric: 'tokens', groupBy: 'profile' }),
     chartQuery(now, FIRST_RANGE, { metric: 'errors' }),
     chartQuery(now, FIRST_RANGE, { metric: 'backupRequests' }),
+    backupOutputQuery(now),
     kpiQuery(now, 'requests'),
     kpiQuery(now, 'errors'),
     kpiTokensQuery(now),
