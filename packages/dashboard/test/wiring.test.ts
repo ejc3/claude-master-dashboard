@@ -25,7 +25,8 @@ const pool = readFileSync(new URL('../src/react/Pool.tsx', import.meta.url), 'ut
 
 describe('Headline wiring', () => {
   it('reads the headline from one simulation of both windows, from the readings time', () => {
-    expect(source).toMatch(/poolGaps\(profilesNow, snapshot\?\.asOf \?\? now, smoothed, now\)/)
+    expect(source).toMatch(/const asOf = snapshot\?\.asOf \?\? gapsAt/)
+    expect(source).toMatch(/poolGaps\(profilesNow, asOf, smoothed, gapsAt\)/)
     expect(source).toMatch(
       /<PoolOutlook\s+forecasts=\{forecasts\}\s+gaps=\{gaps\}\s+profiles=\{profilesNow\}/,
     )

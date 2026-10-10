@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { act, type ReactElement } from 'react'
-import { hydrateRoot, type Root } from 'react-dom/client'
+import { createRoot, hydrateRoot, type Root } from 'react-dom/client'
 import { renderToString } from 'react-dom/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -9,13 +9,14 @@ import {
   HOUR_MS,
   type MetricsSource,
   type ProfileStatus,
+  poolGaps,
   seriesQueryFromParams,
   timeZoneOrNull,
 } from '../src/core/index'
 import { createDemoSource } from '../src/demo/index'
 import { DashboardPage, FIRST_QUERIES_BUDGET_MS } from '../src/next/index'
 import { keepWhileLoading, type Loaded } from '../src/react/hooks'
-import { PoolAccounts, shortNames } from '../src/react/Pool'
+import { CapacityOutlook, PoolAccounts, shortNames } from '../src/react/Pool'
 import { chartQuery, firstQueries } from '../src/react/queries'
 import { RunwayCard } from '../src/react/Runway'
 
@@ -125,7 +126,8 @@ describe('the first paint', () => {
     expect(text).not.toMatch(/Then[,;]/)
     // Each chart holds its plot's height before the browser measures its width and draws it.
     const charts = [...container.querySelectorAll<HTMLElement>('.cmd-chart')]
-    expect(charts).toHaveLength(2)
+    // The two capacity charts at the top, then the two traffic charts.
+    expect(charts).toHaveLength(4)
     for (const chart of charts) expect(chart.style.minHeight).toBe('200px')
   })
 
@@ -575,5 +577,95 @@ describe('the account bars', () => {
     expect([...shortNames(['claude-a', 'claude-b']).values()]).toEqual(['a', 'b'])
     expect([...shortNames(['alpha', 'alpine']).values()]).toEqual(['alpha', 'alpine'])
     expect([...shortNames(['solo-one']).values()]).toEqual(['solo-one'])
+  })
+})
+
+describe('the capacity charts', () => {
+  it('show what is left of each window, weekly to the furthest reset and 5-hour over a day', () => {
+    const profile = (name: string, weeklyResetIn: number): ProfileStatus => ({
+      profile: name,
+      band: 'ok',
+      weekly: { usedFraction: 0.5, resetsAt: NOW + weeklyResetIn, lengthMs: 168 * HOUR_MS },
+      fiveHour: { usedFraction: 0.2, resetsAt: NOW + HOUR_MS, lengthMs: 5 * HOUR_MS },
+      rateLimitedUntil: null,
+      tokenExpiresAt: null,
+      latencyMs: { p50: null, p95: null, p99: null },
+    })
+    const profiles = [profile('a', 30 * HOUR_MS), profile('b', 60 * HOUR_MS)]
+    const gaps = poolGaps(
+      profiles,
+      NOW,
+      new Map([
+        ['a', 0.01],
+        ['b', 0.01],
+      ]),
+      NOW,
+    )
+    const container = document.createElement('div')
+    document.body.append(container)
+    const root = createRoot(container)
+    roots.push(root)
+    act(() => root.render(<CapacityOutlook gaps={gaps} profiles={profiles} now={NOW} />))
+    const figures = [...container.querySelectorAll('figure')]
+    expect(figures.map((f) => f.querySelector('figcaption')?.textContent)).toEqual([
+      'Weekly allowance left, at this pace',
+      '5-hour capacity left, next 24 hours',
+    ])
+    const rows = (figure: Element) => {
+      act(() => (figure.querySelector('button') as HTMLButtonElement).click())
+      return [...figure.querySelectorAll('tbody tr')].map(
+        (r) => r.querySelector('td:nth-child(2)')?.textContent,
+      )
+    }
+    const weekly = rows(figures[0] as Element)
+    const five = rows(figures[1] as Element)
+    // Weekly hourly from now to the hour after the reset 60 hours out (so its step shows); 5-hour
+    // every ten minutes over the next 24 hours.
+    expect(weekly).toHaveLength(62)
+    // Listed newest first: the last row is after the reset at 60 hours, so its step shows.
+    expect(weekly[0]).toBe('158%')
+    // From the sample at or before now (on the ten-minute grid) over the next 24 hours.
+    expect(five).toHaveLength(24 * 6)
+    // Newest last in time, listed first: the weekly line starts at what is left now, 100%.
+    expect(weekly.at(-1)).toBe('100%')
+    expect(five.at(-1)).toBe('160%')
+  })
+})
+
+describe('a gap in the capacity charts', () => {
+  it('is in the table and the readout, not only shaded', () => {
+    // Every week full until the first resets in 30 hours: no subscription can take work until then.
+    const profile = (name: string, resetIn: number): ProfileStatus => ({
+      profile: name,
+      band: 'ok',
+      weekly: { usedFraction: 1, resetsAt: NOW + resetIn, lengthMs: 168 * HOUR_MS },
+      fiveHour: null,
+      rateLimitedUntil: null,
+      tokenExpiresAt: null,
+      latencyMs: { p50: null, p95: null, p99: null },
+    })
+    const profiles = [profile('a', 30 * HOUR_MS), profile('b', 60 * HOUR_MS)]
+    const gaps = poolGaps(profiles, NOW, new Map(), NOW)
+    const container = document.createElement('div')
+    document.body.append(container)
+    const root = createRoot(container)
+    roots.push(root)
+    act(() => root.render(<CapacityOutlook gaps={gaps} profiles={profiles} now={NOW} />))
+    const weekly = container.querySelector('figure') as HTMLElement
+    // The readout at the first point, inside the gap, says so.
+    const slider = weekly.querySelector('[role="slider"]') as HTMLElement
+    act(() => {
+      slider.dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true }))
+    })
+    expect(slider.getAttribute('aria-valuetext')).toContain('No subscription can take work')
+    // The table has a column for it: yes inside the gap, nothing after.
+    act(() => (weekly.querySelector('button') as HTMLButtonElement).click())
+    const head = [...weekly.querySelectorAll('thead th')].map((e) => e.textContent)
+    expect(head.at(-1)).toBe('No subscription can take work')
+    const marks = [...weekly.querySelectorAll('tbody tr')].map(
+      (r) => r.querySelector('td:last-child')?.textContent,
+    )
+    expect(marks.at(-1)).toBe('Yes')
+    expect(marks[0]).toBe('')
   })
 })

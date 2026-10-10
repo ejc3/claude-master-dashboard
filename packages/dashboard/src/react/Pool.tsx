@@ -1,6 +1,6 @@
 'use client'
 
-import type { ReactNode } from 'react'
+import { type ReactNode, useMemo } from 'react'
 import {
   among,
   type EpochMs,
@@ -10,15 +10,18 @@ import {
   formatCountdown,
   formatPercent,
   gapsHeadline,
+  HOUR_MS,
   hasHeadroom,
   type PoolForecast,
   type PoolGaps,
   type PoolTone,
   type ProfileStatus,
   reportingAll,
+  TRACE_STEP_MS,
   type WindowKind,
 } from '../core'
 import { useWhen } from './hooks'
+import { LineChart } from './LineChart'
 
 const WINDOW_NAME: Record<WindowKind, string> = {
   weekly: 'Weekly allowance',
@@ -200,6 +203,79 @@ export function PoolAccounts(props: { profiles: ProfileStatus[]; now: EpochMs })
   )
 }
 
+const asPercent = (v: number) => `${Math.round(v * 100)}%`
+
+/**
+ * What is left of each window across the pool, from now to the furthest weekly reset, at this
+ * pace (the same simulation as the headline): five unused subscriptions are 500%. Shaded where
+ * no subscription can take work.
+ */
+export function CapacityOutlook(props: {
+  gaps: PoolGaps | null
+  profiles: ProfileStatus[] | null
+  now: EpochMs
+}) {
+  const { gaps } = props
+  // Moves on a sample at a time, so the charts (and an open table) redraw when the data does,
+  // not every second.
+  const now = Math.floor(props.now / TRACE_STEP_MS) * TRACE_STEP_MS
+  const resetKey = (props.profiles ?? []).map((p) => p.weekly.resetsAt ?? '').join(',')
+  const charts = useMemo(() => {
+    if (gaps === null || gaps.trace.length === 0 || gaps.capacity === 0) return null
+    const resets = resetKey
+      .split(',')
+      .map(Number)
+      .filter((t) => t > now)
+    const horizonEnd = gaps.trace.at(-1)?.at ?? now
+    // The weekly chart to the furthest weekly reset and the hour after it (so its step up
+    // shows), hourly; the 5-hour one over the next day, every sample, where its windows' cycles
+    // can be read.
+    const weeklyUntil = Math.min(horizonEnd, Math.max(now + 24 * HOUR_MS, ...resets) + HOUR_MS)
+    const fiveUntil = Math.min(horizonEnd, now + 24 * HOUR_MS)
+    const start = gaps.trace[0]?.at ?? now
+    const points = (key: 'weekly' | 'fiveHour', until: EpochMs, every: number) =>
+      gaps.trace
+        .filter((p) => p.at >= now - every && p.at <= until && (p.at - start) % every === 0)
+        .map((p): [EpochMs, number] => [p.at, p[key]])
+    return {
+      weekly: points('weekly', weeklyUntil, HOUR_MS),
+      fiveHour: points('fiveHour', fiveUntil, TRACE_STEP_MS),
+      bands: gaps.gaps.map((g) => ({ start: g.start, end: g.end ?? horizonEnd })),
+      capacity: gaps.capacity,
+    }
+  }, [gaps, now, resetKey])
+  if (charts === null) return null
+  const chart = (
+    key: 'weekly' | 'fiveHour',
+    points: Array<[EpochMs, number]>,
+    title: string,
+    color: string,
+  ) =>
+    points.length < 2 ? null : (
+      <LineChart
+        title={title}
+        series={[{ key, label: title, color, points }]}
+        format={asPercent}
+        max={charts.capacity}
+        bands={charts.bands}
+        bandLabel="No subscription can take work"
+        now={now}
+        area
+      />
+    )
+  return (
+    <div className="cmd-capacity">
+      {chart('weekly', charts.weekly, 'Weekly allowance left, at this pace', 'var(--cmd-series-1)')}
+      {chart(
+        'fiveHour',
+        charts.fiveHour,
+        '5-hour capacity left, next 24 hours',
+        'var(--cmd-series-2)',
+      )}
+    </div>
+  )
+}
+
 /**
  * The top of the dashboard: will the pool run out, as a status line and the facts behind it,
  * each subscription's use at a glance, and one cell per window with its own forecast.
@@ -234,6 +310,7 @@ export function PoolOutlook(props: {
         </div>
         {props.profiles !== null && <PoolAccounts profiles={props.profiles} now={now} />}
       </div>
+      <CapacityOutlook gaps={props.gaps} profiles={props.profiles} now={now} />
       {forecasts !== null && (
         <div className="cmd-forecasts">
           {forecasts.map((f) => (

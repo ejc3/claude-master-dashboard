@@ -311,9 +311,27 @@ export interface PoolGaps {
   unreported: number
   /** The gaps in the horizon, in order, that have not ended by `now`. */
   gaps: PoolGap[]
+  /**
+   * The capacity left at this pace, every TRACE_STEP_MS from the readings to the horizon: the
+   * sum over the subscriptions that can work of what is left of each window, in one
+   * subscription's allowance (five unused subscriptions are 5).
+   */
+  trace: CapacityPoint[]
+  /** The most the trace can show: one for each subscription that can work (login valid). */
+  capacity: number
   /** Why there is no gap, as PoolForecast's `lasts`; null when there is one. */
   lasts: PoolForecast['lasts']
 }
+
+/** What is left of each window across the pool at one moment (see PoolGaps.trace). */
+export interface CapacityPoint {
+  at: EpochMs
+  weekly: number
+  fiveHour: number
+}
+
+/** How often the capacity trace is sampled. */
+export const TRACE_STEP_MS = 10 * 60_000
 
 /** How far ahead the gaps are looked for, and how finely. */
 export const GAPS_HORIZON_MS = 7 * 24 * HOUR_MS
@@ -421,14 +439,34 @@ export function poolGaps(
       p.rateLimitedUntil !== null && p.rateLimitedUntil > from ? p.rateLimitedUntil : null
     if (!loginExpired) slots.push({ quota: weekly, weekly, five, index, limitedUntil })
   }
+  const trace: CapacityPoint[] = []
   const result = (gaps: PoolGap[], lasts: PoolGaps['lasts']): PoolGaps => ({
     counted,
     unreported: profiles.length - counted,
     gaps,
     lasts,
+    trace,
+    capacity: slots.length,
   })
   if (counted === 0) return result([], 'unknown')
   if (slots.length === 0) return result([], 'logins')
+  // Samples of what is left, on their own grid, up to (not including) `until`. No work is done
+  // between the last step and `until` (the steps are finer, or a gap or idleness holds), so each
+  // sample applies the resets due by its time, as stepping there would.
+  let nextSample = from
+  const sampleUntil = (until: EpochMs) => {
+    for (; nextSample < until; nextSample += TRACE_STEP_MS) {
+      let weekly = 0
+      let fiveHour = 0
+      for (const s of slots) {
+        catchUp(s.weekly, nextSample)
+        closeIfOver(s.five, nextSample)
+        weekly += 1 - s.weekly.used
+        fiveHour += 1 - s.five.used
+      }
+      trace.push({ at: nextSample, weekly, fiveHour })
+    }
+  }
 
   const step = GAPS_STEP_MS
   const perWeek = (weeklyDemand / HOUR_MS) * step
@@ -443,6 +481,7 @@ export function poolGaps(
       catchUp(s.weekly, t)
       closeIfOver(s.five, t)
     }
+    sampleUntil(t + 1)
     const ready = slots.filter((s) => open(s, t))
     if (ready.length === 0) {
       // The first subscription back ends the gap; a weekly reset wins a tie.
@@ -463,6 +502,8 @@ export function poolGaps(
         gaps.push({ start: t, end: gapEnd, endsWith: first?.window ?? null })
       }
       if (gapEnd === null) break
+      // Nothing is used during the gap: what is left holds until it ends.
+      sampleUntil(Math.min(gapEnd, end + 1))
       // On from the step at which the first subscription takes work again (at least one step on,
       // so the loop always moves).
       t = Math.max(t, from + Math.ceil((gapEnd - from) / step) * step - step)
@@ -487,6 +528,8 @@ export function poolGaps(
       left -= take
     }
   }
+  // What is left holds to the horizon after the last step (idle, or a gap with no end).
+  sampleUntil(end + 1)
   return result(gaps, gaps.length > 0 ? null : idle ? 'idle' : 'horizon')
 }
 

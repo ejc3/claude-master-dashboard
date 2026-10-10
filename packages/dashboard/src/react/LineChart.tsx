@@ -23,6 +23,12 @@ interface Props {
   area?: boolean
   /** Clock for axis and tooltip labels. */
   now: EpochMs
+  /** Spans of time shaded behind the lines (e.g. when no subscription can take work). */
+  bands?: Array<{ start: EpochMs; end: EpochMs }>
+  /** What a band means, said in the readout and as a table column ("No subscription can …"). */
+  bandLabel?: string
+  /** The axis maximum, when the scale is fixed (e.g. the pool's full capacity). */
+  max?: number
 }
 
 const PAD = { top: 8, right: 8, bottom: 22, left: 44 }
@@ -55,6 +61,9 @@ export const LineChart = memo(function LineChart({
   height = 200,
   area = false,
   now,
+  bands = [],
+  bandLabel = 'Shaded',
+  max: fixedMax,
 }: Props) {
   const [ref, width] = useWidth<HTMLDivElement>()
   const when = useWhen()
@@ -70,7 +79,8 @@ export const LineChart = memo(function LineChart({
   const right = PAD.right + (directLabels ? LABEL_GUTTER : 0)
   const plotWidth = Math.max(0, width - PAD.left - right)
   const plotHeight = height - PAD.top - PAD.bottom
-  const max = niceMax(Math.max(0, ...series.flatMap((s) => s.points.map(([, v]) => v))), integer)
+  const max =
+    fixedMax ?? niceMax(Math.max(0, ...series.flatMap((s) => s.points.map(([, v]) => v))), integer)
   const first = times[0] ?? 0
   const last = times[times.length - 1] ?? 1
   const x = (t: EpochMs) =>
@@ -131,10 +141,11 @@ export const LineChart = memo(function LineChart({
   const readIndex = active ?? times.length - 1
   const readTime = times[readIndex]
   // Wall-clock text waits for hydration: the server does not know the viewer's time zone.
+  const inBand = (t: EpochMs) => bands.some((b) => t >= b.start && t < b.end)
   const valueText =
     readTime === undefined
       ? 'No data'
-      : `${when === null ? 'Latest' : when(readTime, now)}: ${series.map((s) => `${s.label} ${format(s.points[readIndex]?.[1] ?? 0)}`).join(', ')}`
+      : `${when === null ? 'Latest' : when(readTime, now)}: ${series.map((s) => `${s.label} ${format(s.points[readIndex]?.[1] ?? 0)}`).join(', ')}${inBand(readTime) ? `; ${bandLabel}` : ''}`
   const tooltipLeft = activeTime === null ? 0 : x(activeTime)
   const flip = tooltipLeft > width / 2
 
@@ -173,6 +184,7 @@ export const LineChart = memo(function LineChart({
                     {s.label}
                   </th>
                 ))}
+                {bands.length > 0 && <th scope="col">{bandLabel}</th>}
               </tr>
             </thead>
             <tbody>
@@ -187,6 +199,7 @@ export const LineChart = memo(function LineChart({
                         {format(s.points[i]?.[1] ?? 0)}
                       </td>
                     ))}
+                    {bands.length > 0 && <td>{inBand(t) ? 'Yes' : ''}</td>}
                   </tr>
                 ))}
             </tbody>
@@ -229,6 +242,20 @@ export const LineChart = memo(function LineChart({
                   {formatWhen(t, now)}
                 </text>
               ))}
+              {bands.map((b) => {
+                const from = x(Math.max(b.start, first))
+                const to = x(Math.min(b.end, last))
+                return to > from ? (
+                  <rect
+                    key={b.start}
+                    className="cmd-band"
+                    x={from}
+                    y={PAD.top}
+                    width={to - from}
+                    height={plotHeight}
+                  />
+                ) : null
+              })}
               {area &&
                 series.length === 1 &&
                 series.map((s) => (
