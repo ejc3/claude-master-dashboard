@@ -300,6 +300,22 @@ describe('poolGaps capacity trace', () => {
     expect(at(idle, 24)?.weekly).toBe(1)
   })
 
+  it('counts no 5-hour capacity in a week that is used up', () => {
+    // a's week is full for 50 hours: its 5-hour window resets and is empty, but cannot be used.
+    const a = sub('a', [1, 50 * H], [0.1, 3 * H])
+    const b = sub('b', [0.5, 60 * H], [0.2, 3 * H])
+    const both = poolGaps([a, b], NOW, rates({ a: 0, b: 0 }))
+    const bAlone = poolGaps([b], NOW, rates({ b: 0 }))
+    const five = (g: PoolGaps, h: number) => g.trace.find((p) => p.at === NOW + h * H)?.fiveHour
+    // Until a's week resets, the pool's 5-hour capacity is b's alone (b does the same work: the
+    // pool's 5-hour pace includes a's average, so compare at the start and before b fills).
+    expect(five(both, 0)).toBeCloseTo(0.8, 6)
+    expect(five(bAlone, 0)).toBeCloseTo(0.8, 6)
+    for (const h of [5, 20, 49]) expect(five(both, h)).toBeLessThanOrEqual(1)
+    // Once a's week resets, its window counts again.
+    expect(five(both, 50)).toBeGreaterThan(1)
+  })
+
   it('holds what is left through a gap, then shows the reset that ends it', () => {
     // Every week full until the first resets in 50h.
     const g = poolGaps(

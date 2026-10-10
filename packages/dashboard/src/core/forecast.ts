@@ -314,7 +314,8 @@ export interface PoolGaps {
   /**
    * The capacity left at this pace, every TRACE_STEP_MS from the readings to the horizon: the
    * sum over the subscriptions that can work of what is left of each window, in one
-   * subscription's allowance (five unused subscriptions are 5).
+   * subscription's allowance (five unused subscriptions are 5). A 5-hour window counts only
+   * while its week has room, since one in a used-up week cannot be used.
    */
   trace: CapacityPoint[]
   /** The most the trace can show: one for each subscription that can work (login valid). */
@@ -462,7 +463,9 @@ export function poolGaps(
         catchUp(s.weekly, nextSample)
         closeIfOver(s.five, nextSample)
         weekly += 1 - s.weekly.used
-        fiveHour += 1 - s.five.used
+        // A 5-hour window counts only while its week has room: with the week used up, it cannot
+        // be used however empty it is.
+        fiveHour += isFull(s.weekly) ? 0 : 1 - s.five.used
       }
       trace.push({ at: nextSample, weekly, fiveHour })
     }
