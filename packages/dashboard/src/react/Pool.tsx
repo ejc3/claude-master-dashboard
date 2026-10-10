@@ -40,7 +40,7 @@ export function accountColors(names: string[]): Map<string, string> {
   return seriesColors(names)
 }
 
-/** The names without what they all start with ("claude-colin", "claude-thao" → "colin", "thao"). */
+/** The names without what they all start with ("team-alpha", "team-bravo" → "alpha", "bravo"). */
 export function shortNames(names: string[]): Map<string, string> {
   let prefix = names[0] ?? ''
   for (const n of names) while (!n.startsWith(prefix)) prefix = prefix.slice(0, -1)

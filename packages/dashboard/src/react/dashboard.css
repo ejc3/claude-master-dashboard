@@ -1156,6 +1156,10 @@
     border-bottom: 0;
   }
 
+  .cmd-breakdown-chart {
+    padding-bottom: 12px;
+  }
+
   .cmd-trend {
     width: 132px;
   }
