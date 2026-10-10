@@ -8,6 +8,7 @@ export {
 } from './catalog'
 export { fillSeries, sumBetween, sumSeries } from './fill'
 export {
+  among,
   averageBurnRate,
   burnRate,
   FORECAST_HORIZON_MS,
@@ -17,6 +18,8 @@ export {
   type PoolForecast,
   type PoolTone,
   poolForecast,
+  reportingAll,
+  WEEKLY_RESERVE_FROM,
   WEEKLY_SMOOTHING_MS,
   type WindowKind,
 } from './forecast'

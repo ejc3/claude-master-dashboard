@@ -373,4 +373,71 @@ describe('review fixes', () => {
     expect(rateNote({ ...f, smoothedCount: 2 })).toBe('smoothed over up to the last 24 hours')
     expect(rateNote({ ...f, smoothedCount: 0 })).toBe('the average since each reset')
   })
+
+  it('reports expired logins among only those reporting the window as a warning', () => {
+    const five: QuotaWindow = {
+      usedFraction: 0.5,
+      resetsAt: NOW + HOUR_MS,
+      lengthMs: FIVE_HOURS_MS,
+    }
+    const f = poolForecast(
+      [profile('a', { fiveHour: five, tokenExpiresAt: NOW - MIN }), profile('b'), profile('c')],
+      'fiveHour',
+      NOW,
+    )
+    expect(f).toMatchObject({ lasts: 'logins', counted: 1, unreported: 2 })
+    expect(forecastHeadline([f], NOW)).toEqual({
+      tone: 'warning',
+      headline:
+        'Every subscription reporting its 5-hour capacity has an expired login (the 1 reporting it).',
+      window: 'fiveHour',
+    })
+  })
+
+  it('skips a run-out that ended before now when the readings lag', () => {
+    // Read 20 minutes ago at 100%; that window reset 5 minutes ago.
+    const asOf = NOW - 20 * MIN
+    const five: QuotaWindow = { usedFraction: 1, resetsAt: NOW - 5 * MIN, lengthMs: FIVE_HOURS_MS }
+    const f = poolForecast([profile('a', { fiveHour: five })], 'fiveHour', asOf, new Map(), NOW)
+    expect(f.clipsAt === null || (f.recoversAt ?? Infinity) > NOW).toBe(true)
+    expect(f.clipsAt === null || f.clipsAt > NOW - 5 * MIN).toBe(true)
+  })
+
+  it('routes the 5-hour forecast by the weekly reset, as claude-master does', () => {
+    // a's weekly allowance resets first, so claude-master sends a the work even though b's
+    // 5-hour window resets sooner; b's spare 5-hour room then goes unused at its reset.
+    const sub = (name: string, weeklyIn: number, fiveUsed: number, fiveIn: number) =>
+      profile(name, {
+        weekly: { usedFraction: 0.2, resetsAt: NOW + weeklyIn, lengthMs: WEEK_MS },
+        fiveHour: { usedFraction: fiveUsed, resetsAt: NOW + fiveIn, lengthMs: FIVE_HOURS_MS },
+      })
+    const demand = rates({ a: 0.225, b: 0.225 })
+    const aFirst = poolForecast(
+      [sub('a', 24 * HOUR_MS, 0, 4.9 * HOUR_MS), sub('b', 120 * HOUR_MS, 0.9, 0.5 * HOUR_MS)],
+      'fiveHour',
+      NOW,
+      demand,
+    )
+    const bFirst = poolForecast(
+      [sub('a', 120 * HOUR_MS, 0, 4.9 * HOUR_MS), sub('b', 24 * HOUR_MS, 0.9, 0.5 * HOUR_MS)],
+      'fiveHour',
+      NOW,
+      demand,
+    )
+    expectNear(aFirst.clipsAt, NOW + 4.47 * HOUR_MS, 2 * MIN)
+    expectNear(bFirst.clipsAt, NOW + 4.67 * HOUR_MS, 2 * MIN)
+  })
+
+  it('keeps the weekly reserve tier for last, as claude-master does', () => {
+    // a (in reserve at 0.95, resets in 2h) is skipped while b is under 0.9: b to 0.9 by 4h, then
+    // a (reset, so 0) to 0.9 by 13h, then the reserves, b's (sooner reset) first: 15h.
+    // Soonest-first without the tier would run out at 15.5h.
+    const f = poolForecast(
+      [profile('a', { weekly: weekly(0.95, 2 * HOUR_MS) }), profile('b', { weekly: weekly(0.5) })],
+      'weekly',
+      NOW,
+      rates({ a: 0.05, b: 0.05 }),
+    )
+    expectNear(f.clipsAt, NOW + 15 * HOUR_MS)
+  })
 })

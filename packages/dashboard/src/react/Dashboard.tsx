@@ -182,8 +182,8 @@ export function Dashboard(props: DashboardProps) {
       ? null
       : [
           // From the readings' own time: usage is as of asOf, not as of this second.
-          poolForecast(profilesNow, 'weekly', snapshot?.asOf ?? now, smoothed),
-          poolForecast(profilesNow, 'fiveHour', snapshot?.asOf ?? now),
+          poolForecast(profilesNow, 'weekly', snapshot?.asOf ?? now, smoothed, now),
+          poolForecast(profilesNow, 'fiveHour', snapshot?.asOf ?? now, new Map(), now),
         ]
   const ready = (profilesNow ?? []).filter((p) => hasHeadroom(p, now)).length
   const next = profilesNow === null || ready > 0 ? null : nextAvailable(profilesNow, now)

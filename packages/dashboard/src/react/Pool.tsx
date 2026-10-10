@@ -2,6 +2,7 @@
 
 import type { ReactNode } from 'react'
 import {
+  among,
   type EpochMs,
   FORECAST_HORIZON_MS,
   forecastHeadline,
@@ -10,6 +11,7 @@ import {
   formatWhen,
   type PoolForecast,
   type PoolTone,
+  reportingAll,
   type WindowKind,
 } from '../core'
 import { useHydrated } from './hooks'
@@ -60,7 +62,9 @@ function ForecastCell(props: { forecast: PoolForecast; now: EpochMs }) {
   if (f.lasts === 'logins') {
     state = 'out'
     value = 'Logins expired'
-    detail = 'Log the subscriptions in again on the server.'
+    detail = reportingAll(f)
+      ? 'Log the subscriptions in again on the server.'
+      : `Every subscription reporting this window${among(f)} needs logging in again.`
   } else if (f.clipsAt !== null && f.clipsAt <= now) {
     state = 'out'
     value = 'Out now'

@@ -106,7 +106,14 @@ interface Slot {
   used: number
   resetsAt: EpochMs | null
   lengthMs: number
+  /** claude-master's routing order: the weekly reset (unknown last), then the snapshot order. */
+  route: [number, number]
+  /** For the 5-hour window: whether the weekly allowance is in its reserve tier. */
+  weeklyReserve: boolean
 }
+
+/** Above this used share a weekly allowance is in claude-master's reserve tier. */
+export const WEEKLY_RESERVE_FROM = 0.9
 
 // Moves a slot past every reset up to `t` in one step (a loop of single windows could run for
 // ever on a reset time far in the past).
@@ -131,10 +138,12 @@ const reading = (p: ProfileStatus, window: WindowKind): QuotaWindow | null => {
  *
  * Demand is the sum of the subscriptions' burn rates (the smoothed one when given, else the
  * average since the window began), measured in one subscription's allowance per hour, so it
- * assumes the subscriptions are the same size. Going forward the demand goes to the
- * subscription whose window resets soonest, as claude-master routes it, then the next; a
- * subscription takes work again when its window resets, and a 5-hour window is taken to restart
- * at once. A subscription whose login has expired adds no room; one with no reading of the
+ * assumes the subscriptions are the same size. Going forward the demand goes where
+ * claude-master routes it: subscriptions whose weekly allowance is under the reserve tier first,
+ * then the one whose weekly allowance resets soonest, for either window (the router ranks by the
+ * weekly reset; a 5-hour limit only holds a subscription back once reached). A subscription
+ * takes work again when its window resets, and a 5-hour window is taken to restart at once. A
+ * run-out that has ended by `now` is skipped. A subscription whose login has expired adds no room; one with no reading of the
  * window is left out (`unreported`). Steps are STEP_MS apart, so a pool that runs out less than
  * a step before a reset may show no clip.
  */
@@ -143,13 +152,14 @@ export function poolForecast(
   window: WindowKind,
   from: EpochMs,
   smoothed: ReadonlyMap<string, number | null> = new Map(),
+  now: EpochMs = from,
 ): PoolForecast {
   const slots: Slot[] = []
   let demand = 0
   let usedSum = 0
   let counted = 0
   let smoothedCount = 0
-  for (const p of profiles) {
+  for (const [index, p] of profiles.entries()) {
     const w = reading(p, window)
     if (w === null) continue
     counted++
@@ -160,6 +170,13 @@ export function poolForecast(
       used: Math.min(1, Math.max(0, w.usedFraction as number)),
       resetsAt,
       lengthMs: lengthMs ?? 1,
+      route: [
+        p.weekly.resetsAt !== null && Number.isFinite(p.weekly.resetsAt)
+          ? p.weekly.resetsAt
+          : Number.POSITIVE_INFINITY,
+        index,
+      ],
+      weeklyReserve: (p.weekly.usedFraction ?? 0) >= WEEKLY_RESERVE_FROM,
     }
     // A reading from before its window reset: that window is over and nothing of the new one
     // is known to be used.
@@ -198,16 +215,25 @@ export function poolForecast(
     const open = slots.filter((s) => s.used < 1)
     if (open.length === 0) {
       const resets = slots.map((s) => s.resetsAt).filter((r): r is EpochMs => r !== null)
-      return {
-        ...base,
-        clipsAt: t,
-        recoversAt: resets.length === 0 ? null : Math.min(...resets),
-        lasts: null,
+      const recoversAt = resets.length === 0 ? null : Math.min(...resets)
+      // A run-out that has already ended by `now` (the readings lag the clock) is not reported;
+      // the simulation goes on from the reset.
+      if (recoversAt === null || recoversAt > now) {
+        return { ...base, clipsAt: t, recoversAt, lasts: null }
       }
+      continue
     }
     if (perStep <= 0) break
-    // Soonest reset first, as claude-master picks; what one cannot take goes to the next.
-    open.sort((x, y) => (x.resetsAt ?? Infinity) - (y.resetsAt ?? Infinity))
+    // claude-master's order: subscriptions outside the weekly reserve tier first, then by the
+    // weekly reset (soonest first), then the configured order; what one cannot take goes on.
+    const reserve = (s: Slot) =>
+      window === 'weekly' ? s.used >= WEEKLY_RESERVE_FROM : s.weeklyReserve
+    open.sort(
+      (x, y) =>
+        Number(reserve(x)) - Number(reserve(y)) ||
+        x.route[0] - y.route[0] ||
+        x.route[1] - y.route[1],
+    )
     let left = perStep
     for (const s of open) {
       if (left <= 0) break
@@ -227,6 +253,19 @@ const ALLOWANCE: Record<WindowKind, string> = {
   fiveHour: '5-hour capacity',
 }
 
+/**
+ * Whether a forecast covers every subscription. One that covers only those reporting the window
+ * says so and never reads as an error: the others may still have room.
+ */
+export function reportingAll(f: PoolForecast): boolean {
+  return f.unreported === 0
+}
+
+/** Words naming whose forecast it is when it does not cover every subscription. */
+export function among(f: PoolForecast): string {
+  return reportingAll(f) ? '' : ` (the ${f.counted} reporting it)`
+}
+
 /** The answer to "will we run out?": the soonest clip of either window, and its tone. */
 export function forecastHeadline(
   forecasts: PoolForecast[] | null,
@@ -237,21 +276,25 @@ export function forecastHeadline(
   }
   const logins = forecasts.find((f) => f.lasts === 'logins')
   if (logins !== undefined) {
-    return {
-      tone: 'error',
-      headline: 'No subscription can take work: every login has expired.',
-      window: logins.window,
-    }
+    return reportingAll(logins)
+      ? {
+          tone: 'error',
+          headline: 'No subscription can take work: every login has expired.',
+          window: logins.window,
+        }
+      : {
+          tone: 'warning',
+          headline: `Every subscription reporting its ${ALLOWANCE[logins.window]} has an expired login${among(logins)}.`,
+          window: logins.window,
+        }
   }
   const clips = forecasts
     .filter((f): f is PoolForecast & { clipsAt: EpochMs } => f.clipsAt !== null)
     .sort((a, b) => a.clipsAt - b.clipsAt)
   const first = clips[0]
-  // Some subscriptions not reporting the window may still have room: say whose forecast it is.
-  const among = (f: PoolForecast) => (f.unreported === 0 ? '' : ` (the ${f.counted} reporting it)`)
   if (first !== undefined && first.clipsAt <= now) {
     return {
-      tone: first.unreported === 0 ? 'error' : 'warning',
+      tone: reportingAll(first) ? 'error' : 'warning',
       headline: `The pool is out of ${ALLOWANCE[first.window]} now${among(first)}.`,
       window: first.window,
     }
