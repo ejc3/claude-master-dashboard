@@ -208,8 +208,7 @@ describe('forecastHeadline', () => {
     })
   })
 
-  it('names the other window when it runs out after the first gap, and how long each lasts', () => {
-    // A short 5-hour gap first; the weekly one comes after it is over, and lasts days.
+  it('says how long the gap lasts, for the most severe window only', () => {
     const five = {
       ...fiveAt(NOW + 19 * MIN),
       recoversAt: NOW + 19 * MIN + 206 * MIN,
@@ -220,17 +219,12 @@ describe('forecastHeadline', () => {
     expect(forecastHeadline([weekly, five], NOW)).toEqual({
       tone: 'warning',
       headline:
-        'At this pace the pool runs out of its 5-hour capacity in 19m, for 3h 26m (the 1 reporting it); its weekly allowance then runs out in 8h 37m, for 2d 2h.',
+        'At this pace the pool runs out of its 5-hour capacity in 19m, for 3h 26m (the 1 reporting it).',
       window: 'fiveHour',
     })
-  })
-
-  it('says how long a pool that is out stays out, and keeps a later run-out conditional', () => {
-    const five = { ...fiveAt(NOW), recoversAt: NOW + 3 * HOUR_MS }
-    const weekly = { ...weeklyAt(NOW + 5 * HOUR_MS), recoversAt: NOW + 24 * HOUR_MS }
-    expect(forecastHeadline([weekly, five], NOW).headline).toBe(
-      'The pool is out of 5-hour capacity now, for 3h; at this pace its weekly allowance then runs out in 5h, for 19h.',
-    )
+    expect(
+      forecastHeadline([{ ...fiveAt(NOW), recoversAt: NOW + 3 * HOUR_MS }], NOW).headline,
+    ).toBe('The pool is out of 5-hour capacity now, for 3h.')
   })
 
   it('says when the pool is out now', () => {
@@ -267,7 +261,7 @@ describe('forecastHeadline from both forecasts', () => {
     poolForecast(profiles, 'fiveHour', NOW, new Map(), NOW),
   ]
 
-  it('names the weekly gap alone when every week is full, in either order', () => {
+  it('names the weekly gap when every week is full, in either order', () => {
     // The 5-hour forecast is out too, only because it routes to weeks with room.
     const forecasts = both([
       sub('a', 1, 50 * HOUR_MS, 0.1, 3 * HOUR_MS),
@@ -278,30 +272,12 @@ describe('forecastHeadline from both forecasts', () => {
     expect(forecastHeadline([...forecasts].reverse(), NOW).headline).toBe(headline)
   })
 
-  it('leaves out a weekly run-out that falls within the 5-hour gap', () => {
-    const forecasts = both(
-      [
-        sub('a', 0.97, 50 * HOUR_MS, 0.5, 4.5 * HOUR_MS),
-        sub('b', 0.97, 60 * HOUR_MS, 0.5, 4.5 * HOUR_MS),
-      ],
-      rates({ a: 0.01, b: 0.01 }),
-    )
-    const { headline } = forecastHeadline(forecasts, NOW)
-    expect(headline).toMatch(/^At this pace the pool runs out of its 5-hour capacity in /)
-    expect(headline).not.toContain('weekly')
-  })
-
-  it('leaves out a 5-hour run-out that falls within the weekly gap', () => {
-    const forecasts = both(
-      [
-        sub('a', 0.99, 50 * HOUR_MS, 0.15, 4.5 * HOUR_MS),
-        sub('b', 0.99, 60 * HOUR_MS, 0.15, 4.5 * HOUR_MS),
-      ],
-      rates({ a: 0.01, b: 0.01 }),
-    )
-    const { headline } = forecastHeadline(forecasts, NOW)
-    expect(headline).toMatch(/^At this pace the pool runs out of its weekly allowance in /)
-    expect(headline).not.toContain('5-hour')
+  it('leads with the longer gap when both windows are out now', () => {
+    // Both windows full: the week resets in an hour, the 5-hour window in four.
+    const forecasts = both([sub('a', 1, HOUR_MS, 1, 4 * HOUR_MS)])
+    const headline = 'The pool is out of 5-hour capacity now, for 4h.'
+    expect(forecastHeadline(forecasts, NOW).headline).toBe(headline)
+    expect(forecastHeadline([...forecasts].reverse(), NOW).headline).toBe(headline)
   })
 })
 
