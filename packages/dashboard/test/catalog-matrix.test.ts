@@ -27,6 +27,10 @@ const EMITTED: Record<string, readonly Dimension[]> = {
   'claude_master.quota.used_fraction': ['profile'],
   'claude_master.quota.resets_in_seconds': ['profile'],
   'claude_master.auth.token_expires_in_seconds': ['profile'],
+  // tokens.go (CLIProxyAPI#14): one projection per axis, each with the token type.
+  'claude_master.inference.tokens': ['profile', 'type'],
+  'claude_master.inference.tokens.by_client_account': ['client_account', 'type'],
+  'claude_master.inference.tokens.by_client': ['client', 'type'],
 }
 
 const METRICS: SemanticMetric[] = [
@@ -42,6 +46,7 @@ const METRICS: SemanticMetric[] = [
   'weeklyUsed',
   'weeklyResetsInSeconds',
   'tokenExpiresInSeconds',
+  'tokens',
 ]
 const DIMENSIONS: Dimension[] = [
   'profile',
@@ -54,6 +59,7 @@ const DIMENSIONS: Dimension[] = [
   'from',
   'to',
   'result',
+  'type',
 ]
 
 describe('catalog against what claude-master emits', () => {

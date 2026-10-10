@@ -130,6 +130,27 @@ export function useReadings(apiBase: string, query: SeriesQuery | null): Loaded<
 }
 
 /**
+ * Series for `query` filled onto its step grid, plus when the raw data starts: the earliest point
+ * the source returned, before filling turns missing buckets into zeros. The token charts use it
+ * to tell "no tokens counted yet" from "no traffic".
+ */
+export function useCountedSeries(
+  apiBase: string,
+  query: SeriesQuery | null,
+): { loaded: Loaded<Series[]>; firstAt: EpochMs | null } {
+  const raw = useReadings(apiBase, query)
+  const filled = useRef<{ from: Series[]; to: Series[]; firstAt: EpochMs | null } | null>(null)
+  if (raw.state !== 'ready' || query === null) return { loaded: raw, firstAt: null }
+  if (filled.current?.from !== raw.data) {
+    let firstAt: EpochMs | null = null
+    for (const s of raw.data)
+      for (const [t] of s.points) if (firstAt === null || t < firstAt) firstAt = t
+    filled.current = { from: raw.data, to: fillSeries(raw.data, query), firstAt }
+  }
+  return { loaded: { ...raw, data: filled.current.to }, firstAt: filled.current.firstAt }
+}
+
+/**
  * The newest data a query has delivered, kept while a changed query loads or fails, so what
  * depends on it does not drop to a fallback every time its range moves on.
  */

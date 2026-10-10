@@ -20,3 +20,21 @@ describe('Dashboard wiring', () => {
     }
   })
 })
+
+const breakdown = readFileSync(new URL('../src/react/Breakdown.tsx', import.meta.url), 'utf8')
+
+describe('Token wiring', () => {
+  it('charts tokens by subscription, and requests only when the range has no token counts', () => {
+    expect(source).toMatch(/metric: 'tokens', groupBy: 'profile', \.\.\.tokenType/)
+    expect(source).toMatch(
+      /const showTokens = tokenRangeCoverage !== null && tokenRangeCoverage !== 'none'/,
+    )
+    expect(source).toMatch(/No token counts for this range yet; showing requests\./)
+  })
+
+  it('keeps models on requests, and shows a failed token query as an error', () => {
+    expect(breakdown).toMatch(/dimension: 'model', label: 'Models'.*tokens: false/s)
+    expect(breakdown).toMatch(/does not count tokens by model; this view counts requests/)
+    expect(breakdown).toMatch(/tokensPending \|\| tokenError !== null \? \[\] : requestRows/)
+  })
+})

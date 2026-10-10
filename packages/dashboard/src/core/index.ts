@@ -56,5 +56,17 @@ export {
   MIN_STEP_SECONDS,
   validateSeriesQuery,
 } from './query'
+export {
+  firstPointAt,
+  fromFirstBucket,
+  TOKEN_CHOICES,
+  TOKEN_LABELS,
+  type TokenChoice,
+  type TokenRow,
+  tokenChoiceLabel,
+  tokenCoverage,
+  tokenRows,
+  tokensBetween,
+} from './tokens'
 export * from './types'
 export { seriesQueryFromParams, seriesQueryToParams } from './wire'

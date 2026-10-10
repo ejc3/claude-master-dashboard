@@ -147,7 +147,7 @@ interface WireResponse {
 }
 
 // Metrics Insights keywords that must be quoted as identifiers (the catalog keeps the same list).
-const RESERVED = new Set(['result', 'window', 'from', 'to'])
+const RESERVED = new Set(['result', 'window', 'from', 'to', 'type'])
 const identifier = (name: string) => (RESERVED.has(name) ? `"${name}"` : name)
 
 /**
@@ -423,7 +423,7 @@ export function createCloudWatchSource(options: CloudWatchSourceOptions): Metric
 
     async series(query: SeriesQuery): Promise<Series[]> {
       validateSeriesQuery(query)
-      const resolved = resolveMetric(query.metric, query.groupBy)
+      const resolved = resolveMetric(query.metric, query.groupBy, query.tokenType)
       const expression = insightsQuery(namespace, resolved)
       const results = await cached(
         expression,

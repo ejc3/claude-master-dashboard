@@ -7,6 +7,8 @@ import {
   formatCount,
   formatCountdown,
   formatPercent,
+  formatWhen,
+  fromFirstBucket,
   HOUR_MS,
   hasHeadroom,
   nextAvailable,
@@ -16,10 +18,25 @@ import {
   sumBetween,
   sumSeries,
   type TimeRange,
+  TOKEN_CHOICES,
+  TOKEN_LABELS,
+  TOKEN_TYPES,
+  type TokenChoice,
+  tokenChoiceLabel,
+  tokenCoverage,
+  tokensBetween,
   WEEKLY_SMOOTHING_MS,
 } from '../core'
 import { Breakdown } from './Breakdown'
-import { type Loaded, useLastReady, useNow, useReadings, useSeries, useSnapshot } from './hooks'
+import {
+  type Loaded,
+  useCountedSeries,
+  useLastReady,
+  useNow,
+  useReadings,
+  useSeries,
+  useSnapshot,
+} from './hooks'
 import { type ChartSeries, foldSeries, LineChart, seriesColors } from './LineChart'
 import { PoolOutlook } from './Pool'
 import type { PollFailure } from './poller'
@@ -83,7 +100,9 @@ export function Dashboard(props: DashboardProps) {
   const snapshotLoaded = useSnapshot(apiBase, initialSnapshot)
   const snapshot = data(snapshotLoaded) ?? initialSnapshot
   const [rangeName, setRangeName] = useState<RangeName>('24h')
+  const [tokenChoice, setTokenChoice] = useState<TokenChoice>('all')
   const chosen = RANGES[rangeName]
+  const tokenType = tokenChoice === 'all' ? {} : { tokenType: tokenChoice }
 
   // The request URLs change once per step, not every second (useSeries keys on the URL).
   const range = rangeEnding(now, chosen.ms, chosen.stepSeconds)
@@ -93,6 +112,16 @@ export function Dashboard(props: DashboardProps) {
     stepSeconds: chosen.stepSeconds,
   })
   const byProfile = useSeries(apiBase, inRange({ metric: 'requests', groupBy: 'profile' }))
+  // Tokens are what matters; requests are the fallback for a range with no token counts yet
+  // (before the release that counts them).
+  const tokensByProfile = useCountedSeries(
+    apiBase,
+    inRange({ metric: 'tokens', groupBy: 'profile', ...tokenType }),
+  )
+  const tokenRangeCoverage =
+    tokensByProfile.loaded.state === 'ready'
+      ? tokenCoverage(tokensByProfile.firstAt, range, chosen.stepSeconds)
+      : null
   const errors = useSeries(apiBase, inRange({ metric: 'errors' }))
   const backup = useSeries(apiBase, inRange({ metric: 'backupRequests' }))
 
@@ -107,7 +136,20 @@ export function Dashboard(props: DashboardProps) {
   })
   const kpiRequests = useSeries(apiBase, kpiQuery('requests'))
   const kpiErrors = useSeries(apiBase, kpiQuery('errors'))
+  const kpiTokens = useCountedSeries(apiBase, {
+    metric: 'tokens',
+    groupBy: 'type',
+    range: kpiRange,
+    stepSeconds: KPI_STEP_SECONDS,
+  })
   const hourEnd = kpiRange.end - STEP_MS
+  const kpiTokensData = data(kpiTokens.loaded)
+  const tokensLastHour =
+    kpiTokensData === null || kpiTokens.firstAt === null
+      ? null
+      : tokensBetween(kpiTokensData, hourEnd - HOUR_MS, hourEnd)
+  const tokensLastHourTotal =
+    tokensLastHour === null ? null : TOKEN_TYPES.reduce((sum, t) => sum + tokensLastHour[t], 0)
   const kpiRequestsTotal = data(kpiRequests)
   const kpiErrorsTotal = data(kpiErrors)
   const requestsLastHour =
@@ -124,6 +166,11 @@ export function Dashboard(props: DashboardProps) {
       : sumBetween(sumSeries(kpiErrorsTotal), hourEnd - HOUR_MS, hourEnd)
 
   const byProfileData = data(byProfile)
+  const tokensByProfileData = data(tokensByProfile.loaded)
+  const showTokens = tokenRangeCoverage !== null && tokenRangeCoverage !== 'none'
+  const chartData = showTokens
+    ? fromFirstBucket(tokensByProfileData ?? [], tokensByProfile.firstAt, chosen.stepSeconds)
+    : byProfileData
   const errorsData = data(errors)
   const knownKey = (snapshot?.profiles ?? []).map((p) => p.profile).join('\n')
   const knownProfiles = useMemo(() => knownKey.split('\n').filter((n) => n !== ''), [knownKey])
@@ -133,8 +180,8 @@ export function Dashboard(props: DashboardProps) {
     [byProfileData],
   )
   const profileLines: ChartSeries[] = useMemo(() => {
-    if (byProfileData === null) return []
-    const folded = foldSeries(byProfileData)
+    if (chartData === null) return []
+    const folded = foldSeries(chartData)
     // Colors come from every known subscription, so one missing from this range shifts none.
     const colors = seriesColors(
       [...knownProfiles, ...folded.map((s) => s.key)],
@@ -145,7 +192,7 @@ export function Dashboard(props: DashboardProps) {
       label: s.key,
       color: colors.get(s.key) ?? 'var(--cmd-ink-3)',
     }))
-  }, [byProfileData, knownProfiles])
+  }, [chartData, knownProfiles])
 
   // Per hour, not per step: a few requests at night make a five-minute error rate swing wildly.
   // Unknown when either side is unknown: a failed errors query is not a 0% error rate.
@@ -205,6 +252,8 @@ export function Dashboard(props: DashboardProps) {
     failureOf(backup),
     failureOf(kpiRequests),
     failureOf(kpiErrors),
+    failureOf(tokensByProfile.loaded),
+    failureOf(kpiTokens.loaded),
     failureOf(usedReadings),
   ].filter((f): f is PollFailure => f !== null)
   const signedOut = failures.some((f) => f.status === 401)
@@ -222,6 +271,31 @@ export function Dashboard(props: DashboardProps) {
           : `Updated ${formatCountdown(ageMs)} ago`
   const backupTotal = data(backup)
   const rangeWords = rangeName === '24h' ? 'last 24 hours' : 'last 7 days'
+
+  const tokenControl = (
+    <fieldset className="cmd-segmented">
+      <legend className="cmd-visually-hidden">Token type for the chart and table</legend>
+      {TOKEN_CHOICES.map((choice) => (
+        <button
+          type="button"
+          key={choice}
+          aria-pressed={choice === tokenChoice}
+          onClick={() => setTokenChoice(choice)}
+        >
+          {choice === 'all' ? 'All' : TOKEN_LABELS[choice]}
+        </button>
+      ))}
+    </fieldset>
+  )
+  const chartNote =
+    tokenRangeCoverage === 'none'
+      ? 'No token counts for this range yet; showing requests.'
+      : tokenRangeCoverage === 'partial' && tokensByProfile.firstAt !== null
+        ? `Token counts start ${formatWhen(tokensByProfile.firstAt, now)}; nothing was counted before.`
+        : null
+  const chartTitle = showTokens
+    ? `${tokenChoice === 'all' ? 'Tokens' : `${tokenChoiceLabel(tokenChoice)} tokens`} ${chosen.per}, by subscription`
+    : `Requests ${chosen.per}, by subscription`
 
   const rangeControl = (
     <fieldset className="cmd-segmented">
@@ -258,7 +332,10 @@ export function Dashboard(props: DashboardProps) {
               {snapshotFailure !== null && !signedOut ? '; the last refresh failed' : ''}
             </span>
           </div>
-          <div className="cmd-controls">{rangeControl}</div>
+          <div className="cmd-controls">
+            {tokenControl}
+            {rangeControl}
+          </div>
         </header>
 
         {signedOut && (
@@ -271,15 +348,27 @@ export function Dashboard(props: DashboardProps) {
         <PoolOutlook forecasts={forecasts} now={now} detail={outlookDetail} />
 
         <section className="cmd-kpis" aria-label="Traffic">
-          <Kpi
-            label="Requests, last hour"
-            value={formatCount(requestsLastHour)}
-            note={
-              requestsHourBefore === null
-                ? undefined
-                : `${formatCount(requestsHourBefore)} the hour before`
-            }
-          />
+          {tokensLastHour === null || tokensLastHourTotal === null ? (
+            <Kpi
+              label="Requests, last hour"
+              value={formatCount(requestsLastHour)}
+              note={
+                kpiTokens.loaded.state === 'ready'
+                  ? 'No token counts yet'
+                  : requestsHourBefore === null
+                    ? undefined
+                    : `${formatCount(requestsHourBefore)} the hour before`
+              }
+            />
+          ) : (
+            <Kpi
+              label="Tokens, last hour"
+              value={formatCount(tokensLastHourTotal)}
+              note={TOKEN_TYPES.map(
+                (t) => `${formatCount(tokensLastHour[t])} ${TOKEN_LABELS[t].toLowerCase()}`,
+              ).join(' · ')}
+            />
+          )}
           <Kpi
             label="Error rate, last hour"
             value={formatPercent(
@@ -315,13 +404,22 @@ export function Dashboard(props: DashboardProps) {
 
         <div className="cmd-charts">
           <div>
-            {byProfile.state === 'error' && (
-              <p className="cmd-error">{byProfile.failure.message}</p>
+            {(showTokens ? tokensByProfile.loaded : byProfile).state === 'error' && (
+              <p className="cmd-error">
+                {
+                  (failureOf(showTokens ? tokensByProfile.loaded : byProfile) as PollFailure)
+                    .message
+                }
+              </p>
             )}
-            {byProfile.state === 'loading' && <p className="cmd-empty">Loading…</p>}
+            {(tokensByProfile.loaded.state === 'loading' ||
+              (!showTokens && byProfile.state === 'loading')) && (
+              <p className="cmd-empty">Loading…</p>
+            )}
+            {chartNote !== null && <p className="cmd-note">{chartNote}</p>}
             {profileLines.length > 0 && (
               <LineChart
-                title={`Requests ${chosen.per}, by subscription`}
+                title={chartTitle}
                 series={profileLines}
                 format={formatCount}
                 integer
@@ -365,6 +463,8 @@ export function Dashboard(props: DashboardProps) {
           range={range}
           stepSeconds={chosen.stepSeconds}
           rangeWords={rangeWords}
+          tokenChoice={tokenChoice}
+          now={now}
         />
       </div>
     </div>
