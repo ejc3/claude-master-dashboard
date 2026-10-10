@@ -503,7 +503,7 @@
   }
 
   .cmd-row[data-status="low"],
-  .cmd-row[data-status="cooling"] {
+  .cmd-row[data-status="rate-limited"] {
     --cmd-row-mark: var(--cmd-reserve-mark);
   }
 
@@ -622,7 +622,7 @@
   }
 
   .cmd-status[data-status="low"],
-  .cmd-status[data-status="cooling"] {
+  .cmd-status[data-status="rate-limited"] {
     color: var(--cmd-reserve);
     background: var(--cmd-reserve-soft);
     border-color: color-mix(in srgb, var(--cmd-reserve-mark) 45%, transparent);

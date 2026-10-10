@@ -452,3 +452,24 @@ describe('answers shown together, while a moved range loads', () => {
     expect(input).toBe(formatCount(shared))
   })
 })
+
+describe('the status badge', () => {
+  it('says a subscription Anthropic is rate-limiting is rate limited, and when it takes work again', () => {
+    const status: ProfileStatus = {
+      profile: 'alpha',
+      band: 'ok',
+      weekly: { usedFraction: 0.3, resetsAt: NOW + 50 * HOUR_MS, lengthMs: 168 * HOUR_MS },
+      fiveHour: null,
+      rateLimitedUntil: NOW + 106 * 60_000,
+      tokenExpiresAt: null,
+      latencyMs: { p50: null, p95: null, p99: null },
+    }
+    const container = document.createElement('div')
+    container.innerHTML = renderToString(<RunwayCard status={status} now={NOW} />)
+    const badge = container.querySelector('.cmd-status')
+    expect(badge?.textContent).toBe('Rate limited')
+    expect(badge?.getAttribute('data-status')).toBe('rate-limited')
+    expect(container.textContent).toContain('Takes work again in 1h 46m')
+    expect(container.textContent).not.toMatch(/cool/i)
+  })
+})

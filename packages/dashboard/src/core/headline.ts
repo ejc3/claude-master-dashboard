@@ -22,7 +22,7 @@ function blocksUntil(window: QuotaWindow | null, now: EpochMs): EpochMs | 'unkno
 export type Blocked =
   | { reason: 'no-reading'; until: null }
   | { reason: 'login-expired'; until: null }
-  | { reason: 'used-up' | 'cooling-down'; until: EpochMs | null }
+  | { reason: 'used-up' | 'rate-limited'; until: EpochMs | null }
 
 /** Null when the subscription can take work. */
 export function blocked(profile: ProfileStatus, now: EpochMs): Blocked | null {
@@ -35,7 +35,7 @@ export function blocked(profile: ProfileStatus, now: EpochMs): Blocked | null {
   const usedUp = [blocksUntil(profile.weekly, now), blocksUntil(profile.fiveHour, now)].filter(
     (t): t is EpochMs | 'unknown' => t !== null,
   )
-  const cooling =
+  const limited =
     profile.rateLimitedUntil !== null && profile.rateLimitedUntil > now
       ? profile.rateLimitedUntil
       : null
@@ -43,10 +43,10 @@ export function blocked(profile: ProfileStatus, now: EpochMs): Blocked | null {
     const known = usedUp.filter((t): t is EpochMs => t !== 'unknown')
     // An exhausted band no window explains has no known end either.
     const unknown = usedUp.includes('unknown') || usedUp.length === 0
-    const all = cooling === null ? known : [...known, cooling]
+    const all = limited === null ? known : [...known, limited]
     return { reason: 'used-up', until: unknown || all.length === 0 ? null : Math.max(...all) }
   }
-  if (cooling !== null) return { reason: 'cooling-down', until: cooling }
+  if (limited !== null) return { reason: 'rate-limited', until: limited }
   return null
 }
 

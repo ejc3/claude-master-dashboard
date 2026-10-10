@@ -17,13 +17,13 @@ import {
 import { useWhen } from './hooks'
 
 /** What the card's badge says: the band, overridden by anything that stops work right now. */
-export type CardStatus = 'ok' | 'low' | 'used-up' | 'cooling' | 'login' | 'unknown'
+export type CardStatus = 'ok' | 'low' | 'used-up' | 'rate-limited' | 'login' | 'unknown'
 
 const STATUS_LABEL: Record<CardStatus, string> = {
   ok: 'Has headroom',
   low: 'Running low',
   'used-up': 'Used up',
-  cooling: 'Cooling down',
+  'rate-limited': 'Rate limited',
   login: 'Login expired',
   unknown: 'No reading',
 }
@@ -33,7 +33,7 @@ export function cardStatus(profile: ProfileStatus, now: EpochMs): CardStatus {
   if (b?.reason === 'no-reading') return 'unknown'
   if (b?.reason === 'login-expired') return 'login'
   if (b?.reason === 'used-up') return 'used-up'
-  if (b?.reason === 'cooling-down') return 'cooling'
+  if (b?.reason === 'rate-limited') return 'rate-limited'
   return profile.band === 'reserve' ? 'low' : 'ok'
 }
 
@@ -47,7 +47,7 @@ const ICON: Record<CardStatus, ReactNode> = {
     </>
   ),
   'used-up': <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="2" />,
-  cooling: <path d="M5.5 3.5v9M10.5 3.5v9" stroke="currentColor" strokeWidth="2" />,
+  'rate-limited': <path d="M5.5 3.5v9M10.5 3.5v9" stroke="currentColor" strokeWidth="2" />,
   login: (
     <>
       <circle cx="5.5" cy="8" r="3" fill="none" stroke="currentColor" strokeWidth="2" />
