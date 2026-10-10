@@ -13,6 +13,7 @@ import {
   nextAvailable,
   nextRunOut,
   type ProfileStatus,
+  poolTone,
   type SeriesQuery,
   seriesQueryFromParams,
   seriesQueryToParams,
@@ -162,5 +163,18 @@ describe('format', () => {
     expect(formatWhen(NOW + 2 * HOUR_MS, NOW, 'UTC')).toBe('14:00')
     expect(formatWhen(Date.UTC(2026, 9, 12, 9, 30), NOW, 'UTC')).toBe('Mon 09:30')
     expect(formatWhen(Date.UTC(2026, 9, 30, 9, 30), NOW, 'UTC')).toBe('Oct 30, 09:30')
+  })
+})
+
+describe('poolTone', () => {
+  it('reads success, warning, error, or info from how many subscriptions have headroom', () => {
+    const usedUp = profile('b', {
+      weekly: { usedFraction: 1, resetsAt: NOW + HOUR_MS, lengthMs: WEEK_MS },
+    })
+    expect(poolTone([profile('a'), profile('c')], NOW)).toBe('success')
+    expect(poolTone([profile('a'), usedUp], NOW)).toBe('warning')
+    expect(poolTone([usedUp], NOW)).toBe('error')
+    expect(poolTone([], NOW)).toBe('info')
+    expect(poolTone(null, NOW)).toBe('info')
   })
 })

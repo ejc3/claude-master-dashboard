@@ -49,8 +49,10 @@ const allowed = async () =>
 `apps/web/lib/dashboard.ts` does this, reading the settings from Worker secrets.
 
 The reference app deploys as a Cloudflare Worker: see [docs/deploy.md](docs/deploy.md).
-The fonts are optional: set `--cmd-font-sans` and `--cmd-font-condensed` (the reference app uses
-Barlow and Barlow Condensed through `next/font`).
+The look follows an error-monitoring console (pale violet-gray page, quiet panels, one violet
+accent, tinted status tags). Every color is a `--cmd-*` custom property on `.cmd-root`, so a host
+restyles it by overriding those. The font is optional: set `--cmd-font-sans` (the reference app
+uses Rubik through `next/font`).
 
 ## Develop
 

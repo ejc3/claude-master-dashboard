@@ -2,18 +2,13 @@ import '@ejc3/claude-master-dashboard/styles.css'
 import './globals.css'
 
 import type { Metadata, Viewport } from 'next'
-import { Barlow, Barlow_Condensed } from 'next/font/google'
+import { Rubik } from 'next/font/google'
 import type { ReactNode } from 'react'
 
-const sans = Barlow({
+const sans = Rubik({
   subsets: ['latin'],
-  weight: ['400', '500', '600', '700'],
+  weight: ['400', '500', '600'],
   variable: '--cmd-font-sans',
-})
-const condensed = Barlow_Condensed({
-  subsets: ['latin'],
-  weight: ['500', '600', '700'],
-  variable: '--cmd-font-condensed',
 })
 
 export const metadata: Metadata = {
@@ -24,14 +19,14 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = {
   themeColor: [
-    { media: '(prefers-color-scheme: light)', color: '#eef1f4' },
-    { media: '(prefers-color-scheme: dark)', color: '#0e1520' },
+    { media: '(prefers-color-scheme: light)', color: '#faf9fb' },
+    { media: '(prefers-color-scheme: dark)', color: '#1a141f' },
   ],
 }
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" className={`${sans.variable} ${condensed.variable}`}>
+    <html lang="en" className={sans.variable}>
       <body>{children}</body>
     </html>
   )

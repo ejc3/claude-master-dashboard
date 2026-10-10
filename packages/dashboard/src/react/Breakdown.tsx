@@ -45,12 +45,14 @@ export function Breakdown(props: {
   const peak = Math.max(0, ...rows.flatMap((r) => r.points.map(([, v]) => v)))
 
   return (
-    <section className="cmd-panel" aria-labelledby="cmd-breakdown-title">
-      <div className="cmd-panel-head">
+    <section className="cmd-panel cmd-panel-flush" aria-labelledby="cmd-breakdown-title">
+      <div className="cmd-panel-head cmd-panel-pad">
         <h2 className="cmd-panel-title" id="cmd-breakdown-title">
           Requests by {split.noun}, {props.rangeWords}
         </h2>
-        <fieldset className="cmd-segmented">
+      </div>
+      <div className="cmd-panel-pad">
+        <fieldset className="cmd-tabs">
           <legend className="cmd-visually-hidden">Split requests by</legend>
           {SPLITS.map((s) => (
             <button
@@ -64,10 +66,12 @@ export function Breakdown(props: {
           ))}
         </fieldset>
       </div>
-      {loaded.state === 'loading' && <p className="cmd-empty">Loading…</p>}
-      {loaded.state === 'error' && <p className="cmd-error">{loaded.failure.message}</p>}
+      {loaded.state === 'loading' && <p className="cmd-empty cmd-panel-pad">Loading…</p>}
+      {loaded.state === 'error' && (
+        <p className="cmd-error cmd-panel-pad">{loaded.failure.message}</p>
+      )}
       {loaded.state === 'ready' && rows.length === 0 && (
-        <p className="cmd-empty">No requests in this range.</p>
+        <p className="cmd-empty cmd-panel-pad">No requests in this range.</p>
       )}
       {rows.length > 0 && (
         <div className="cmd-table-wrap">
@@ -87,7 +91,7 @@ export function Breakdown(props: {
                 const share = all === 0 ? 0 : r.total / all
                 return (
                   <tr key={r.key}>
-                    <th scope="row" style={{ fontWeight: 500, color: 'inherit' }}>
+                    <th scope="row" className="cmd-row-head">
                       {r.key}
                     </th>
                     <td className="cmd-num">{formatCount(r.total)}</td>
@@ -99,7 +103,7 @@ export function Breakdown(props: {
                         <span className="cmd-share-value">{formatPercent(share)}</span>
                       </span>
                     </td>
-                    <td style={{ width: 96 }}>
+                    <td className="cmd-trend">
                       <Sparkline points={r.points} max={peak} />
                     </td>
                   </tr>

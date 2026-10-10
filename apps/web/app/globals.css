@@ -4,20 +4,20 @@
 
 body {
   margin: 0;
-  background: #eef1f4;
+  background: #faf9fb;
   font-family: var(--cmd-font-sans), ui-sans-serif, system-ui, sans-serif;
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) body {
-    background: #0e1520;
-    color: #e6ebf2;
+    background: #1a141f;
+    color: #ebe6ef;
   }
 }
 
 :root[data-theme="dark"] body {
-  background: #0e1520;
-  color: #e6ebf2;
+  background: #1a141f;
+  color: #ebe6ef;
 }
 
 .signin {
@@ -28,7 +28,7 @@ body {
 }
 
 .signin h1 {
-  font-family: var(--cmd-font-condensed), var(--cmd-font-sans), sans-serif;
+  font-family: var(--cmd-font-sans), sans-serif;
   font-weight: 600;
   margin: 0 0 8px;
 }
@@ -42,13 +42,13 @@ body {
   margin-top: 12px;
   padding: 10px 16px;
   border-radius: 6px;
-  background: #14213d;
+  background: #6c5fc7;
   color: #fff;
   font-weight: 600;
   text-decoration: none;
 }
 
 .signin button:focus-visible {
-  outline: 2px solid #2f5bea;
+  outline: 2px solid #6c5fc7;
   outline-offset: 2px;
 }
