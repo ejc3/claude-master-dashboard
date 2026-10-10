@@ -341,28 +341,45 @@ export function createCloudWatchSource(options: CloudWatchSourceOptions): Metric
       const end = Math.floor(now / 60_000) * 60_000 + 60_000
       const start = end - SNAPSHOT_LOOKBACK_MS
       const read = (query: string, from = start) => cached(query, from, end, 60)
-      const [used, resets, bands, cooldowns, tokens, quantiles, fiveHour, sessions, connections] =
-        await Promise.all([
-          read(gauge('MAX', 'quota.used_fraction', ['profile'])),
-          read(gauge('MAX', 'quota.resets_in_seconds', ['profile'])),
-          read(gauge('MAX', 'quota.band', ['profile'])),
-          read(gauge('MAX', 'quota.rate_limited_for_seconds', ['profile'])),
-          read(gauge('MIN', 'auth.token_expires_in_seconds', ['profile'])),
-          read(gauge('MAX', 'inference.duration_quantile', ['profile', 'quantile'])),
-          read(
-            gaugeQuery(namespace, 'MAX', 'claude_master.anthropic.ratelimit', {
-              where: ['window', '5h'],
-              groupBy: ['profile', 'measure'],
-            }),
-            end - FIVE_HOUR_LOOKBACK_MS,
-          ),
-          read(gauge('MAX', 'sessions.tracked', [])),
-          read(gauge('MAX', 'proxy.active_connections', [])),
-        ])
+      const [
+        used,
+        resets,
+        bands,
+        cooldowns,
+        tokens,
+        quantiles,
+        fiveHour,
+        polledFiveUsed,
+        polledFiveResets,
+        sessions,
+        connections,
+      ] = await Promise.all([
+        read(gauge('MAX', 'quota.used_fraction', ['profile'])),
+        read(gauge('MAX', 'quota.resets_in_seconds', ['profile'])),
+        read(gauge('MAX', 'quota.band', ['profile'])),
+        read(gauge('MAX', 'quota.rate_limited_for_seconds', ['profile'])),
+        read(gauge('MIN', 'auth.token_expires_in_seconds', ['profile'])),
+        read(gauge('MAX', 'inference.duration_quantile', ['profile', 'quantile'])),
+        read(
+          gaugeQuery(namespace, 'MAX', 'claude_master.anthropic.ratelimit', {
+            where: ['window', '5h'],
+            groupBy: ['profile', 'measure'],
+          }),
+          end - FIVE_HOUR_LOOKBACK_MS,
+        ),
+        // From the usage poll, about once a minute whether the subscription serves or not
+        // (exported by claude-master releases that have it).
+        read(gauge('MAX', 'quota.five_hour.used_fraction', ['profile'])),
+        read(gauge('MAX', 'quota.five_hour.resets_in_seconds', ['profile'])),
+        read(gauge('MAX', 'sessions.tracked', [])),
+        read(gauge('MAX', 'proxy.active_connections', [])),
+      ])
       const byLabel = (results: InsightsResult[]) => new Map(results.map((r) => [r.label, r]))
       const resetsBy = byLabel(resets)
       const bandsBy = byLabel(bands)
       const cooldownsBy = byLabel(cooldowns)
+      const polledFiveUsedBy = byLabel(polledFiveUsed)
+      const polledFiveResetsBy = byLabel(polledFiveResets)
       const tokensBy = byLabel(tokens)
       // Two-dimension groups: "<profile> <quantile>" and "<profile> <measure>".
       const quantilesBy = new Map<string, Partial<Record<string, number>>>()
@@ -403,9 +420,14 @@ export function createCloudWatchSource(options: CloudWatchSourceOptions): Metric
             p95: q['0.95'] ?? null,
             p99: q['0.99'] ?? null,
           }
+          // The usage poll's reading when there is one; else the last from the response headers.
+          const polledUsed = latest(polledFiveUsedBy.get(profile))
           const window5h = fiveHourBy.get(profile)
-          const utilization = window5h?.utilization
-          const resets5h = window5h?.resets_in_seconds
+          const utilization = polledUsed ?? window5h?.utilization
+          const resets5h =
+            polledUsed !== null
+              ? (latest(polledFiveResetsBy.get(profile)) ?? undefined)
+              : window5h?.resets_in_seconds
           return {
             profile,
             band: bandFromGauge(band === null ? null : band[1]),
