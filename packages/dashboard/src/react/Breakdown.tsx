@@ -18,7 +18,7 @@ import {
   tokenRows,
 } from '../core/index'
 import { useSharedAnswers } from './answers'
-import { useCountedSeries, useSeries } from './hooks'
+import { useCountedSeries, useSeries, useWhen } from './hooks'
 import { breakdownQueries, SPLITS } from './queries'
 import { Sparkline, sharedPeak } from './Sparkline'
 
@@ -33,6 +33,20 @@ function ShareCell(props: { share: number }) {
       </span>
     </td>
   )
+}
+
+/**
+ * The range the table's title names: the chosen one, or "since 02:15" when the token counts start
+ * partway through it, so the totals are not read as covering the whole range.
+ */
+export function tableRangeWords(
+  coverage: 'none' | 'partial' | 'full' | null,
+  firstAt: EpochMs | null,
+  rangeWords: string,
+  clock: ((at: EpochMs) => string) | null,
+): string {
+  if (coverage !== 'partial' || firstAt === null) return rangeWords
+  return `since ${clock === null ? 'token counting began' : clock(firstAt)}`
 }
 
 /** One row per key with any requests in the range, most first. */
@@ -54,6 +68,7 @@ export function Breakdown(props: {
   tokenChoice: TokenChoice
   now: EpochMs
 }) {
+  const when = useWhen()
   const [split, setSplit] = useState(SPLITS[0] as (typeof SPLITS)[number])
   const queries = breakdownQueries(props.range, props.stepSeconds, split)
   const requests = useSeries(props.apiBase, queries.requests)
@@ -127,7 +142,13 @@ export function Breakdown(props: {
     <section className="cmd-panel cmd-panel-flush" aria-labelledby="cmd-breakdown-title">
       <div className="cmd-panel-head cmd-panel-pad">
         <h2 className="cmd-panel-title" id="cmd-breakdown-title">
-          {what} by {split.noun}, {props.rangeWords}
+          {what} by {split.noun},{' '}
+          {tableRangeWords(
+            showTokens ? coverage : null,
+            firstAt,
+            props.rangeWords,
+            when === null ? null : (at) => when(at, props.now),
+          )}
         </h2>
       </div>
       <div className="cmd-panel-pad">

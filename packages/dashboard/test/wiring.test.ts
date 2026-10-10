@@ -58,5 +58,7 @@ describe('Token wiring', () => {
     expect(queries).toMatch(/dimension: 'model', label: 'Models'.*tokens: false/s)
     expect(breakdown).toMatch(/does not count tokens by model; this view counts requests/)
     expect(breakdown).toMatch(/tokensPending \|\| tokenError !== null \? \[\] : requestRows/)
+    // The title names the range the token totals cover.
+    expect(breakdown).toMatch(/\{tableRangeWords\(\s*showTokens \? coverage : null,/)
   })
 })

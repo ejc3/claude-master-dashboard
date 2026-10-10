@@ -1243,5 +1243,11 @@
       background: Highlight;
       color: HighlightText;
     }
+
+    /* No reading: a dashed border, never the solid one of a 0% bar. */
+    .cmd-account-bar[data-level="unknown"] {
+      border-style: dashed;
+      outline: none;
+    }
   }
 }
