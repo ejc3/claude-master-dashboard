@@ -601,6 +601,12 @@ describe('the account bars', () => {
       'false',
       'true',
     ])
+    // The key sits in the row: a sample pair of bars, named week and 5h, left to right.
+    const key = container.querySelector('.cmd-accounts-key')
+    expect(key?.querySelectorAll('.cmd-account-bar')).toHaveLength(2)
+    expect(
+      [...(key?.querySelectorAll('.cmd-accounts-key-names span') ?? [])].map((e) => e.textContent),
+    ).toEqual(['week', '5h'])
     const levels = (e: Element) =>
       [...e.querySelectorAll('.cmd-account-bar')].map((b) => b.getAttribute('data-level'))
     expect(items.map(levels)).toEqual([
