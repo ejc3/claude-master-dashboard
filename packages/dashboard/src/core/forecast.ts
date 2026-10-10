@@ -320,6 +320,8 @@ export interface PoolGaps {
   trace: CapacityPoint[]
   /** The most the trace can show: one for each subscription that can work (login valid). */
   capacity: number
+  /** The subscriptions the trace covers, in order (those that can work). */
+  subscriptions: string[]
   /**
    * The pace the forecast assumes, in one subscription's allowance per hour: of a weekly limit
    * (the last day's average) and of a 5-hour limit (each open window's average so far).
@@ -339,6 +341,8 @@ export interface CapacityPoint {
   at: EpochMs
   weekly: number
   fiveHour: number
+  /** What is left of each subscription's week, in PoolGaps.subscriptions' order. */
+  weeklyBy: number[]
 }
 
 /** How often the capacity trace is sampled. */
@@ -476,6 +480,7 @@ export function poolGaps(
     lasts,
     trace,
     capacity: slots.length,
+    subscriptions: slots.map((s) => profiles[s.index]?.profile ?? ''),
     pace: { weekly: weeklyDemand, fiveHour: fiveDemand },
     unusedAtReset,
   })
@@ -489,15 +494,17 @@ export function poolGaps(
     for (; nextSample < until; nextSample += TRACE_STEP_MS) {
       let weekly = 0
       let fiveHour = 0
+      const weeklyBy: number[] = []
       for (const s of slots) {
         resetWeek(s, nextSample)
         closeIfOver(s.five, nextSample)
         weekly += 1 - s.weekly.used
+        weeklyBy.push(1 - s.weekly.used)
         // A 5-hour window counts only while its week has room: with the week used up, it cannot
         // be used however empty it is.
         fiveHour += isFull(s.weekly) ? 0 : 1 - s.five.used
       }
-      trace.push({ at: nextSample, weekly, fiveHour })
+      trace.push({ at: nextSample, weekly, fiveHour, weeklyBy })
     }
   }
 

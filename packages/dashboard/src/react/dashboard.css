@@ -282,6 +282,7 @@
   }
 
   .cmd-capacity-tabs {
+    grid-column: 1 / -1;
     justify-self: start;
   }
 
@@ -900,6 +901,11 @@
 
   .cmd-area {
     opacity: 0.14;
+  }
+
+  /* A stacked band: stronger than a lone area, since it carries the identity. */
+  .cmd-area-stack {
+    opacity: 0.45;
   }
 
   .cmd-tooltip {

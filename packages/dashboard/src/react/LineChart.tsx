@@ -39,6 +39,8 @@ interface Props {
   max?: number
   /** Offer the table view; off where a table of the samples tells nothing (the readout still does). */
   table?: boolean
+  /** Stack the series as areas, each on the ones before it, so the top is their total. */
+  stacked?: boolean
 }
 
 const PAD = { top: 8, right: 8, bottom: 22, left: 44 }
@@ -83,6 +85,7 @@ export const LineChart = memo(function LineChart({
   bands = [],
   bandLabel = 'Shaded',
   table = true,
+  stacked = false,
   max: fixedMax,
 }: Props) {
   const [ref, width] = useWidth<HTMLDivElement>()
@@ -99,8 +102,14 @@ export const LineChart = memo(function LineChart({
   const right = PAD.right + (directLabels ? LABEL_GUTTER : 0)
   const plotWidth = Math.max(0, width - PAD.left - right)
   const plotHeight = height - PAD.top - PAD.bottom
-  const max =
-    fixedMax ?? niceMax(Math.max(0, ...series.flatMap((s) => s.points.map(([, v]) => v))), integer)
+  // Stacked, each series sits on the ones before it: its line is the running total.
+  const tops = stacked
+    ? series.reduce<number[][]>((acc, s, k) => {
+        acc.push(s.points.map(([, v], i) => v + (k === 0 ? 0 : (acc[k - 1]?.[i] ?? 0))))
+        return acc
+      }, [])
+    : series.map((s) => s.points.map(([, v]) => v))
+  const max = fixedMax ?? niceMax(Math.max(0, ...tops.flatMap((values) => values)), integer)
   const first = times[0] ?? 0
   const last = times[times.length - 1] ?? 1
   const x = (t: EpochMs) =>
@@ -166,7 +175,7 @@ export const LineChart = memo(function LineChart({
   // Direct labels at each line's end, nudged apart so they never overlap.
   const ends = directLabels
     ? series
-        .map((s) => ({ s, y: y(s.points[s.points.length - 1]?.[1] ?? 0) }))
+        .map((s, k) => ({ s, y: y(tops[k]?.[s.points.length - 1] ?? 0) }))
         .sort((a, b) => a.y - b.y)
         .map((e, i, all) => {
           const previous = all[i - 1]
@@ -183,7 +192,11 @@ export const LineChart = memo(function LineChart({
   const valueText =
     readTime === undefined
       ? 'No data'
-      : `${when === null ? 'Latest' : when(readTime, now)}: ${series.map((s) => `${s.label} ${format(s.points[readIndex]?.[1] ?? 0)}`).join(', ')}${inBand(readTime) ? `; ${bandLabel}` : ''}`
+      : `${when === null ? 'Latest' : when(readTime, now)}: ${series.map((s) => `${s.label} ${format(s.points[readIndex]?.[1] ?? 0)}`).join(', ')}${
+          stacked && series.length > 1
+            ? `, total ${format(tops[series.length - 1]?.[readIndex] ?? 0)}`
+            : ''
+        }${inBand(readTime) ? `; ${bandLabel}` : ''}`
   const tooltipLeft = activeTime === null ? 0 : x(activeTime)
   const flip = tooltipLeft > width / 2
 
@@ -296,7 +309,22 @@ export const LineChart = memo(function LineChart({
                   />
                 ) : null
               })}
+              {stacked &&
+                series.map((s, k) => (
+                  <polygon
+                    key={`${s.key}-band`}
+                    className="cmd-area cmd-area-stack"
+                    fill={s.color}
+                    points={[
+                      ...s.points.map(([t], i) => `${x(t)},${y(tops[k]?.[i] ?? 0)}`),
+                      ...s.points
+                        .map(([t], i) => `${x(t)},${y(k === 0 ? 0 : (tops[k - 1]?.[i] ?? 0))}`)
+                        .reverse(),
+                    ].join(' ')}
+                  />
+                ))}
               {area &&
+                !stacked &&
                 series.length === 1 &&
                 series.map((s) => (
                   <polygon
@@ -310,16 +338,16 @@ export const LineChart = memo(function LineChart({
                     ].join(' ')}
                   />
                 ))}
-              {series.map((s) => (
+              {series.map((s, k) => (
                 <polyline
                   key={s.key}
                   className="cmd-line"
                   fill="none"
                   stroke={s.color}
-                  strokeWidth={2}
+                  strokeWidth={stacked ? 1.5 : 2}
                   strokeLinejoin="round"
                   strokeLinecap="round"
-                  points={s.points.map(([t, v]) => `${x(t)},${y(v)}`).join(' ')}
+                  points={s.points.map(([t], i) => `${x(t)},${y(tops[k]?.[i] ?? 0)}`).join(' ')}
                 />
               ))}
               {ends.map(({ s, y: labelY }) => (
@@ -342,8 +370,8 @@ export const LineChart = memo(function LineChart({
                     stroke="var(--cmd-ink-3)"
                     strokeWidth={1}
                   />
-                  {series.map((s) => {
-                    const v = s.points[active ?? 0]?.[1]
+                  {series.map((s, k) => {
+                    const v = tops[k]?.[active ?? 0]
                     return v === undefined ? null : (
                       <circle
                         key={s.key}

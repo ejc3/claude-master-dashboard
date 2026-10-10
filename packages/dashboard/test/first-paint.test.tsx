@@ -141,8 +141,9 @@ describe('the first paint', () => {
     // The two capacity charts at the top, then the two traffic charts.
     expect(charts).toHaveLength(4)
     // Each holds its plot's height (the capacity charts are shorter) before it is measured.
+    // The stacked weekly chart is a little taller than the 5-hour one.
     expect(charts.map((chart) => chart.style.minHeight)).toEqual([
-      '160px',
+      '180px',
       '160px',
       '200px',
       '200px',
@@ -934,8 +935,8 @@ describe('the banner', () => {
       ) as HTMLButtonElement
     expect(tab('Projected').getAttribute('aria-pressed')).toBe('true')
     const projected = weeklyTitle()
-    act(() => tab('Subscription resets').click())
-    expect(tab('Subscription resets').getAttribute('aria-pressed')).toBe('true')
+    act(() => tab('Resets only').click())
+    expect(tab('Resets only').getAttribute('aria-pressed')).toBe('true')
     // Now the same (90% left now): the title is what is left now either way.
     expect(weeklyTitle()).toBe(projected)
     const slider = container.querySelector('.cmd-capacity-weekly [role="slider"]') as HTMLElement
@@ -943,7 +944,19 @@ describe('the banner', () => {
       slider.dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true }))
     })
     // With no more use, every week is whole again by its reset: 200% for two subscriptions.
-    expect(slider.getAttribute('aria-valuetext')).toMatch(/200%$/)
+    expect(slider.getAttribute('aria-valuetext')).toMatch(/total 200%$/)
+    // The toggle covers the 5-hour chart and says what it shows.
+    expect(container.querySelector('.cmd-capacity-note')?.textContent).toContain(
+      'If nothing more is used',
+    )
+    const five = [...container.querySelectorAll('.cmd-capacity [role="slider"]')].at(
+      -1,
+    ) as HTMLElement
+    act(() => {
+      five.dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true }))
+    })
+    // No 5-hour readings: every window closed, so each week with room counts whole.
+    expect(five.getAttribute('aria-valuetext')).toMatch(/200%$/)
   })
 
   it("tells a subscription's unused share at its reset in its detail", () => {
