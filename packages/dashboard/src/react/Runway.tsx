@@ -129,14 +129,28 @@ function WindowRow(props: {
  * runway per quota window. The panel lays rows out as columns on wide screens and stacks them on
  * narrow ones.
  */
-export function RunwayCard({ status, now }: { status: ProfileStatus; now: EpochMs }) {
+export function RunwayCard({
+  status,
+  now,
+  color,
+}: {
+  status: ProfileStatus
+  now: EpochMs
+  /** The subscription's color, the same as on the charts. */
+  color?: string | undefined
+}) {
   const card = cardStatus(status, now)
   const b = blocked(status, now)
   return (
     <article className="cmd-row" data-status={card} aria-label={`Subscription ${status.profile}`}>
       <div className="cmd-row-main">
         <div className="cmd-row-title">
-          <h3 className="cmd-profile">{status.profile}</h3>
+          <h3 className="cmd-profile">
+            {color !== undefined && (
+              <span className="cmd-swatch" style={{ color }} aria-hidden="true" />
+            )}
+            {status.profile}
+          </h3>
           <StatusBadge status={card} />
         </div>
         <p className="cmd-row-meta">

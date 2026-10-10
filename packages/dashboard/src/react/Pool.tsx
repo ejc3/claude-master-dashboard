@@ -1,6 +1,6 @@
 'use client'
 
-import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
+import { type CSSProperties, type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import {
   blocked,
   type EpochMs,
@@ -35,6 +35,11 @@ const TONE_ICON: Record<PoolTone, ReactNode> = {
   info: <circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" strokeWidth="1.6" />,
 }
 
+/** One color per subscription, the same on every chart, bar and row of the page. */
+export function accountColors(names: string[]): Map<string, string> {
+  return seriesColors(names)
+}
+
 /** The names without what they all start with ("claude-colin", "claude-thao" → "colin", "thao"). */
 export function shortNames(names: string[]): Map<string, string> {
   let prefix = names[0] ?? ''
@@ -50,12 +55,20 @@ export function shortNames(names: string[]): Map<string, string> {
 const share = (f: number | null | undefined) =>
   f === null || f === undefined || !Number.isFinite(f) ? null : Math.min(1, Math.max(0, f))
 
-/** A tiny bar: how much of a window is used; dashed and empty when there is no reading. */
-function UsedBar(props: { used: number | null; window: WindowKind }) {
+/**
+ * A tiny bar: how much of a window is used, in the subscription's own color (the same as in the
+ * charts); a full one is outlined in the warning color; dashed and empty when there is no reading.
+ */
+function UsedBar(props: { used: number | null; window: WindowKind; color: string }) {
   const { used } = props
   const level = used === null ? 'unknown' : used >= 1 ? 'full' : used >= 0.9 ? 'high' : 'ok'
   return (
-    <span className="cmd-account-bar" data-window={props.window} data-level={level}>
+    <span
+      className="cmd-account-bar"
+      data-window={props.window}
+      data-level={level}
+      style={{ '--cmd-account-fill': props.color } as CSSProperties}
+    >
       {used !== null && <span style={{ height: `${used * 100}%` }} />}
     </span>
   )
@@ -141,10 +154,13 @@ function availability(p: ProfileStatus, now: EpochMs): string {
 export function PoolAccounts(props: {
   profiles: ProfileStatus[]
   now: EpochMs
+  /** Each subscription's color, as on the charts; defaults to accountColors of the profiles. */
+  colors?: Map<string, string>
   /** What each weekly reset will leave unused at this pace (PoolGaps.unusedAtReset). */
   unusedAtReset?: PoolGaps['unusedAtReset']
 }) {
   const names = shortNames(props.profiles.map((p) => p.profile))
+  const colors = props.colors ?? accountColors(props.profiles.map((p) => p.profile))
   const [open, setOpen] = useState<string | null>(null)
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -196,8 +212,8 @@ export function PoolAccounts(props: {
                 }}
               >
                 <span className="cmd-account-bars" aria-hidden="true">
-                  <UsedBar used={weekly} window="weekly" />
-                  <UsedBar used={five} window="fiveHour" />
+                  <UsedBar used={weekly} window="weekly" color={colors.get(p.profile) ?? ''} />
+                  <UsedBar used={five} window="fiveHour" color={colors.get(p.profile) ?? ''} />
                 </span>
                 <span className="cmd-account-name">{names.get(p.profile)}</span>
                 <span className="cmd-visually-hidden">
@@ -250,10 +266,11 @@ const asPercent = (v: number) => `${Math.round(v * 100)}%`
 function capacitySeries(gaps: PoolGaps | null, now: EpochMs, resets: EpochMs[]) {
   if (gaps === null || gaps.trace.length === 0 || gaps.capacity === 0) return null
   const horizonEnd = gaps.trace.at(-1)?.at ?? now
-  // The weekly chart to the furthest weekly reset and the hour after it (so its step up shows),
-  // hourly; the 5-hour one over the next day, every sample, where its windows' cycles show.
-  const weeklyUntil = Math.min(horizonEnd, Math.max(now + 24 * HOUR_MS, ...resets) + HOUR_MS)
-  const fiveUntil = Math.min(horizonEnd, now + 24 * HOUR_MS)
+  // The weekly chart to the furthest weekly reset and past it, hourly; the 5-hour one over the
+  // next five hours, a window's length, every sample.
+  // Half a day past the last reset, so its step up is not on the chart's edge.
+  const weeklyUntil = Math.min(horizonEnd, Math.max(now + 24 * HOUR_MS, ...resets) + 12 * HOUR_MS)
+  const fiveUntil = Math.min(horizonEnd, now + 5 * HOUR_MS)
   const start = gaps.trace[0]?.at ?? now
   const points = (key: 'weekly' | 'fiveHour', until: EpochMs, every: number) =>
     gaps.trace
@@ -368,7 +385,7 @@ export function CapacityOutlook(props: {
             weekly.weekly.filter(([t]) => t <= props.now).at(-1)?.[1] ?? weekly.weekly[0]?.[1]
           const names = (props.profiles ?? []).map((p) => p.profile)
           const short = shortNames(names.length > 0 ? names : weekly.subscriptionsShown)
-          const colors = seriesColors(names, weekly.subscriptionsShown)
+          const colors = accountColors(names.length > 0 ? names : weekly.subscriptionsShown)
           return weekly.weekly.length < 2 ? null : (
             <LineChart
               title={`Weekly limit left${current === undefined ? '' : ` · ${asPercent(current)}`}`}
@@ -390,7 +407,7 @@ export function CapacityOutlook(props: {
           )
         })()}
       </div>
-      {chart('fiveHour', shown, '5-hour limit left, next 24h', 'var(--cmd-series-2)')}
+      {chart('fiveHour', shown, '5-hour limit left, next 5h', 'var(--cmd-series-2)')}
       <p className="cmd-capacity-note">
         {weeklyView === 'stopped'
           ? 'If nothing more is used: capacity only comes back as each limit resets. '

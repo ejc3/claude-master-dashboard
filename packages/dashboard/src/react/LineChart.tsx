@@ -55,6 +55,54 @@ export function axisTime(label: string): string {
   return day !== label ? day : label.replace(/:00 (AM|PM)$/, ' $1')
 }
 
+/** How long a series takes to fade in or out when its legend entry is toggled. */
+const TOGGLE_MS = 250
+
+/**
+ * Each series' weight, 1 shown and 0 hidden, easing between them over TOGGLE_MS when a series is
+ * toggled (at once when the viewer prefers reduced motion): a stacked band shrinks away and the
+ * ones above settle onto the ones below.
+ */
+function useWeights(keys: string[], off: ReadonlySet<string>): Map<string, number> {
+  const target = (k: string) => (off.has(k) ? 0 : 1)
+  const [weights, setWeights] = useState(() => new Map(keys.map((k) => [k, target(k)])))
+  const current = useRef(weights)
+  current.current = weights
+  const keysKey = keys.join('\n')
+  const offKey = [...off].sort().join('\n')
+  // biome-ignore lint/correctness/useExhaustiveDependencies: keys and off are read through their keys
+  useEffect(() => {
+    const goal = new Map(keys.map((k) => [k, target(k)]))
+    const reduce =
+      typeof window !== 'undefined' &&
+      window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+    const from = new Map(keys.map((k) => [k, current.current.get(k) ?? (goal.get(k) as number)]))
+    if (reduce || keys.every((k) => from.get(k) === goal.get(k))) {
+      setWeights(goal)
+      return
+    }
+    let start: number | null = null
+    let frame = 0
+    const step = (t: number) => {
+      start ??= t
+      const p = Math.min(1, (t - start) / TOGGLE_MS)
+      const eased = 1 - (1 - p) ** 3
+      setWeights(
+        new Map(
+          keys.map((k) => {
+            const a = from.get(k) as number
+            return [k, a + ((goal.get(k) as number) - a) * eased]
+          }),
+        ),
+      )
+      if (p < 1) frame = requestAnimationFrame(step)
+    }
+    frame = requestAnimationFrame(step)
+    return () => cancelAnimationFrame(frame)
+  }, [keysKey, offKey])
+  return weights
+}
+
 /** The smallest "nice" axis maximum at or above `max`; whole numbers when `integer`. */
 export function niceMax(max: number, integer: boolean): number {
   if (max <= 0) return 1
@@ -89,6 +137,20 @@ export const LineChart = memo(function LineChart({
   max: fixedMax,
 }: Props) {
   const [ref, width] = useWidth<HTMLDivElement>()
+  // Series turned off from the legend; at least one always stays on.
+  const [off, setOff] = useState<ReadonlySet<string>>(new Set())
+  const weights = useWeights(
+    series.map((s) => s.key),
+    off,
+  )
+  const weightOf = (key: string) => weights.get(key) ?? 1
+  const toggle = (key: string) =>
+    setOff((o) => {
+      const next = new Set(o)
+      if (next.has(key)) next.delete(key)
+      else if (series.some((s) => s.key !== key && !next.has(s.key))) next.add(key)
+      return next
+    })
   const when = useWhen()
   const [active, setActive] = useState<number | null>(null)
   const [touch, setTouch] = useState(false)
@@ -105,7 +167,8 @@ export const LineChart = memo(function LineChart({
   // Stacked, each series sits on the ones before it: its line is the running total.
   const tops = stacked
     ? series.reduce<number[][]>((acc, s, k) => {
-        acc.push(s.points.map(([, v], i) => v + (k === 0 ? 0 : (acc[k - 1]?.[i] ?? 0))))
+        const w = weightOf(s.key)
+        acc.push(s.points.map(([, v], i) => v * w + (k === 0 ? 0 : (acc[k - 1]?.[i] ?? 0))))
         return acc
       }, [])
     : series.map((s) => s.points.map(([, v]) => v))
@@ -176,6 +239,7 @@ export const LineChart = memo(function LineChart({
   const ends = directLabels
     ? series
         .map((s, k) => ({ s, y: y(tops[k]?.[s.points.length - 1] ?? 0) }))
+        .filter((e) => !off.has(e.s.key))
         .sort((a, b) => a.y - b.y)
         .map((e, i, all) => {
           const previous = all[i - 1]
@@ -192,7 +256,10 @@ export const LineChart = memo(function LineChart({
   const valueText =
     readTime === undefined
       ? 'No data'
-      : `${when === null ? 'Latest' : when(readTime, now)}: ${series.map((s) => `${s.label} ${format(s.points[readIndex]?.[1] ?? 0)}`).join(', ')}${
+      : `${when === null ? 'Latest' : when(readTime, now)}: ${series
+          .filter((s) => !off.has(s.key))
+          .map((s) => `${s.label} ${format(s.points[readIndex]?.[1] ?? 0)}`)
+          .join(', ')}${
           stacked && series.length > 1
             ? `, total ${format(tops[series.length - 1]?.[readIndex] ?? 0)}`
             : ''
@@ -220,8 +287,16 @@ export const LineChart = memo(function LineChart({
         <ul className="cmd-legend">
           {series.map((s) => (
             <li key={s.key}>
-              <span className="cmd-swatch" style={{ color: s.color }} />
-              {s.label}
+              <button
+                type="button"
+                className="cmd-legend-toggle"
+                aria-pressed={!off.has(s.key)}
+                title={off.has(s.key) ? `Show ${s.label}` : `Hide ${s.label}`}
+                onClick={() => toggle(s.key)}
+              >
+                <span className="cmd-swatch" style={{ color: s.color }} />
+                {s.label}
+              </button>
             </li>
           ))}
         </ul>
@@ -347,6 +422,7 @@ export const LineChart = memo(function LineChart({
                   strokeWidth={stacked ? 1.5 : 2}
                   strokeLinejoin="round"
                   strokeLinecap="round"
+                  opacity={weightOf(s.key)}
                   points={s.points.map(([t], i) => `${x(t)},${y(tops[k]?.[i] ?? 0)}`).join(' ')}
                 />
               ))}
@@ -372,7 +448,7 @@ export const LineChart = memo(function LineChart({
                   />
                   {series.map((s, k) => {
                     const v = tops[k]?.[active ?? 0]
-                    return v === undefined ? null : (
+                    return v === undefined || off.has(s.key) ? null : (
                       <circle
                         key={s.key}
                         cx={x(activeTime)}
@@ -425,13 +501,15 @@ export const LineChart = memo(function LineChart({
                     : { left: tooltipLeft + 10 }
               }
             >
-              {series.map((s) => (
-                <div className="cmd-tooltip-row" key={s.key}>
-                  <span className="cmd-swatch" style={{ color: s.color }} />
-                  {s.label}
-                  <b>{format(s.points[active ?? 0]?.[1] ?? 0)}</b>
-                </div>
-              ))}
+              {series
+                .filter((s) => !off.has(s.key))
+                .map((s) => (
+                  <div className="cmd-tooltip-row" key={s.key}>
+                    <span className="cmd-swatch" style={{ color: s.color }} />
+                    {s.label}
+                    <b>{format(s.points[active ?? 0]?.[1] ?? 0)}</b>
+                  </div>
+                ))}
               <div className="cmd-tooltip-time">{formatWhen(activeTime, now)}</div>
             </div>
           )}
@@ -488,7 +566,13 @@ export function seriesColors(known: string[], shown: string[] = known): Map<stri
   const universe = [...new Set(known.filter((k) => k !== 'Other'))].sort()
   const colors = new Map<string, string>()
   const used = new Set<number>()
-  for (const key of [...new Set(shown)].sort()) {
+  // Known keys first, each at its own slot, so a key outside the known ones (the paid API's
+  // api-backup) never moves a subscription's color.
+  const ordered = [...new Set(shown)].sort((a, b) => {
+    const known = (k: string) => (universe.includes(k) ? 0 : 1)
+    return known(a) - known(b) || a.localeCompare(b)
+  })
+  for (const key of ordered) {
     if (key === 'Other') {
       colors.set(key, OTHER_COLOR)
       continue

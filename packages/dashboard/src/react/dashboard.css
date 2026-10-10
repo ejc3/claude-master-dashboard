@@ -450,12 +450,15 @@
     background: var(--cmd-account-fill, var(--cmd-fill));
   }
 
+  /* The fill is the subscription's color; nearly full and full are said by an outline. */
   .cmd-account-bar[data-level="high"] {
-    --cmd-account-fill: var(--cmd-reserve-mark);
+    outline: 2px solid var(--cmd-reserve-mark);
+    outline-offset: 1px;
   }
 
   .cmd-account-bar[data-level="full"] {
-    --cmd-account-fill: var(--cmd-exhausted-mark);
+    outline: 2px solid var(--cmd-exhausted-mark);
+    outline-offset: 1px;
   }
 
   .cmd-account-bar[data-level="unknown"] {
@@ -917,6 +920,30 @@
   }
 
   /* A stacked band: stronger than a lone area, since it carries the identity. */
+  /* A legend entry toggles its series; one turned off is greyed out. */
+  .cmd-legend-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 4px;
+    border: 0;
+    border-radius: 4px;
+    background: none;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+  }
+
+  .cmd-legend-toggle[aria-pressed="false"] {
+    opacity: 0.4;
+    text-decoration: line-through;
+  }
+
+  .cmd-legend-toggle:focus-visible {
+    outline: 2px solid var(--cmd-fill);
+    outline-offset: 1px;
+  }
+
   .cmd-area-stack {
     opacity: 0.45;
   }

@@ -16,8 +16,9 @@ import {
 import { createDemoSource } from '../src/demo/index'
 import { DashboardPage, FIRST_QUERIES_BUDGET_MS } from '../src/next/index'
 import { keepWhileLoading, type Loaded } from '../src/react/hooks'
-import { LineChart } from '../src/react/LineChart'
+import { LineChart, seriesColors } from '../src/react/LineChart'
 import {
+  accountColors,
   CapacityOutlook,
   calendarHref,
   PoolAccounts,
@@ -659,10 +660,14 @@ describe('the capacity charts', () => {
     // What is left now, in each title.
     expect(figures.map((f) => f.querySelector('figcaption')?.textContent)).toEqual([
       'Weekly limit left · 100%',
-      '5-hour limit left, next 24h · 160%',
+      '5-hour limit left, next 5h · 160%',
     ])
     // No table view on these charts; the readout reads each point.
-    expect(figures.every((f) => f.querySelector('button') === null)).toBe(true)
+    expect(
+      figures.every(
+        (f) => ![...f.querySelectorAll('button')].some((b) => b.textContent === 'Show table'),
+      ),
+    ).toBe(true)
     const readout = (figure: Element, key: string) => {
       const slider = figure.querySelector('[role="slider"]') as HTMLElement
       act(() => {
@@ -672,12 +677,13 @@ describe('the capacity charts', () => {
     }
     const weekly = figures[0] as Element
     const five = figures[1] as Element
-    // Weekly hourly from now to the hour after the reset 60 hours out (so its step shows); 5-hour
-    // every ten minutes over the next 24 hours.
-    expect(readout(weekly, 'End').getAttribute('aria-valuemax')).toBe(String(62 - 1))
-    expect(readout(five, 'End').getAttribute('aria-valuemax')).toBe(String(24 * 6 - 1))
-    // The last weekly point is after the reset at 60 hours: its step up shows.
-    expect(readout(weekly, 'End').getAttribute('aria-valuetext')).toMatch(/158%$/)
+    // Weekly hourly to half a day past the reset 60 hours out; 5-hour every ten minutes over the
+    // next 5 hours.
+    // Twelve hours past the reset 60 hours out, so its step is not on the edge.
+    expect(readout(weekly, 'End').getAttribute('aria-valuemax')).toBe(String(72))
+    expect(readout(five, 'End').getAttribute('aria-valuemax')).toBe(String(5 * 6 - 1))
+    // The last weekly point is half a day after b's reset at 60 hours: b is whole again.
+    expect(readout(weekly, 'End').getAttribute('aria-valuetext')).toMatch(/b 100%, total 136%$/)
     // The first points: what is left now, in one subscription's limit (two half-used: 100%).
     expect(readout(weekly, 'Home').getAttribute('aria-valuetext')).toMatch(/100%$/)
     expect(readout(five, 'Home').getAttribute('aria-valuetext')).toMatch(/160%$/)
@@ -1039,5 +1045,98 @@ describe('the paid API box', () => {
     )
     // Conversations name their window.
     expect(container.textContent).toContain('Conversations, last 30 days')
+  })
+})
+
+describe("a stacked chart's legend", () => {
+  it('turns a series off and on, never the last one, and the total follows', async () => {
+    const container = document.createElement('div')
+    document.body.append(container)
+    const root = createRoot(container)
+    roots.push(root)
+    const points = (v: number): Array<[number, number]> => [
+      [NOW, v],
+      [NOW + HOUR_MS, v],
+    ]
+    act(() =>
+      root.render(
+        <LineChart
+          title="Left"
+          series={[
+            { key: 'a', label: 'a', color: 'red', points: points(1) },
+            { key: 'b', label: 'b', color: 'blue', points: points(0.5) },
+          ]}
+          format={(v) => `${Math.round(v * 100)}%`}
+          now={NOW}
+          stacked
+        />,
+      ),
+    )
+    const slider = container.querySelector('[role="slider"]') as HTMLElement
+    const legend = (name: string) =>
+      [...container.querySelectorAll<HTMLButtonElement>('.cmd-legend-toggle')].find(
+        (b) => b.textContent === name,
+      ) as HTMLButtonElement
+    expect(slider.getAttribute('aria-valuetext')).toMatch(/a 100%, b 50%, total 150%$/)
+    act(() => legend('b').click())
+    // The fade runs on animation frames: let it finish.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(400)
+    })
+    expect(legend('b').getAttribute('aria-pressed')).toBe('false')
+    expect(slider.getAttribute('aria-valuetext')).toMatch(/: a 100%, total 100%$/)
+    // The last one on stays on.
+    act(() => legend('a').click())
+    expect(legend('a').getAttribute('aria-pressed')).toBe('true')
+    act(() => legend('b').click())
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(400)
+    })
+    expect(slider.getAttribute('aria-valuetext')).toMatch(/total 150%$/)
+  })
+})
+
+describe('account colors', () => {
+  it('are one per subscription, whatever else a chart shows beside them', () => {
+    // Eight, so the paid API's slot would land on a subscription's if it were placed first.
+    const known = [
+      'claude-b',
+      'claude-a',
+      'claude-c',
+      'claude-d',
+      'claude-e',
+      'claude-f',
+      'claude-g',
+      'claude-h',
+    ]
+    const page = accountColors(known)
+    // The tokens chart also shows the paid API, which sorts first: no subscription moves.
+    const chart = seriesColors(known, ['api-backup', ...known])
+    for (const name of known) expect(chart.get(name)).toBe(page.get(name))
+  })
+
+  it("paint each subscription's bars and its row in its color", () => {
+    const status: ProfileStatus = {
+      profile: 'claude-a',
+      band: 'ok',
+      weekly: { usedFraction: 0.3, resetsAt: NOW + 50 * HOUR_MS, lengthMs: 168 * HOUR_MS },
+      fiveHour: null,
+      rateLimitedUntil: null,
+      tokenExpiresAt: null,
+      latencyMs: { p50: null, p95: null, p99: null },
+    }
+    const colors = new Map([['claude-a', 'var(--cmd-series-3)']])
+    const bars = document.createElement('div')
+    bars.innerHTML = renderToString(<PoolAccounts profiles={[status]} now={NOW} colors={colors} />)
+    for (const bar of bars.querySelectorAll<HTMLElement>('.cmd-account .cmd-account-bar')) {
+      expect(bar.style.getPropertyValue('--cmd-account-fill')).toBe('var(--cmd-series-3)')
+    }
+    const row = document.createElement('div')
+    row.innerHTML = renderToString(
+      <RunwayCard status={status} now={NOW} color="var(--cmd-series-3)" />,
+    )
+    expect(row.querySelector<HTMLElement>('.cmd-profile .cmd-swatch')?.style.color).toBe(
+      'var(--cmd-series-3)',
+    )
   })
 })
