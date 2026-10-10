@@ -166,9 +166,18 @@ export function PoolAccounts(props: {
   const shown = props.profiles.find((p) => p.profile === open) ?? null
   return (
     <div className="cmd-accounts" ref={ref}>
-      <p className="cmd-accounts-key" aria-hidden="true">
-        Used: week · 5-hour
-      </p>
+      {/* A key in the row itself: a sample pair of bars, each named under it. */}
+      <div className="cmd-accounts-key" aria-hidden="true">
+        <span className="cmd-account-bars">
+          <span className="cmd-account-bar" data-level="key" />
+          <span className="cmd-account-bar" data-level="key" />
+        </span>
+        <span className="cmd-accounts-key-names">
+          <span>week</span>
+          <span>5h</span>
+        </span>
+        <span className="cmd-accounts-key-caption">used</span>
+      </div>
       <ul aria-label="Each subscription's weekly and 5-hour use">
         {props.profiles.map((p) => {
           const weekly = share(p.weekly.usedFraction)
