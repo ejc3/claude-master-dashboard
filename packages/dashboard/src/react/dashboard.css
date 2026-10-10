@@ -322,7 +322,7 @@
     grid-column: 2;
     display: flex;
     flex-wrap: wrap;
-    align-items: flex-end;
+    align-items: flex-start;
     gap: 10px;
     min-width: 0;
   }
@@ -338,12 +338,25 @@
   }
 
   .cmd-accounts-key {
-    margin: 0;
-    font-size: 0.6875rem;
+    display: grid;
+    justify-items: center;
+    gap: 2px;
+    padding: 2px 4px;
+    font-size: 0.625rem;
     line-height: 1.1;
     color: var(--cmd-ink-3);
+  }
+
+  .cmd-accounts-key .cmd-account-bar {
+    background: none;
+    outline: 1px solid var(--cmd-ink-3);
+    outline-offset: -1px;
+  }
+
+  .cmd-accounts-key-names {
+    display: flex;
+    gap: 4px;
     white-space: nowrap;
-    padding-bottom: 16px;
   }
 
   .cmd-account {
