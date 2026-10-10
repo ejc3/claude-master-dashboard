@@ -131,9 +131,11 @@ export function Breakdown(props: {
   const note = !split.tokens
     ? 'claude-master does not count tokens by model; this view counts requests.'
     : coverage === 'none'
-      ? 'No token counts for this range yet; showing requests.'
+      ? split.requests
+        ? 'No token counts for this range yet; showing requests.'
+        : `No token counts by ${split.noun} yet: claude-master releases that count them send them.`
       : null
-  const loading = tokensPending || (!showTokens && requests.state === 'loading')
+  const loading = tokensPending || (!showTokens && split.requests && requests.state === 'loading')
   const requestsFailure =
     !showTokens && tokenError === null && requests.state === 'error' ? requests.failure : null
   const failure = tokenError ?? requestsFailure

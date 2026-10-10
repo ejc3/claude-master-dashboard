@@ -27,6 +27,7 @@ export const DEMO_VALUES: Record<Dimension, readonly string[]> = {
   profile: ['alpha', 'bravo', 'charlie', 'delta'],
   client: ['box-1', 'box-2', 'tunnel', 'local'],
   client_account: ['alice', 'bob', 'carol', 'other', 'unknown'],
+  project: ['web-app', 'api-server', 'infra', 'none'],
   model: ['claude-model-large', 'claude-model-medium', 'claude-model-small'],
   status_class: ['2xx', '4xx', '5xx', 'none'],
   status: ['429', '529', '500', '401', '0'],
@@ -58,6 +59,7 @@ const SHARES: Record<Dimension, readonly number[]> = {
   profile: [0.38, 0.34, 0.08, 0.2],
   client: [0.45, 0.3, 0.2, 0.05],
   client_account: [0.4, 0.3, 0.2, 0.08, 0.02],
+  project: [0.5, 0.3, 0.15, 0.05],
   model: [0.35, 0.5, 0.15],
   status_class: [0, 0.55, 0.4, 0.05], // of errors; 2xx is everything else
   status: [0.5, 0.25, 0.15, 0.06, 0.04], // of errors
