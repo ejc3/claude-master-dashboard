@@ -17,7 +17,13 @@ import { createDemoSource } from '../src/demo/index'
 import { DashboardPage, FIRST_QUERIES_BUDGET_MS } from '../src/next/index'
 import { keepWhileLoading, type Loaded } from '../src/react/hooks'
 import { LineChart } from '../src/react/LineChart'
-import { CapacityOutlook, calendarHref, PoolAccounts, shortNames } from '../src/react/Pool'
+import {
+  CapacityOutlook,
+  calendarHref,
+  PoolAccounts,
+  PoolOutlook,
+  shortNames,
+} from '../src/react/Pool'
 import { chartQuery, firstQueries } from '../src/react/queries'
 import { RunwayCard } from '../src/react/Runway'
 
@@ -120,7 +126,8 @@ describe('the first paint', () => {
     // The weekly burn rate from the last day's readings, not each window's average.
     // The headline from the joint forecast, and how it is worked out.
     expect(text).toMatch(/Runs out in \S+|Out now|Won't run out/)
-    expect(text).toContain('How this is worked out')
+    // The pace the forecast assumes, in one line.
+    expect(text).toMatch(/At [\d.]+% of a weekly limit and [\d.]+% of a 5-hour limit an hour/)
     // The person table, filled.
     expect(
       container.querySelectorAll('section[aria-labelledby="cmd-breakdown-title"] tbody tr').length,
@@ -243,10 +250,10 @@ describe('the first paint', () => {
 
   it('without a reported time zone, renders countdowns only and adds clock times in the browser', async () => {
     const { container, serverText, recoverable } = await hydrated(undefined)
-    // The run-out's clock times ("21:57 until 22:09") need the viewer's zone.
-    expect(serverText).not.toMatch(/\d{2}:\d{2} until /)
+    // The run-out's clock times ("9:57 PM until 10:09 PM") need the viewer's zone.
+    expect(serverText).not.toMatch(/\d:\d{2} [AP]M until /)
     expect(recoverable).toEqual([])
-    expect(container.textContent).toMatch(/\d{2}:\d{2} until /)
+    expect(container.textContent).toMatch(/\d:\d{2} [AP]M until /)
     // The browser reports its zone for the next visit.
     expect(document.cookie).toContain(`cmd-tz=${encodeURIComponent(ZONE)}`)
   })
@@ -640,10 +647,10 @@ describe('the capacity charts', () => {
     roots.push(root)
     act(() => root.render(<CapacityOutlook gaps={gaps} profiles={profiles} now={NOW} />))
     const figures = [...container.querySelectorAll('figure')]
-    // What is left of the whole pool now, in each title.
+    // What is left now, in each title.
     expect(figures.map((f) => f.querySelector('figcaption')?.textContent)).toEqual([
-      'Weekly limit left · 50%',
-      '5-hour limit left, next 24h · 80%',
+      'Weekly limit left · 100%',
+      '5-hour limit left, next 24h · 160%',
     ])
     // No table view on these charts; the readout reads each point.
     expect(figures.every((f) => f.querySelector('button') === null)).toBe(true)
@@ -661,10 +668,10 @@ describe('the capacity charts', () => {
     expect(readout(weekly, 'End').getAttribute('aria-valuemax')).toBe(String(62 - 1))
     expect(readout(five, 'End').getAttribute('aria-valuemax')).toBe(String(24 * 6 - 1))
     // The last weekly point is after the reset at 60 hours: its step up shows.
-    expect(readout(weekly, 'End').getAttribute('aria-valuetext')).toMatch(/79%$/)
-    // The first points: what is left now, as a share of the whole pool (two subscriptions).
-    expect(readout(weekly, 'Home').getAttribute('aria-valuetext')).toMatch(/50%$/)
-    expect(readout(five, 'Home').getAttribute('aria-valuetext')).toMatch(/80%$/)
+    expect(readout(weekly, 'End').getAttribute('aria-valuetext')).toMatch(/158%$/)
+    // The first points: what is left now, in one subscription's limit (two half-used: 100%).
+    expect(readout(weekly, 'Home').getAttribute('aria-valuetext')).toMatch(/100%$/)
+    expect(readout(five, 'Home').getAttribute('aria-valuetext')).toMatch(/160%$/)
   })
 })
 
@@ -871,5 +878,77 @@ describe('calendarHref', () => {
     expect(ics).toContain('DTSTART:20261016T215900Z')
     expect(ics).toContain('DTEND:20261016T221400Z')
     expect(ics).toContain('SUMMARY:alpha: weekly limit resets')
+  })
+})
+
+describe('the banner', () => {
+  const sub = (profile: string, weekly: number, resetIn: number): ProfileStatus => ({
+    profile,
+    band: 'ok',
+    weekly: { usedFraction: weekly, resetsAt: NOW + resetIn, lengthMs: 168 * HOUR_MS },
+    fiveHour: null,
+    rateLimitedUntil: null,
+    tokenExpiresAt: null,
+    latencyMs: { p50: null, p95: null, p99: null },
+  })
+  const profiles = [sub('team-a', 0.3, 10 * HOUR_MS), sub('team-b', 0.8, 40 * HOUR_MS)]
+  const rates = new Map([
+    ['team-a', 0.01],
+    ['team-b', 0.01],
+  ])
+  const render = () => {
+    const container = document.createElement('div')
+    document.body.append(container)
+    const root = createRoot(container)
+    roots.push(root)
+    act(() =>
+      root.render(
+        <PoolOutlook
+          gaps={poolGaps(profiles, NOW, rates, NOW)}
+          gapsIfStopped={poolGaps(profiles, NOW, rates, NOW, true)}
+          profiles={profiles}
+          now={NOW}
+        />,
+      ),
+    )
+    return container
+  }
+
+  it('says the pace, and what weekly resets will leave unused', () => {
+    const text = render().textContent ?? ''
+    expect(text).toContain('At 2.0% of a weekly limit and 0% of a 5-hour limit an hour')
+    // a resets in 10h with about 60% unused; b's reset is later, after a's work moves to it.
+    expect(text).toMatch(/Unused at weekly resets: \d+% · a \d+%/)
+  })
+
+  it('switches the weekly chart between projected and no more use', () => {
+    const container = render()
+    const weeklyTitle = () =>
+      container.querySelector('.cmd-capacity-weekly figcaption')?.textContent
+    const tab = (name: string) =>
+      [...container.querySelectorAll<HTMLButtonElement>('.cmd-capacity-tabs button')].find(
+        (b) => b.textContent === name,
+      ) as HTMLButtonElement
+    expect(tab('Projected').getAttribute('aria-pressed')).toBe('true')
+    const projected = weeklyTitle()
+    act(() => tab('If use stops').click())
+    expect(tab('If use stops').getAttribute('aria-pressed')).toBe('true')
+    // Now the same (90% left now): the title is what is left now either way.
+    expect(weeklyTitle()).toBe(projected)
+    const slider = container.querySelector('.cmd-capacity-weekly [role="slider"]') as HTMLElement
+    act(() => {
+      slider.dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true }))
+    })
+    // With no more use, every week is whole again by its reset: 200% for two subscriptions.
+    expect(slider.getAttribute('aria-valuetext')).toMatch(/200%$/)
+  })
+
+  it("tells a subscription's unused share at its reset in its detail", () => {
+    const container = render()
+    const button = container.querySelector<HTMLButtonElement>('.cmd-account button')
+    act(() => button?.click())
+    expect(container.querySelector('.cmd-account-detail')?.textContent).toMatch(
+      /At this pace \d+% of the week goes unused at its reset/,
+    )
   })
 })

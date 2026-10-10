@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { HOUR_MS } from '../src/core'
 import {
+  axisTime,
   foldSeries,
   niceMax,
   OTHER_COLOR,
@@ -148,5 +149,16 @@ describe('sharedPeak', () => {
     // One point draws no sparkline: its 50 must not shrink the drawn row's bars.
     expect(sharedPeak([{ points: drawn }, { points: [[0, 50]] }])).toBe(2)
     expect(sharedPeak([])).toBe(0)
+  })
+})
+
+describe('axisTime', () => {
+  it('shortens tick labels: a midnight to its day, an hour on the hour without minutes', () => {
+    expect(axisTime('Tue 12:00 AM')).toBe('Tue')
+    expect(axisTime('Oct 30, 12:00 AM')).toBe('Oct 30')
+    expect(axisTime('6:00 PM')).toBe('6 PM')
+    expect(axisTime('Sun 12:00 PM')).toBe('Sun 12 PM')
+    expect(axisTime('12:00 AM')).toBe('12 AM')
+    expect(axisTime('6:30 PM')).toBe('6:30 PM')
   })
 })

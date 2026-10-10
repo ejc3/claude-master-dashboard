@@ -162,8 +162,8 @@ describe('format', () => {
   })
 
   it('names a time by how far away it is', () => {
-    expect(formatWhen(NOW + 2 * HOUR_MS, NOW, 'UTC')).toBe('14:00')
-    expect(formatWhen(Date.UTC(2026, 9, 12, 9, 30), NOW, 'UTC')).toBe('Mon 09:30')
-    expect(formatWhen(Date.UTC(2026, 9, 30, 9, 30), NOW, 'UTC')).toBe('Oct 30, 09:30')
+    expect(formatWhen(NOW + 2 * HOUR_MS, NOW, 'UTC')).toBe('2:00 PM')
+    expect(formatWhen(Date.UTC(2026, 9, 12, 9, 30), NOW, 'UTC')).toBe('Mon 9:30 AM')
+    expect(formatWhen(Date.UTC(2026, 9, 30, 9, 30), NOW, 'UTC')).toBe('Oct 30, 9:30 AM')
   })
 })
