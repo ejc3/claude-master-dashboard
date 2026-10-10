@@ -193,6 +193,32 @@ describe('poolGaps: both windows in one simulation', () => {
     )
   })
 
+  it('keeps a rate-limited subscription out of work until the limit ends', () => {
+    const g = poolGaps([sub('a', [0.3, 100 * H], null, { rateLimitedUntil: NOW + 2 * H })], NOW)
+    expect(hours(g)[0]).toEqual({ start: 0, end: 2, endsWith: 'rateLimit' })
+    expect(headline(g)).toBe('The pool is out now, for 2h until a rate limit ends.')
+  })
+
+  it('a pool hit by its 5-hour limits: out within minutes, not "two can take work"', () => {
+    // One near the end of its 5-hour window, one whose window is full (its last reading kept),
+    // two with their weeks used up, one rate-limited.
+    const g = poolGaps(
+      [
+        sub('a', [0.52, 78 * H], [0.96, 3.77 * H]),
+        sub('b', [0.54, 155 * H], [1, H]),
+        sub('c', [1, 92 * H], null),
+        sub('d', [1, 55 * H], null),
+        sub('e', [0.27, 107 * H], null, { rateLimitedUntil: NOW + 146 * M }),
+      ],
+      NOW,
+      rates({ a: 0.05, b: 0.05, c: 0.05, d: 0.05, e: 0.05 }),
+    )
+    expect(hours(g)[0]).toEqual({ start: 4 / 60, end: 1, endsWith: 'fiveHour' })
+    expect(headline(g)).toMatch(
+      /^At this pace the pool runs out in 4m, for 56m until a 5-hour window resets/,
+    )
+  })
+
   it('skips a gap that has ended by now, and starts from the readings', () => {
     // Read three hours ago: a week full then, reset an hour ago.
     const from = NOW - 3 * H

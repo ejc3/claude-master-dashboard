@@ -297,8 +297,11 @@ export interface PoolGap {
   start: EpochMs
   /** When the first subscription can take work again; null when no reset time is known. */
   end: EpochMs | null
-  /** Which window's reset ends it (the weekly one on a tie); null when no reset time is known. */
-  endsWith: WindowKind | null
+  /**
+   * What ends it: a window's reset (the weekly one on a tie), or the end of a rate limit
+   * Anthropic set; null when no reset time is known.
+   */
+  endsWith: WindowKind | 'rateLimit' | null
 }
 
 /** The pool's gaps from one simulation of both windows together. */
@@ -324,6 +327,8 @@ interface JointSlot extends Slot {
    * when the subscription next takes work, and closes again at its reset.
    */
   five: SimWindow
+  /** Until when Anthropic is rate-limiting it (a 429), so it takes no work; null when not. */
+  limitedUntil: EpochMs | null
 }
 
 /** Closes a 5-hour window whose reset has passed: the next work opens a new one. */
@@ -341,9 +346,12 @@ const isFull = (w: SimWindow) => w.used >= FULL
  * When the subscription can be picked again, after whichever of its full windows resets last,
  * and which window that is (the weekly one on a tie); null when a full window has no reset time.
  */
-function availableAfter(s: JointSlot, t: EpochMs): { at: EpochMs; window: WindowKind } | null {
+function availableAfter(
+  s: JointSlot,
+  t: EpochMs,
+): { at: EpochMs; window: WindowKind | 'rateLimit' } | null {
   let at = t
-  let window: WindowKind = 'weekly'
+  let window: WindowKind | 'rateLimit' = 'weekly'
   const full: Array<[SimWindow, WindowKind]> = [
     [s.weekly, 'weekly'],
     [s.five, 'fiveHour'],
@@ -355,6 +363,10 @@ function availableAfter(s: JointSlot, t: EpochMs): { at: EpochMs; window: Window
       at = w.resetsAt
       window = kind
     }
+  }
+  if (s.limitedUntil !== null && s.limitedUntil > at) {
+    at = s.limitedUntil
+    window = 'rateLimit'
   }
   return { at, window }
 }
@@ -371,8 +383,9 @@ function availableAfter(s: JointSlot, t: EpochMs): { at: EpochMs; window: Window
  * during a gap neither is used. Each window resets on its own clock. A subscription without a
  * weekly reading is left out (`unreported`). A 5-hour window opens with a subscription's first
  * work after the last one closed (one not read, or with no window open, is closed), unlike
- * poolForecast's, which restart at once. Gaps that have ended by `now` are skipped; after a gap
- * the simulation goes on from its end. Every gap in the horizon is listed.
+ * poolForecast's, which restart at once. A subscription Anthropic is rate-limiting takes no
+ * work until that ends. Gaps that have ended by `now` are skipped; after a gap the simulation
+ * goes on from its end. Every gap in the horizon is listed.
  */
 export function poolGaps(
   profiles: ProfileStatus[],
@@ -404,7 +417,9 @@ export function poolGaps(
     )
     if (f !== null) fiveDemand += rate(averageBurnRate(f, from))
     const loginExpired = p.tokenExpiresAt !== null && p.tokenExpiresAt <= from
-    if (!loginExpired) slots.push({ quota: weekly, weekly, five, index })
+    const limitedUntil =
+      p.rateLimitedUntil !== null && p.rateLimitedUntil > from ? p.rateLimitedUntil : null
+    if (!loginExpired) slots.push({ quota: weekly, weekly, five, index, limitedUntil })
   }
   const result = (gaps: PoolGap[], lasts: PoolGaps['lasts']): PoolGaps => ({
     counted,
@@ -419,7 +434,8 @@ export function poolGaps(
   const perWeek = (weeklyDemand / HOUR_MS) * step
   const perFive = (fiveDemand / HOUR_MS) * step
   const idle = perWeek <= 0 && perFive <= 0
-  const open = (s: JointSlot) => !isFull(s.weekly) && !isFull(s.five)
+  const open = (s: JointSlot, t: EpochMs) =>
+    !isFull(s.weekly) && !isFull(s.five) && (s.limitedUntil === null || s.limitedUntil <= t)
   const gaps: PoolGap[] = []
   const end = from + GAPS_HORIZON_MS
   for (let t = from; t <= end; t += step) {
@@ -427,10 +443,10 @@ export function poolGaps(
       catchUp(s.weekly, t)
       closeIfOver(s.five, t)
     }
-    const ready = slots.filter(open)
+    const ready = slots.filter((s) => open(s, t))
     if (ready.length === 0) {
       // The first subscription back ends the gap; a weekly reset wins a tie.
-      let first: { at: EpochMs; window: WindowKind } | null = null
+      let first: { at: EpochMs; window: WindowKind | 'rateLimit' } | null = null
       for (const s of slots) {
         const back = availableAfter(s, t)
         if (back === null) continue
@@ -447,8 +463,9 @@ export function poolGaps(
         gaps.push({ start: t, end: gapEnd, endsWith: first?.window ?? null })
       }
       if (gapEnd === null) break
-      // On from the step at which the first subscription takes work again.
-      t = from + Math.ceil((gapEnd - from) / step) * step - step
+      // On from the step at which the first subscription takes work again (at least one step on,
+      // so the loop always moves).
+      t = Math.max(t, from + Math.ceil((gapEnd - from) / step) * step - step)
       continue
     }
     if (idle) break
@@ -601,9 +618,10 @@ export function forecastHeadline(
   }
 }
 
-const RESET_WORDS: Record<WindowKind, string> = {
+const RESET_WORDS: Record<WindowKind | 'rateLimit', string> = {
   weekly: 'a week resets',
   fiveHour: 'a 5-hour window resets',
+  rateLimit: 'a rate limit ends',
 }
 
 /** ", for 2h 15m until a 5-hour window resets", from `from`. */
@@ -649,7 +667,9 @@ export function gapsHeadline(
     gap.end === null ? Number.POSITIVE_INFINITY : gap.end - Math.max(gap.start, now)
   // 5-hour gaps come back every few hours; what matters after the first gap is the first one a
   // week ends that lasts longer.
-  const later = rest.find((gap) => gap.endsWith !== 'fiveHour' && length(gap) > length(first))
+  const later = rest.find(
+    (gap) => (gap.endsWith === 'weekly' || gap.endsWith === null) && length(gap) > length(first),
+  )
   const out = first.start <= now
   const lead = out
     ? `The pool is out now${gapLength(first, now)}`

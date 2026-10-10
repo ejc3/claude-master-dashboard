@@ -10,6 +10,7 @@ import {
   type LatencyQuantiles,
   type MetricsSource,
   type ProfileStatus,
+  type QuotaWindow,
   type Series,
   type SeriesQuery,
   type Snapshot,
@@ -121,6 +122,30 @@ export const DEFAULT_NAMESPACE = 'ClaudeMaster'
 export const DEFAULT_CACHE_MS = 60_000
 /** How far back the snapshot looks for each gauge's latest reading. */
 export const SNAPSHOT_LOOKBACK_MS = 15 * 60_000
+
+/**
+ * How far back the 5-hour window's reading is looked for. It comes from Anthropic's response
+ * headers, so it stops when a subscription stops serving, as one whose 5-hour window is full
+ * does; the last reading holds until its window resets, at most five hours on.
+ */
+export const FIVE_HOUR_LOOKBACK_MS = FIVE_HOURS_MS
+
+/**
+ * The 5-hour window from its last reading: as read while its reset is ahead; once the reset has
+ * passed, no window is open (nothing used, no reset time) until the next request opens one.
+ */
+export function fiveHourWindow(
+  utilization: [EpochMs, number] | undefined,
+  resets: [EpochMs, number] | undefined,
+  now: EpochMs,
+): QuotaWindow | null {
+  if (utilization === undefined) return null
+  const resetsAt = resets === undefined || resets[1] <= 0 ? null : resets[0] + resets[1] * 1000
+  if (resetsAt !== null && resetsAt <= now) {
+    return { usedFraction: 0, resetsAt: null, lengthMs: FIVE_HOURS_MS }
+  }
+  return { usedFraction: utilization[1], resetsAt, lengthMs: FIVE_HOURS_MS }
+}
 const MAX_CACHE_ENTRIES = 512
 
 /** One group's readings from one query: the label CloudWatch gave it and its points, ascending. */
@@ -318,7 +343,7 @@ export function createCloudWatchSource(options: CloudWatchSourceOptions): Metric
       const now = clock()
       const end = Math.floor(now / 60_000) * 60_000 + 60_000
       const start = end - SNAPSHOT_LOOKBACK_MS
-      const read = (query: string) => cached(query, start, end, 60)
+      const read = (query: string, from = start) => cached(query, from, end, 60)
       const [used, resets, bands, cooldowns, tokens, quantiles, fiveHour, sessions, connections] =
         await Promise.all([
           read(gauge('MAX', 'quota.used_fraction', ['profile'])),
@@ -332,6 +357,7 @@ export function createCloudWatchSource(options: CloudWatchSourceOptions): Metric
               where: ['window', '5h'],
               groupBy: ['profile', 'measure'],
             }),
+            end - FIVE_HOUR_LOOKBACK_MS,
           ),
           read(gauge('MAX', 'sessions.tracked', [])),
           read(gauge('MAX', 'proxy.active_connections', [])),
@@ -349,6 +375,7 @@ export function createCloudWatchSource(options: CloudWatchSourceOptions): Metric
         if (reading === null) continue
         quantilesBy.set(profile, { ...quantilesBy.get(profile), [quantile]: reading[1] })
       }
+      // Not through at(): an hours-old 5-hour reading does not make the snapshot newer or older.
       const fiveHourBy = new Map<string, Partial<Record<string, [EpochMs, number]>>>()
       for (const result of fiveHour) {
         const [profile, measure] = splitLabel(result.label)
@@ -393,17 +420,7 @@ export function createCloudWatchSource(options: CloudWatchSourceOptions): Metric
                   : weeklyReset[0] + weeklyReset[1] * 1000,
               lengthMs: WEEK_MS,
             },
-            fiveHour:
-              utilization === undefined
-                ? null
-                : {
-                    usedFraction: utilization[1],
-                    resetsAt:
-                      resets5h === undefined || resets5h[1] <= 0
-                        ? null
-                        : resets5h[0] + resets5h[1] * 1000,
-                    lengthMs: FIVE_HOURS_MS,
-                  },
+            fiveHour: fiveHourWindow(utilization, resets5h, now),
             rateLimitedUntil:
               cooldown === null || cooldown[1] <= 0 ? null : cooldown[0] + cooldown[1] * 1000,
             tokenExpiresAt: token === null ? null : token[0] + token[1] * 1000,
