@@ -320,6 +320,16 @@ export interface PoolGaps {
   trace: CapacityPoint[]
   /** The most the trace can show: one for each subscription that can work (login valid). */
   capacity: number
+  /**
+   * The pace the forecast assumes, in one subscription's allowance per hour: of a weekly limit
+   * (the last day's average) and of a 5-hour limit (each open window's average so far).
+   */
+  pace: { weekly: number; fiveHour: number }
+  /**
+   * What each weekly reset after now throws away at this pace: the share of that subscription's
+   * week still unused when it resets (one subscription's limit is 1). Tokens left on the table.
+   */
+  unusedAtReset: Array<{ profile: string; at: EpochMs; unused: number }>
   /** Why there is no gap, as PoolForecast's `lasts`; null when there is one. */
   lasts: PoolForecast['lasts']
 }
@@ -411,6 +421,8 @@ export function poolGaps(
   from: EpochMs,
   smoothed: ReadonlyMap<string, number | null> = new Map(),
   now: EpochMs = from,
+  /** With no more use: what is left only comes back as limits reset. */
+  noMoreUse = false,
 ): PoolGaps {
   const slots: JointSlot[] = []
   let weeklyDemand = 0
@@ -440,6 +452,22 @@ export function poolGaps(
       p.rateLimitedUntil !== null && p.rateLimitedUntil > from ? p.rateLimitedUntil : null
     if (!loginExpired) slots.push({ quota: weekly, weekly, five, index, limitedUntil })
   }
+  if (noMoreUse) {
+    weeklyDemand = 0
+    fiveDemand = 0
+  }
+  // A week that resets throws away what was left of it; each one after now is noted.
+  const unusedAtReset: PoolGaps['unusedAtReset'] = []
+  const resetWeek = (s: JointSlot, t: EpochMs) => {
+    const resetsAt = s.weekly.resetsAt
+    if (resetsAt !== null && resetsAt <= t && resetsAt > now) {
+      const unused = 1 - s.weekly.used
+      if (unused > 0.005) {
+        unusedAtReset.push({ profile: profiles[s.index]?.profile ?? '', at: resetsAt, unused })
+      }
+    }
+    catchUp(s.weekly, t)
+  }
   const trace: CapacityPoint[] = []
   const result = (gaps: PoolGap[], lasts: PoolGaps['lasts']): PoolGaps => ({
     counted,
@@ -448,6 +476,8 @@ export function poolGaps(
     lasts,
     trace,
     capacity: slots.length,
+    pace: { weekly: weeklyDemand, fiveHour: fiveDemand },
+    unusedAtReset,
   })
   if (counted === 0) return result([], 'unknown')
   if (slots.length === 0) return result([], 'logins')
@@ -460,7 +490,7 @@ export function poolGaps(
       let weekly = 0
       let fiveHour = 0
       for (const s of slots) {
-        catchUp(s.weekly, nextSample)
+        resetWeek(s, nextSample)
         closeIfOver(s.five, nextSample)
         weekly += 1 - s.weekly.used
         // A 5-hour window counts only while its week has room: with the week used up, it cannot
@@ -481,7 +511,7 @@ export function poolGaps(
   const end = from + GAPS_HORIZON_MS
   for (let t = from; t <= end; t += step) {
     for (const s of slots) {
-      catchUp(s.weekly, t)
+      resetWeek(s, t)
       closeIfOver(s.five, t)
     }
     sampleUntil(t + 1)

@@ -236,6 +236,11 @@ function DashboardBody(props: DashboardProps) {
     () => (profilesNow === null ? null : poolGaps(profilesNow, asOf, smoothed, gapsAt)),
     [profilesNow, asOf, smoothed, gapsAt],
   )
+  // The same with no more use: what is left only comes back as limits reset.
+  const gapsIfStopped = useMemo(
+    () => (profilesNow === null ? null : poolGaps(profilesNow, asOf, smoothed, gapsAt, true)),
+    [profilesNow, asOf, smoothed, gapsAt],
+  )
   const ready = (profilesNow ?? []).filter((p) => hasHeadroom(p, now)).length
   const outlookDetail =
     profilesNow === null
@@ -336,7 +341,13 @@ function DashboardBody(props: DashboardProps) {
           </p>
         )}
 
-        <PoolOutlook gaps={gaps} profiles={profilesNow} now={now} detail={outlookDetail} />
+        <PoolOutlook
+          gaps={gaps}
+          gapsIfStopped={gapsIfStopped}
+          profiles={profilesNow}
+          now={now}
+          detail={outlookDetail}
+        />
 
         <section className="cmd-kpis" aria-label="Traffic">
           {tokensLastHour === null || tokensLastHourTotal === null ? (

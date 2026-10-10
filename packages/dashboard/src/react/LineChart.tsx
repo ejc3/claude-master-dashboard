@@ -44,6 +44,15 @@ interface Props {
 const PAD = { top: 8, right: 8, bottom: 22, left: 44 }
 const LABEL_GUTTER = 72
 
+/**
+ * A clock time for an axis tick, short: a day's midnight is the day ("Tue 12:00 AM" → "Tue"), and
+ * an hour on the hour drops its minutes ("6:00 PM" → "6 PM").
+ */
+export function axisTime(label: string): string {
+  const day = label.replace(/^(.+?),? 12:00 AM$/, '$1')
+  return day !== label ? day : label.replace(/:00 (AM|PM)$/, ' $1')
+}
+
 /** The smallest "nice" axis maximum at or above `max`; whole numbers when `integer`. */
 export function niceMax(max: number, integer: boolean): number {
   if (max <= 0) return 1
@@ -270,7 +279,7 @@ export const LineChart = memo(function LineChart({
                         : 'middle'
                   }
                 >
-                  {formatWhen(t, now)}
+                  {axisTime(formatWhen(t, now))}
                 </text>
               ))}
               {bands.map((b) => {

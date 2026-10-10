@@ -395,6 +395,38 @@ describe('when the pool runs out and for how long: the matrix', () => {
   }
 })
 
+describe('allowance left on the table at weekly resets', () => {
+  it('notes what each week still has unused when it resets, after now', () => {
+    // 30% used, resetting in 10 hours, at 1% of a week an hour: 40% used at the reset, 60% lost.
+    const g = poolGaps([sub('a', [0.3, 10 * H], null)], NOW, rates({ a: 0.01 }))
+    expect(g.unusedAtReset[0]?.profile).toBe('a')
+    expect(g.unusedAtReset[0]?.at).toBe(NOW + 10 * H)
+    expect(g.unusedAtReset[0]?.unused).toBeCloseTo(0.6, 2)
+  })
+
+  it('notes nothing for a week used up by its reset, or a reset already past', () => {
+    const full = poolGaps([sub('a', [1, 10 * H], null)], NOW, rates({ a: 0 }))
+    expect(full.unusedAtReset.filter((r) => r.at === NOW + 10 * H)).toEqual([])
+    const before = poolGaps(
+      [
+        {
+          ...sub('a', [0.5, 0], null),
+          weekly: { usedFraction: 0.5, resetsAt: NOW - H, lengthMs: WEEK_MS },
+        },
+      ],
+      NOW - 3 * H,
+      rates({ a: 0 }),
+      NOW,
+    )
+    expect(before.unusedAtReset.every((r) => r.at > NOW)).toBe(true)
+  })
+
+  it('with no more use, every week is lost whole but what is used', () => {
+    const g = poolGaps([sub('a', [0.3, 10 * H], null)], NOW, rates({ a: 0.01 }), NOW, true)
+    expect(g.unusedAtReset[0]?.unused).toBeCloseTo(0.7, 6)
+  })
+})
+
 describe('poolGaps capacity trace', () => {
   it('starts at what is left, falls at the pace of use, and steps up when a week resets', () => {
     // Two subscriptions with half their week left each; one resets in a day.
@@ -466,6 +498,8 @@ describe('gapsHeadline', () => {
     lasts: null,
     trace: [],
     capacity: 2,
+    pace: { weekly: 0, fiveHour: 0 },
+    unusedAtReset: [],
     ...over,
   })
   const clock = (at: number) => `T+${(at - NOW) / H}h`

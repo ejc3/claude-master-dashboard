@@ -22,7 +22,11 @@ describe('Headline wiring', () => {
   it('reads the headline from one simulation of both windows, from the readings time', () => {
     expect(source).toMatch(/const asOf = snapshot\?\.asOf \?\? gapsAt/)
     expect(source).toMatch(/poolGaps\(profilesNow, asOf, smoothed, gapsAt\)/)
-    expect(source).toMatch(/<PoolOutlook\s+gaps=\{gaps\}\s+profiles=\{profilesNow\}/)
+    expect(source).toMatch(
+      /<PoolOutlook\s+gaps=\{gaps\}\s+gapsIfStopped=\{gapsIfStopped\}\s+profiles=\{profilesNow\}/,
+    )
+    // The other tab: the same forecast with no more use.
+    expect(source).toMatch(/poolGaps\(profilesNow, asOf, smoothed, gapsAt, true\)/)
     expect(pool).toMatch(/gapsHeadline\(\s*props\.gaps,\s*now,/)
     expect(pool).not.toMatch(/forecastHeadline\(/)
   })

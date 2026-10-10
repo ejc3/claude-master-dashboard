@@ -275,25 +275,14 @@
     color: var(--cmd-exhausted);
   }
 
-  /* How the forecast is worked out: closed until asked for. */
-  .cmd-method {
-    margin-top: 6px;
-    font-size: 0.8125rem;
-    color: var(--cmd-ink-2);
-  }
-
-  .cmd-method summary {
-    cursor: pointer;
-    color: var(--cmd-ink-3);
-    width: fit-content;
-  }
-
-  .cmd-method ul {
-    margin: 4px 0 0;
-    padding-left: 1.1em;
+  .cmd-capacity-weekly {
     display: grid;
-    gap: 2px;
-    max-width: 72ch;
+    gap: 6px;
+    min-width: 0;
+  }
+
+  .cmd-capacity-tabs {
+    justify-self: start;
   }
 
   .cmd-capacity-note {

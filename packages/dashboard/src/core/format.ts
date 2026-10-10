@@ -51,28 +51,34 @@ export function formatDuration(ms: number | null): string {
   return `${(ms / 1000).toFixed(1)} s`
 }
 
-/** A wall-clock time in the viewer's zone: "14:05" today, "Thu 14:05" within a week, else a date. */
+/** A wall-clock time in the viewer's zone: "2:05 PM" today, "Thu 2:05 PM" within a week, else a date. */
 export function formatWhen(at: EpochMs, now: EpochMs, timeZone?: string): string {
+  // A 12-hour clock ("2:05 PM"); the space before AM/PM is a plain one whatever the engine
+  // (some put a narrow no-break space there), so the server and the browser write the same.
   const options: Intl.DateTimeFormatOptions = {
-    hour: '2-digit',
+    hour: 'numeric',
     minute: '2-digit',
-    hourCycle: 'h23',
+    hourCycle: 'h12',
   }
   if (timeZone !== undefined) options.timeZone = timeZone
+  const plain = (text: string) => text.replace(/[\u202f\u00a0]/g, ' ')
   const day = (t: EpochMs) =>
     new Intl.DateTimeFormat('en-CA', {
       ...options,
       hour: undefined,
       minute: undefined,
+      hourCycle: undefined,
       year: 'numeric',
       month: '2-digit',
       day: '2-digit',
     }).format(t)
-  if (day(at) === day(now)) return new Intl.DateTimeFormat('en', options).format(at)
+  if (day(at) === day(now)) return plain(new Intl.DateTimeFormat('en-US', options).format(at))
   if (Math.abs(at - now) < 6 * DAY) {
-    return new Intl.DateTimeFormat('en', { ...options, weekday: 'short' }).format(at)
+    return plain(new Intl.DateTimeFormat('en-US', { ...options, weekday: 'short' }).format(at))
   }
-  return new Intl.DateTimeFormat('en', { ...options, month: 'short', day: 'numeric' }).format(at)
+  return plain(
+    new Intl.DateTimeFormat('en-US', { ...options, month: 'short', day: 'numeric' }).format(at),
+  )
 }
 
 /** The cookie in which the browser tells the server the viewer's time zone. */
