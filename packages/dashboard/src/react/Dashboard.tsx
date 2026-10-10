@@ -239,8 +239,13 @@ function DashboardBody(props: DashboardProps) {
           poolForecast(profilesNow, 'fiveHour', snapshot?.asOf ?? now, new Map(), now),
         ]
   // When no subscription can take work, from both windows at once: the headline.
-  const gaps =
-    profilesNow === null ? null : poolGaps(profilesNow, snapshot?.asOf ?? now, smoothed, now)
+  // Once a minute, not every second: the simulation steps through a week.
+  const gapsAt = Math.floor(now / 60_000) * 60_000
+  const asOf = snapshot?.asOf ?? gapsAt
+  const gaps = useMemo(
+    () => (profilesNow === null ? null : poolGaps(profilesNow, asOf, smoothed, gapsAt)),
+    [profilesNow, asOf, smoothed, gapsAt],
+  )
   const ready = (profilesNow ?? []).filter((p) => hasHeadroom(p, now)).length
   const next = profilesNow === null || ready > 0 ? null : nextAvailable(profilesNow, now)
   const outlookDetail =

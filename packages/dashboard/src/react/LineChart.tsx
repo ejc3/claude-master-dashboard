@@ -25,6 +25,8 @@ interface Props {
   now: EpochMs
   /** Spans of time shaded behind the lines (e.g. when no subscription can take work). */
   bands?: Array<{ start: EpochMs; end: EpochMs }>
+  /** What a band means, said in the readout and as a table column ("No subscription can …"). */
+  bandLabel?: string
   /** The axis maximum, when the scale is fixed (e.g. the pool's full capacity). */
   max?: number
 }
@@ -60,6 +62,7 @@ export const LineChart = memo(function LineChart({
   area = false,
   now,
   bands = [],
+  bandLabel = 'Shaded',
   max: fixedMax,
 }: Props) {
   const [ref, width] = useWidth<HTMLDivElement>()
@@ -138,10 +141,11 @@ export const LineChart = memo(function LineChart({
   const readIndex = active ?? times.length - 1
   const readTime = times[readIndex]
   // Wall-clock text waits for hydration: the server does not know the viewer's time zone.
+  const inBand = (t: EpochMs) => bands.some((b) => t >= b.start && t < b.end)
   const valueText =
     readTime === undefined
       ? 'No data'
-      : `${when === null ? 'Latest' : when(readTime, now)}: ${series.map((s) => `${s.label} ${format(s.points[readIndex]?.[1] ?? 0)}`).join(', ')}`
+      : `${when === null ? 'Latest' : when(readTime, now)}: ${series.map((s) => `${s.label} ${format(s.points[readIndex]?.[1] ?? 0)}`).join(', ')}${inBand(readTime) ? `; ${bandLabel}` : ''}`
   const tooltipLeft = activeTime === null ? 0 : x(activeTime)
   const flip = tooltipLeft > width / 2
 
@@ -180,6 +184,7 @@ export const LineChart = memo(function LineChart({
                     {s.label}
                   </th>
                 ))}
+                {bands.length > 0 && <th scope="col">{bandLabel}</th>}
               </tr>
             </thead>
             <tbody>
@@ -194,6 +199,7 @@ export const LineChart = memo(function LineChart({
                         {format(s.points[i]?.[1] ?? 0)}
                       </td>
                     ))}
+                    {bands.length > 0 && <td>{inBand(t) ? 'Yes' : ''}</td>}
                   </tr>
                 ))}
             </tbody>

@@ -287,6 +287,19 @@ describe('poolGaps capacity trace', () => {
     expect(g.trace.at(-1)?.at).toBe(NOW + GAPS_HORIZON_MS)
   })
 
+  it('shows a reset during a gap, and with no use at all', () => {
+    // The week resets in an hour, the full 5-hour window in four: work stops until 4h, but the
+    // week's allowance is back at 1h.
+    const g = poolGaps([sub('a', [1, H], [1, 4 * H])], NOW)
+    const at = (gaps: PoolGaps, h: number) => gaps.trace.find((p) => p.at === NOW + h * H)
+    expect(at(g, 0.5)?.weekly).toBe(0)
+    expect(at(g, 1)?.weekly).toBe(1)
+    // Nothing used: half the week left until its reset at 24h, then all of it.
+    const idle = poolGaps([sub('a', [0.5, 24 * H], [0, null])], NOW, rates({ a: 0 }))
+    expect(at(idle, 23)?.weekly).toBe(0.5)
+    expect(at(idle, 24)?.weekly).toBe(1)
+  })
+
   it('holds what is left through a gap, then shows the reset that ends it', () => {
     // Every week full until the first resets in 50h.
     const g = poolGaps(

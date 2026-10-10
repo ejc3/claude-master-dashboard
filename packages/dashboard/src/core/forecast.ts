@@ -450,17 +450,20 @@ export function poolGaps(
   })
   if (counted === 0) return result([], 'unknown')
   if (slots.length === 0) return result([], 'logins')
-  // Samples of what is left, on their own grid, up to (not including) `until`.
+  // Samples of what is left, on their own grid, up to (not including) `until`. No work is done
+  // between the last step and `until` (the steps are finer, or a gap or idleness holds), so each
+  // sample applies the resets due by its time, as stepping there would.
   let nextSample = from
   const sampleUntil = (until: EpochMs) => {
-    if (nextSample >= until) return
-    let weekly = 0
-    let fiveHour = 0
-    for (const s of slots) {
-      weekly += 1 - s.weekly.used
-      fiveHour += 1 - s.five.used
-    }
     for (; nextSample < until; nextSample += TRACE_STEP_MS) {
+      let weekly = 0
+      let fiveHour = 0
+      for (const s of slots) {
+        catchUp(s.weekly, nextSample)
+        closeIfOver(s.five, nextSample)
+        weekly += 1 - s.weekly.used
+        fiveHour += 1 - s.five.used
+      }
       trace.push({ at: nextSample, weekly, fiveHour })
     }
   }
