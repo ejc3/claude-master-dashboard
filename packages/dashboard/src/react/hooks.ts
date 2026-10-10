@@ -10,6 +10,7 @@ import {
   useSyncExternalStore,
 } from 'react'
 import {
+  type AlarmStatus,
   type EpochMs,
   fillSeries,
   formatWhen,
@@ -164,6 +165,11 @@ function usePolled<T>(url: string | null, everyMs: number, initial?: T): Loaded<
   return poll.failure === undefined
     ? { state: 'loading' }
     : { state: 'error', failure: poll.failure }
+}
+
+/** claude-master's alarms, read once a minute. */
+export function useAlarms(apiBase: string, initial: AlarmStatus[] | null): Loaded<AlarmStatus[]> {
+  return usePolled<AlarmStatus[]>(`${apiBase}/alarms`, 60_000, initial ?? undefined)
 }
 
 export function useSnapshot(apiBase: string, initial: Snapshot | null): Loaded<Snapshot> {

@@ -112,9 +112,19 @@ export interface Series {
 }
 
 /** Where the numbers come from: CloudWatch, Prometheus, a fixture. */
+/** A CloudWatch alarm on claude-master, in the state it is in and since when. */
+export interface AlarmStatus {
+  name: string
+  state: 'ALARM' | 'OK' | 'INSUFFICIENT_DATA'
+  /** When it entered this state. */
+  since: EpochMs
+}
+
 export interface MetricsSource {
   snapshot(): Promise<Snapshot>
   series(query: SeriesQuery): Promise<Series[]>
+  /** claude-master's alarms; a source without alarms (none to read) may leave it out. */
+  alarms?(): Promise<AlarmStatus[]>
 }
 
 export const HOUR_MS = 60 * 60 * 1000

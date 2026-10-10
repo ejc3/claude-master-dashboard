@@ -105,7 +105,15 @@ describe('the first paint', () => {
     const container = document.createElement('div')
     container.innerHTML = renderToString(await serverPage(ZONE))
     const text = container.textContent ?? ''
-    expect(kpiValues(container)).toHaveLength(4)
+    expect(kpiValues(container)).toHaveLength(5)
+    // The alarms, filled on the server: one open, one cleared this morning.
+    const alarms = [...container.querySelectorAll('.cmd-kpi')].find((e) =>
+      e.textContent?.startsWith('Alarms'),
+    )
+    expect(alarms?.querySelector('.cmd-kpi-value')?.textContent).toBe('1 open')
+    expect(alarms?.querySelector('.cmd-kpi-note')?.textContent).toBe(
+      'upstream errors · 1 cleared in 24h',
+    )
     expect(kpiValues(container)).not.toContain('—')
     expect(text).not.toContain('Loading…')
     // Tokens, not requests: the chart, the key number and the table's columns.

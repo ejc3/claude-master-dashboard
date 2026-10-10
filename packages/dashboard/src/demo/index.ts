@@ -1,6 +1,7 @@
 import { resolveMetric, type Statistic } from '../core/catalog'
 import { validateSeriesQuery } from '../core/query'
 import {
+  type AlarmStatus,
   type Band,
   type Dimension,
   type EpochMs,
@@ -284,6 +285,20 @@ export function createDemoSource(options: DemoOptions = {}): MetricsSource {
   }
 
   return {
+    async alarms(): Promise<AlarmStatus[]> {
+      const now = clock()
+      // Made-up alarms: one open, one cleared this morning, one cleared days ago.
+      return [
+        { name: 'claude-master-upstream-errors', state: 'ALARM', since: now - 40 * MINUTE_MS },
+        { name: 'claude-master-pool-nearly-exhausted', state: 'OK', since: now - 5 * HOUR_MS },
+        {
+          name: 'claude-master-server-memory-pressure',
+          state: 'OK',
+          since: now - 3 * 24 * HOUR_MS,
+        },
+      ]
+    },
+
     async snapshot(): Promise<Snapshot> {
       const now = clock()
       const asOf = now - 30_000
