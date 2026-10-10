@@ -26,9 +26,19 @@ const pool = readFileSync(new URL('../src/react/Pool.tsx', import.meta.url), 'ut
 describe('Headline wiring', () => {
   it('reads the headline from one simulation of both windows, from the readings time', () => {
     expect(source).toMatch(/poolGaps\(profilesNow, snapshot\?\.asOf \?\? now, smoothed, now\)/)
-    expect(source).toMatch(/<PoolOutlook forecasts=\{forecasts\} gaps=\{gaps\}/)
+    expect(source).toMatch(
+      /<PoolOutlook\s+forecasts=\{forecasts\}\s+gaps=\{gaps\}\s+profiles=\{profilesNow\}/,
+    )
     expect(pool).toMatch(/gapsHeadline\(props\.gaps, now\)/)
     expect(pool).not.toMatch(/forecastHeadline\(/)
+  })
+
+  it('puts the token and range controls just above the charts and table, not in the header', () => {
+    const header = source.slice(source.indexOf('<header'), source.indexOf('</header>'))
+    expect(header).not.toMatch(/tokenControl|rangeControl/)
+    const toolbar = source.indexOf('cmd-toolbar')
+    expect(toolbar).toBeGreaterThan(source.indexOf('aria-labelledby="cmd-subscriptions"'))
+    expect(toolbar).toBeLessThan(source.indexOf('<div className="cmd-charts">'))
   })
 })
 

@@ -15,6 +15,7 @@ import {
 import { createDemoSource } from '../src/demo/index'
 import { DashboardPage, FIRST_QUERIES_BUDGET_MS } from '../src/next/index'
 import { keepWhileLoading, type Loaded } from '../src/react/hooks'
+import { PoolAccounts, shortNames } from '../src/react/Pool'
 import { chartQuery, firstQueries } from '../src/react/queries'
 import { RunwayCard } from '../src/react/Runway'
 
@@ -505,5 +506,74 @@ describe('the 5-hour row', () => {
     container.innerHTML = renderToString(<RunwayCard status={status} now={NOW} />)
     expect(container.textContent).not.toContain('No window open')
     expect(container.textContent?.match(/Reset time unknown/g)).toHaveLength(2)
+  })
+})
+
+describe('the account bars', () => {
+  const sub = (
+    profile: string,
+    weekly: number,
+    five: number | null,
+    extra: Partial<ProfileStatus> = {},
+  ): ProfileStatus => ({
+    profile,
+    band: 'ok',
+    weekly: { usedFraction: weekly, resetsAt: NOW + 50 * HOUR_MS, lengthMs: 168 * HOUR_MS },
+    fiveHour:
+      five === null ? null : { usedFraction: five, resetsAt: NOW + HOUR_MS, lengthMs: 5 * HOUR_MS },
+    rateLimitedUntil: null,
+    tokenExpiresAt: null,
+    latencyMs: { p50: null, p95: null, p99: null },
+    ...extra,
+  })
+
+  it('shows each subscription by short name, its week and 5-hour use, and whether it can work', () => {
+    const container = document.createElement('div')
+    container.innerHTML = renderToString(
+      <PoolAccounts
+        profiles={[
+          sub('team-alpha', 0.52, 0.96),
+          sub('team-bravo', 1, null),
+          sub('team-charlie', 0.27, null, { rateLimitedUntil: NOW + HOUR_MS }),
+          // Full when read, but its window has reset since.
+          sub('team-delta', 0.4, 1, {
+            fiveHour: { usedFraction: 1, resetsAt: NOW - 1, lengthMs: 5 * HOUR_MS },
+          }),
+        ]}
+        now={NOW}
+      />,
+    )
+    const items = [...container.querySelectorAll('.cmd-account')]
+    expect(items.map((e) => e.querySelector('.cmd-account-name')?.textContent)).toEqual([
+      'alpha',
+      'bravo',
+      'charlie',
+      'delta',
+    ])
+    expect(items.map((e) => e.getAttribute('data-open'))).toEqual([
+      'true',
+      'false',
+      'false',
+      'true',
+    ])
+    const levels = (e: Element) =>
+      [...e.querySelectorAll('.cmd-account-bar')].map((b) => b.getAttribute('data-level'))
+    expect(items.map(levels)).toEqual([
+      ['ok', 'high'],
+      ['full', 'unknown'],
+      ['ok', 'unknown'],
+      ['ok', 'ok'],
+    ])
+    // Read out in full for a screen reader.
+    expect(items[0]?.textContent).toContain('team-alpha: week 52%, 5-hour 96%')
+    expect(items[1]?.textContent).toContain(
+      'team-bravo: week 100%, 5-hour no reading, cannot take work now',
+    )
+  })
+
+  it('shortens names only by a shared prefix ending at a separator', () => {
+    expect([...shortNames(['claude-a', 'claude-b']).values()]).toEqual(['a', 'b'])
+    expect([...shortNames(['alpha', 'alpine']).values()]).toEqual(['alpha', 'alpine'])
+    expect([...shortNames(['solo-one']).values()]).toEqual(['solo-one'])
   })
 })

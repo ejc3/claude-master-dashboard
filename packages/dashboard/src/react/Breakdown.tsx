@@ -18,7 +18,7 @@ import {
   tokenRows,
 } from '../core/index'
 import { useSharedAnswers } from './answers'
-import { useCountedSeries, useSeries, useWhen } from './hooks'
+import { useCountedSeries, useSeries } from './hooks'
 import { breakdownQueries, SPLITS } from './queries'
 import { Sparkline, sharedPeak } from './Sparkline'
 
@@ -54,7 +54,6 @@ export function Breakdown(props: {
   tokenChoice: TokenChoice
   now: EpochMs
 }) {
-  const when = useWhen()
   const [split, setSplit] = useState(SPLITS[0] as (typeof SPLITS)[number])
   const queries = breakdownQueries(props.range, props.stepSeconds, split)
   const requests = useSeries(props.apiBase, queries.requests)
@@ -118,9 +117,7 @@ export function Breakdown(props: {
     ? 'claude-master does not count tokens by model; this view counts requests.'
     : coverage === 'none'
       ? 'No token counts for this range yet; showing requests.'
-      : coverage === 'partial' && firstAt !== null
-        ? `Token counts start ${when === null ? 'partway through this range' : when(firstAt, props.now)}; nothing was counted before.`
-        : null
+      : null
   const loading = tokensPending || (!showTokens && requests.state === 'loading')
   const requestsFailure =
     !showTokens && tokenError === null && requests.state === 'error' ? requests.failure : null
