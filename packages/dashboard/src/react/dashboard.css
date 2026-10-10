@@ -341,11 +341,11 @@
     display: block;
     height: 100%;
     border-radius: 0 4px 4px 0;
-    background: var(--cmd-fill);
+    background: var(--cmd-pool-fill, var(--cmd-fill));
   }
 
-  .cmd-forecast[data-state="out"] .cmd-pool-fill {
-    background: var(--cmd-exhausted-mark);
+  .cmd-forecast[data-state="out"] {
+    --cmd-pool-fill: var(--cmd-exhausted-mark);
   }
 
   .cmd-forecast-note {

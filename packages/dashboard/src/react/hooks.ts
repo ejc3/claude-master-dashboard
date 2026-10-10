@@ -128,3 +128,17 @@ export function useReadings(apiBase: string, query: SeriesQuery | null): Loaded<
   const url = query === null ? null : `${apiBase}/series?${seriesQueryToParams(query)}`
   return usePolled<Series[]>(url, 5 * 60_000)
 }
+
+/**
+ * The newest data a query has delivered, kept while a changed query loads or fails, so what
+ * depends on it does not drop to a fallback every time its range moves on.
+ */
+export function lastReady<T>(previous: T | null, loaded: Loaded<T>): T | null {
+  return loaded.state === 'ready' ? loaded.data : previous
+}
+
+export function useLastReady<T>(loaded: Loaded<T>): T | null {
+  const kept = useRef<T | null>(null)
+  kept.current = lastReady(kept.current, loaded)
+  return kept.current
+}

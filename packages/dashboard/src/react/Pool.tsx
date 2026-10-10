@@ -16,7 +16,7 @@ import { useHydrated } from './hooks'
 
 const WINDOW_NAME: Record<WindowKind, string> = {
   weekly: 'Weekly allowance',
-  fiveHour: '5-hour windows',
+  fiveHour: '5-hour capacity',
 }
 
 const HORIZON_WORDS: Record<WindowKind, string> = {
@@ -40,15 +40,28 @@ const TONE_ICON: Record<PoolTone, ReactNode> = {
   info: <circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" strokeWidth="1.6" />,
 }
 
-function ForecastCell(props: { forecast: PoolForecast; now: EpochMs; rateNote: string }) {
-  const { forecast: f, now, rateNote } = props
+/** How the demand was measured, in words. */
+export function rateNote(f: PoolForecast): string {
+  const average =
+    f.window === 'weekly' ? 'the average since each reset' : "each window's average so far"
+  if (f.smoothedCount === 0) return average
+  if (f.smoothedCount === f.counted) return 'smoothed over up to the last 24 hours'
+  return `smoothed over up to the last 24 hours for ${f.smoothedCount} of ${f.counted}, else ${average}`
+}
+
+function ForecastCell(props: { forecast: PoolForecast; now: EpochMs }) {
+  const { forecast: f, now } = props
   const hydrated = useHydrated()
   // Wall-clock times depend on the viewer's time zone, so they appear after hydration.
   const at = (t: EpochMs) => (hydrated ? `, ${formatWhen(t, now)}` : '')
   let value: string
   let detail: string
   let state: 'out' | 'clips' | 'lasts' | 'unknown'
-  if (f.clipsAt !== null && f.clipsAt <= now) {
+  if (f.lasts === 'logins') {
+    state = 'out'
+    value = 'Logins expired'
+    detail = 'Log the subscriptions in again on the server.'
+  } else if (f.clipsAt !== null && f.clipsAt <= now) {
     state = 'out'
     value = 'Out now'
     detail =
@@ -84,7 +97,9 @@ function ForecastCell(props: { forecast: PoolForecast; now: EpochMs; rateNote: s
           Pool used <b>{formatPercent(used)}</b>
         </span>
         <span>
-          {f.counted} {f.counted === 1 ? 'subscription' : 'subscriptions'}
+          {f.unreported === 0
+            ? `${f.counted} ${f.counted === 1 ? 'subscription' : 'subscriptions'}`
+            : `${f.counted} of ${f.counted + f.unreported} report this`}
         </span>
       </div>
       <div
@@ -95,8 +110,8 @@ function ForecastCell(props: { forecast: PoolForecast; now: EpochMs; rateNote: s
         {used !== null && <span className="cmd-pool-fill" style={{ width: `${used * 100}%` }} />}
       </div>
       <p className="cmd-forecast-note">
-        Using {formatPercent(f.burnPerHour)} of one subscription's allowance per hour ({rateNote});
-        looks {horizonHours >= 48 ? `${horizonHours / 24} days` : `${horizonHours} hours`} ahead.
+        Using {formatPercent(f.burnPerHour)} of one subscription's allowance per hour ({rateNote(f)}
+        ); looks {horizonHours >= 48 ? `${horizonHours / 24} days` : `${horizonHours} hours`} ahead.
       </p>
     </div>
   )
@@ -109,7 +124,6 @@ function ForecastCell(props: { forecast: PoolForecast; now: EpochMs; rateNote: s
 export function PoolOutlook(props: {
   forecasts: PoolForecast[] | null
   now: EpochMs
-  rateNotes: Record<WindowKind, string>
   detail?: string | null
 }) {
   const { forecasts, now } = props
@@ -130,12 +144,7 @@ export function PoolOutlook(props: {
       {forecasts !== null && (
         <div className="cmd-forecasts">
           {forecasts.map((f) => (
-            <ForecastCell
-              key={f.window}
-              forecast={f}
-              now={now}
-              rateNote={props.rateNotes[f.window]}
-            />
+            <ForecastCell key={f.window} forecast={f} now={now} />
           ))}
         </div>
       )}

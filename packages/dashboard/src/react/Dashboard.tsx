@@ -19,7 +19,7 @@ import {
   WEEKLY_SMOOTHING_MS,
 } from '../core'
 import { Breakdown } from './Breakdown'
-import { type Loaded, useNow, useReadings, useSeries, useSnapshot } from './hooks'
+import { type Loaded, useLastReady, useNow, useReadings, useSeries, useSnapshot } from './hooks'
 import { type ChartSeries, foldSeries, LineChart, seriesColors } from './LineChart'
 import { PoolOutlook } from './Pool'
 import type { PollFailure } from './poller'
@@ -167,7 +167,8 @@ export function Dashboard(props: DashboardProps) {
     range: smoothingRange,
     stepSeconds: 600,
   })
-  const usedData = data(usedReadings)
+  // The last readings stay in use while the next range loads: the range moves every 10 minutes.
+  const usedData = useLastReady(usedReadings)
   const smoothed = useMemo(() => {
     const rates = new Map<string, number | null>()
     for (const s of usedData ?? []) {
@@ -180,10 +181,10 @@ export function Dashboard(props: DashboardProps) {
     profilesNow === null
       ? null
       : [
-          poolForecast(profilesNow, 'weekly', now, smoothed),
-          poolForecast(profilesNow, 'fiveHour', now),
+          // From the readings' own time: usage is as of asOf, not as of this second.
+          poolForecast(profilesNow, 'weekly', snapshot?.asOf ?? now, smoothed),
+          poolForecast(profilesNow, 'fiveHour', snapshot?.asOf ?? now),
         ]
-  const smoothedAny = [...smoothed.values()].some((r) => r !== null)
   const ready = (profilesNow ?? []).filter((p) => hasHeadroom(p, now)).length
   const next = profilesNow === null || ready > 0 ? null : nextAvailable(profilesNow, now)
   const outlookDetail =
@@ -202,6 +203,7 @@ export function Dashboard(props: DashboardProps) {
     failureOf(backup),
     failureOf(kpiRequests),
     failureOf(kpiErrors),
+    failureOf(usedReadings),
   ].filter((f): f is PollFailure => f !== null)
   const signedOut = failures.some((f) => f.status === 401)
   const snapshotFailure = failureOf(snapshotLoaded)
@@ -257,15 +259,7 @@ export function Dashboard(props: DashboardProps) {
           </p>
         )}
 
-        <PoolOutlook
-          forecasts={forecasts}
-          now={now}
-          detail={outlookDetail}
-          rateNotes={{
-            weekly: smoothedAny ? 'smoothed over the last 24 hours' : 'average since each reset',
-            fiveHour: 'average since each window began',
-          }}
-        />
+        <PoolOutlook forecasts={forecasts} now={now} detail={outlookDetail} />
 
         <section className="cmd-kpis" aria-label="Traffic">
           <Kpi

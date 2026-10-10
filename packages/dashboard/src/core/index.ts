@@ -12,6 +12,8 @@ export {
   burnRate,
   FORECAST_HORIZON_MS,
   forecastHeadline,
+  MIN_AVERAGE_ELAPSED_MS,
+  MIN_SMOOTHING_COVERAGE_MS,
   type PoolForecast,
   type PoolTone,
   poolForecast,
