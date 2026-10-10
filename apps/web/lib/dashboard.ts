@@ -16,7 +16,8 @@ let selection: SourceSelection | undefined
 
 // Chosen on first use: on Workers the environment is filled in per request, after module load.
 // CloudWatch when the read-only key is set (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION),
-// the demo fixture otherwise, and the page says which. A CloudWatch failure is an error on the
+// the demo fixture otherwise, and the page says which. DASHBOARD_ACCOUNT_ALIASES, read from the
+// same environment, folds the account codes of points exported before names into the names. A CloudWatch failure is an error on the
 // page, never a quiet switch to demo data.
 function selected(): SourceSelection {
   if (selection === undefined) selection = selectSource(process.env, createDemoSource())

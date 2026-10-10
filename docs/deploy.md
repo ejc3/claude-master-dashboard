@@ -38,6 +38,7 @@ Set from `apps/web` with `wrangler secret put <NAME>`, reading the value from st
 | `CF_ACCESS_AUD` | The Access application's audience tag (Terraform output) |
 | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION` | The read-only key, from its Secrets Manager secret. With all three set the page reads CloudWatch; otherwise it shows the demo fixture and says "Demo data" in its heading |
 | `DASHBOARD_ALLOWED_EMAILS` | Required. The addresses admitted, separated by commas or spaces. The app checks the address in the Access assertion against it, so a policy widened by mistake in Access admits no one new |
+| `DASHBOARD_ACCOUNT_ALIASES` | Optional. One `acct-<hash>=NAME` line per person: series reported under an account code before the server labelled accounts are shown under the name, so each person has one row. `claude-master account-key UUID` prints a code. Malformed lines are ignored (the log says how many) |
 | `DASHBOARD_SERVICE_TOKEN_CLIENT_ID` | Optional. Admits that service token. Access issues one only if the application has a service-auth policy for it, and none is configured |
 
 Without any one of `CF_ACCESS_TEAM_DOMAIN`, `CF_ACCESS_AUD` and `DASHBOARD_ALLOWED_EMAILS`, or with an invalid one, the app admits nobody and logs which. Set `DASHBOARD_ALLOWED_EMAILS` before deploying a build that requires it.
