@@ -1,4 +1,4 @@
-import type { Dimension, SemanticMetric } from './types'
+import type { Dimension, SemanticMetric, TokenType } from './types'
 
 /** How a stored series is reduced: counters arrive as deltas (sum), gauges as levels. */
 export type Statistic = 'SUM' | 'AVG' | 'MAX' | 'MIN'
@@ -9,6 +9,8 @@ export interface ResolvedMetric {
   name: string
   statistic: Statistic
   groupBy?: Dimension
+  /** Only points of this token type (tokens only). */
+  tokenType?: TokenType
 }
 
 interface Entry {
@@ -85,6 +87,16 @@ const CATALOG: Record<SemanticMetric, Entry> = {
     statistic: 'MIN',
     dimensions: ['profile'],
   },
+  // Read from the usage in each response; every projection also carries the token type.
+  tokens: {
+    name: 'claude_master.inference.tokens',
+    statistic: 'SUM',
+    dimensions: ['profile', 'type'],
+    projections: {
+      client_account: 'claude_master.inference.tokens.by_client_account',
+      client: 'claude_master.inference.tokens.by_client',
+    },
+  },
 }
 
 const DIMENSIONS: readonly Dimension[] = [
@@ -98,6 +110,7 @@ const DIMENSIONS: readonly Dimension[] = [
   'from',
   'to',
   'result',
+  'type',
 ]
 
 export class UnsupportedQueryError extends Error {
@@ -107,15 +120,28 @@ export class UnsupportedQueryError extends Error {
   }
 }
 
-/** Resolves a semantic metric (optionally split by one dimension) to the emitted metric. */
-export function resolveMetric(metric: SemanticMetric, groupBy?: Dimension): ResolvedMetric {
+/**
+ * Resolves a semantic metric (optionally split by one dimension, and for tokens optionally one
+ * token type) to the emitted metric.
+ */
+export function resolveMetric(
+  metric: SemanticMetric,
+  groupBy?: Dimension,
+  tokenType?: TokenType,
+): ResolvedMetric {
   const entry = CATALOG[metric]
-  if (groupBy === undefined) return { name: entry.name, statistic: entry.statistic }
+  if (tokenType !== undefined && metric !== 'tokens') {
+    throw new UnsupportedQueryError(metric, 'type')
+  }
+  const typed = tokenType === undefined ? {} : { tokenType }
+  if (groupBy === undefined) return { name: entry.name, statistic: entry.statistic, ...typed }
   if (entry.dimensions.includes(groupBy)) {
-    return { name: entry.name, statistic: entry.statistic, groupBy }
+    return { name: entry.name, statistic: entry.statistic, groupBy, ...typed }
   }
   const projection = entry.projections?.[groupBy]
-  if (projection !== undefined) return { name: projection, statistic: entry.statistic, groupBy }
+  if (projection !== undefined) {
+    return { name: projection, statistic: entry.statistic, groupBy, ...typed }
+  }
   throw new UnsupportedQueryError(metric, groupBy)
 }
 
@@ -127,8 +153,9 @@ export function groupableBy(metric: SemanticMetric): Dimension[] {
   )
 }
 
-// Metrics Insights keywords that must be quoted when used as a dimension name.
-const RESERVED = new Set<string>(['result', 'window', 'from', 'to'])
+// Metrics Insights keywords that must be quoted when used as a dimension name. `type` is quoted
+// too: quoting is harmless, and it keeps the token filter safe from the keyword list growing.
+const RESERVED = new Set<string>(['result', 'window', 'from', 'to', 'type'])
 
 function identifier(name: string): string {
   return RESERVED.has(name) ? `"${name}"` : name
@@ -143,5 +170,9 @@ export function insightsQuery(namespace: string, resolved: ResolvedMetric): stri
     throw new Error('the namespace must be 1-255 letters, digits or . _ - / # : and spaces')
   }
   const group = resolved.groupBy === undefined ? '' : ` GROUP BY ${identifier(resolved.groupBy)}`
-  return `SELECT ${resolved.statistic}("${resolved.name}") FROM "${namespace}"${group}`
+  // The token type is one of four fixed words (checked where the query is parsed), so it is
+  // written into the query as it is.
+  const where =
+    resolved.tokenType === undefined ? '' : ` WHERE ${identifier('type')} = '${resolved.tokenType}'`
+  return `SELECT ${resolved.statistic}("${resolved.name}") FROM "${namespace}"${where}${group}`
 }

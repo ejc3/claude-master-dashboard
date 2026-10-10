@@ -60,6 +60,16 @@ export type Dimension =
   | 'from'
   | 'to'
   | 'result'
+  | 'type'
+
+/**
+ * The four kinds of token Anthropic reports in a response's usage: fresh input, output (thinking
+ * included), input read from the prompt cache and input written to it. claude-master counts each
+ * under the `type` attribute; `cache_creation` is what the page calls cache write.
+ */
+export type TokenType = 'input' | 'output' | 'cache_read' | 'cache_creation'
+
+export const TOKEN_TYPES: readonly TokenType[] = ['input', 'output', 'cache_read', 'cache_creation']
 
 /** What a chart asks for, independent of where the numbers are stored. */
 export type SemanticMetric =
@@ -75,6 +85,7 @@ export type SemanticMetric =
   | 'weeklyUsed'
   | 'weeklyResetsInSeconds'
   | 'tokenExpiresInSeconds'
+  | 'tokens'
 
 export interface TimeRange {
   start: EpochMs
@@ -88,6 +99,8 @@ export interface SeriesQuery {
   range: TimeRange
   /** Width of each point's bucket. */
   stepSeconds: number
+  /** Only this kind of token (tokens only); omitted, every kind is summed. */
+  tokenType?: TokenType
 }
 
 export interface Series {

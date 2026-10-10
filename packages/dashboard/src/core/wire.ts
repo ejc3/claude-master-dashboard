@@ -1,6 +1,12 @@
 import { groupableBy } from './catalog'
 import { BadQueryError, validateSeriesQuery } from './query'
-import type { Dimension, SemanticMetric, SeriesQuery } from './types'
+import {
+  type Dimension,
+  type SemanticMetric,
+  type SeriesQuery,
+  TOKEN_TYPES,
+  type TokenType,
+} from './types'
 
 // The JSON a dashboard handler serves and its components read. Paths are relative to the
 // handler's mount point: `snapshot` and `series?metric=…&groupBy=…&start=…&end=…&step=…`.
@@ -18,6 +24,7 @@ const METRICS: readonly SemanticMetric[] = [
   'weeklyUsed',
   'weeklyResetsInSeconds',
   'tokenExpiresInSeconds',
+  'tokens',
 ]
 
 export function seriesQueryToParams(query: SeriesQuery): URLSearchParams {
@@ -28,6 +35,7 @@ export function seriesQueryToParams(query: SeriesQuery): URLSearchParams {
     step: String(query.stepSeconds),
   })
   if (query.groupBy !== undefined) params.set('groupBy', query.groupBy)
+  if (query.tokenType !== undefined) params.set('type', query.tokenType)
   return params
 }
 
@@ -55,6 +63,15 @@ export function seriesQueryFromParams(params: URLSearchParams): SeriesQuery {
       throw new BadQueryError(`${metric} cannot be split by ${groupBy}`)
     }
     query.groupBy = groupBy as Dimension
+  }
+  const tokenType = params.get('type')
+  if (tokenType !== null) {
+    if (query.metric !== 'tokens') throw new BadQueryError('only tokens have a type')
+    if (!(TOKEN_TYPES as readonly string[]).includes(tokenType)) {
+      throw new BadQueryError('unknown token type')
+    }
+    if (query.groupBy === 'type') throw new BadQueryError('split by type or filter on it, not both')
+    query.tokenType = tokenType as TokenType
   }
   validateSeriesQuery(query)
   return query

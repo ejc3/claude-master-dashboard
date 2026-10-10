@@ -1030,6 +1030,13 @@
     color: var(--cmd-ink-3);
   }
 
+  /* A line saying what a chart or table shows when it is not the default (requests, not tokens). */
+  .cmd-note {
+    color: var(--cmd-ink-3);
+    font-size: 0.8125rem;
+    margin: 8px 0 0;
+  }
+
   .cmd-empty,
   .cmd-error {
     color: var(--cmd-ink-3);

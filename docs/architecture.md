@@ -25,6 +25,17 @@ read it.) Counters arrive as deltas, so a sum
 is a count. Histograms arrive as statistic sets without percentiles, so latency percentiles come
 from the proxy's own `duration_quantile` gauges.
 
+Tokens come from the `usage` Anthropic returns on every response, which claude-master reads on
+the way through and counts as `claude_master.inference.tokens` (by profile),
+`…tokens.by_client_account` (by person) and `…tokens.by_client` (by box), each with a `type` of
+`input`, `output` (thinking included), `cache_read` or `cache_creation` (the page's "cache
+write"). A type is a `WHERE "type" = '…'` filter on the same query; no filter sums all four.
+There is no token projection by model, so the model split stays on requests and says so. A
+range with no token points at all (before the claude-master release that counts them) shows
+requests with a note; a range the counters start inside shows tokens from their first bucket,
+with the start time, rather than zeros for time nothing was counted. No estimate from request
+or response bytes is made.
+
 ## Package
 
 `packages/dashboard` (`@ejc3/claude-master-dashboard`):
@@ -107,6 +118,8 @@ Each step is its own pull request, stacked on the previous one:
    however many viewers ask; the app picks CloudWatch when the read-only key is set and labels
    the page "Demo data" otherwise; a CloudWatch failure is an error, never demo data.
 5. Production on CloudWatch.
+6. Tokens instead of requests: the KPI row, the chart by subscription and the table by person,
+   machine and subscription, with a type control (all, input, output, cache read, cache write).
 
 Configuration that names a real account, key, team, person or host lives in the Worker's secrets,
 never in this repository. `docs/deploy.md` lists them.

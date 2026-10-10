@@ -12,6 +12,8 @@ import {
   type Series,
   type SeriesQuery,
   type Snapshot,
+  TOKEN_TYPES,
+  type TokenType,
   WEEK_MS,
 } from '../core/types'
 
@@ -39,6 +41,16 @@ export const DEMO_VALUES: Record<Dimension, readonly string[]> = {
   from: ['alpha', 'bravo', 'charlie', 'delta'],
   to: ['alpha', 'bravo', 'charlie', 'delta'],
   result: ['adopted', 'failed', 'rotated_scheduled'],
+  type: TOKEN_TYPES,
+}
+
+// Made-up tokens per request of each kind: cache reads dwarf fresh input, as they do in long
+// agent conversations.
+const TOKENS_PER_REQUEST: Record<TokenType, number> = {
+  input: 900,
+  output: 1100,
+  cache_read: 38_000,
+  cache_creation: 2_600,
 }
 
 // How traffic divides among a dimension's values, in DEMO_VALUES order.
@@ -53,6 +65,7 @@ const SHARES: Record<Dimension, readonly number[]> = {
   from: [0.25, 0.3, 0.3, 0.15],
   to: [0.35, 0.35, 0.05, 0.25],
   result: [0.8, 0.05, 0.15],
+  type: [0.25, 0.25, 0.25, 0.25], // unused: tokens split by type use TOKENS_PER_REQUEST
 }
 
 /** One table drives both the snapshot and the history, so they agree. */
@@ -187,6 +200,7 @@ export function createDemoSource(options: DemoOptions = {}): MetricsSource {
     groupBy: Dimension | undefined,
     m: EpochMs,
     now: EpochMs,
+    tokenType: TokenType | undefined,
   ) {
     const keys = groupBy === undefined ? ['total'] : DEMO_VALUES[groupBy]
     const shares = groupBy === undefined ? [1] : SHARES[groupBy]
@@ -204,6 +218,13 @@ export function createDemoSource(options: DemoOptions = {}): MetricsSource {
         return byKey(requests)
       case 'errors':
         return byKey(errors)
+      case 'tokens': {
+        const of = (type: TokenType) => Math.round(requests * TOKENS_PER_REQUEST[type])
+        if (groupBy === 'type') return TOKEN_TYPES.map(of)
+        const total =
+          tokenType === undefined ? TOKEN_TYPES.reduce((sum, t) => sum + of(t), 0) : of(tokenType)
+        return byKey(total)
+      }
       case 'switches':
         return byKey(count(requests * 0.01, 'switches', m))
       case 'rateLimited':
@@ -285,7 +306,7 @@ export function createDemoSource(options: DemoOptions = {}): MetricsSource {
     async series(query: SeriesQuery): Promise<Series[]> {
       validateSeriesQuery(query)
       // Refuse what claude-master does not emit, exactly as a real source must.
-      const { statistic } = resolveMetric(query.metric, query.groupBy)
+      const { statistic } = resolveMetric(query.metric, query.groupBy, query.tokenType)
       const now = clock()
       const stepMs = query.stepSeconds * 1000
       const keys = query.groupBy === undefined ? ['total'] : DEMO_VALUES[query.groupBy]
@@ -299,7 +320,7 @@ export function createDemoSource(options: DemoOptions = {}): MetricsSource {
         const perKey = keys.map((): number[] => [])
         // A bucket ends at its step or at the range end, whichever comes first.
         for (let m = at; m < Math.min(at + stepMs, query.range.end); m += MINUTE_MS) {
-          const values = minute(query.metric, query.groupBy, m, now)
+          const values = minute(query.metric, query.groupBy, m, now, query.tokenType)
           for (const [i, v] of values.entries()) perKey[i]?.push(v)
         }
         for (const [i, values] of perKey.entries()) points[i]?.push([at, reduce(statistic, values)])
