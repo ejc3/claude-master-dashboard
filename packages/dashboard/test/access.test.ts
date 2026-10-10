@@ -1,6 +1,11 @@
 import { createLocalJWKSet, exportJWK, generateKeyPair, type JWK, SignJWT } from 'jose'
-import { beforeAll, describe, expect, it } from 'vitest'
-import { ACCESS_ASSERTION_HEADER, accessTeamDomain, cloudflareAccess } from '../src/access'
+import { beforeAll, describe, expect, it, vi } from 'vitest'
+import {
+  ACCESS_ASSERTION_HEADER,
+  accessOptionsFromEnv,
+  accessTeamDomain,
+  cloudflareAccess,
+} from '../src/access'
 
 const TEAM = 'https://example.cloudflareaccess.com'
 const AUD = 'aud-made-up-for-tests'
@@ -94,7 +99,7 @@ describe('cloudflareAccess', () => {
     // A caller without types (plain JavaScript) that leaves it out is refused too.
     expect(() =>
       cloudflareAccess(base as unknown as Parameters<typeof cloudflareAccess>[0]),
-    ).toThrow()
+    ).toThrow(/allowlist is missing/)
   })
 
   it('admits only the configured service token', async () => {
@@ -125,5 +130,63 @@ describe('cloudflareAccess', () => {
     expect(() =>
       cloudflareAccess({ teamDomain: TEAM, audience: '  ', allowedEmails: ['owner@example.com'] }),
     ).toThrow()
+  })
+
+  it('admits no nameless token when the service token id is blank', async () => {
+    const nameless = await sign({ common_name: '' })
+    for (const serviceTokenClientId of ['', '  ']) {
+      expect(await access({ serviceTokenClientId }).identify(nameless)).toBeNull()
+    }
+  })
+
+  it('does not fold lookalike characters onto the allowlist', async () => {
+    // U+212A KELVIN SIGN lowercases to "k" under Unicode rules.
+    const a = access({ allowedEmails: ['kate@example.com'] })
+    expect(await a.identify(await sign({ email: '\u212Aate@example.com' }))).toBeNull()
+    expect(await a.identify(await sign({ email: 'Kate@Example.com' }))).not.toBeNull()
+  })
+
+  it('logs a refused address without naming it', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      expect(await access().identify(await sign({ email: 'stranger@example.com' }))).toBeNull()
+      const logged = warn.mock.calls.map((c) => c.join(' '))
+      expect(logged.some((line) => line.includes('not on the allowlist'))).toBe(true)
+      expect(logged.some((line) => line.includes('stranger'))).toBe(false)
+    } finally {
+      warn.mockRestore()
+    }
+  })
+})
+
+describe('accessOptionsFromEnv', () => {
+  it('names each missing setting, never a value', () => {
+    expect(accessOptionsFromEnv({})).toEqual({
+      missing: ['CF_ACCESS_TEAM_DOMAIN', 'CF_ACCESS_AUD', 'DASHBOARD_ALLOWED_EMAILS'],
+    })
+    expect(
+      accessOptionsFromEnv({
+        CF_ACCESS_TEAM_DOMAIN: TEAM,
+        CF_ACCESS_AUD: AUD,
+        DASHBOARD_ALLOWED_EMAILS: ' , ',
+      }),
+    ).toEqual({ missing: ['DASHBOARD_ALLOWED_EMAILS'] })
+  })
+
+  it('splits the allowlist on commas and whitespace and drops a blank service token', () => {
+    expect(
+      accessOptionsFromEnv({
+        CF_ACCESS_TEAM_DOMAIN: ` ${TEAM} `,
+        CF_ACCESS_AUD: AUD,
+        DASHBOARD_ALLOWED_EMAILS: 'a@example.com b@example.com,\nc@example.com,',
+        DASHBOARD_SERVICE_TOKEN_CLIENT_ID: '  ',
+      }),
+    ).toEqual({
+      options: {
+        teamDomain: TEAM,
+        audience: AUD,
+        allowedEmails: ['a@example.com', 'b@example.com', 'c@example.com'],
+      },
+    })
   })
 })

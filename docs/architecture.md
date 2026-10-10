@@ -72,13 +72,13 @@ export const { GET } = createDashboardHandler(config)
 
 The reference app runs as a Cloudflare Worker (Next.js through OpenNext). Cloudflare Access gates
 every URL of the Worker: an Access application with the Worker itself as its destination (so
-workers.dev and preview URLs alike), signing people
-in with the account's existing Google identity provider and admitting the addresses its policy
-lists. The app checks again: `cloudflareAccess()` verifies the `Cf-Access-Jwt-Assertion` header
+workers.dev and preview URLs alike), signing people in with the account's existing Google and
+one-time-PIN identity providers and admitting the addresses its policy lists. The app checks again: `cloudflareAccess()` verifies the `Cf-Access-Jwt-Assertion` header
 (signature against the team's published keys, issuer, the application's audience tag and expiry),
 then the signed-in address against its own required allowlist. A request that did not come
 through that Access application is refused, and a policy widened by mistake in Access admits no
-one new. With any of these settings missing the app admits nobody.
+one new. With the team domain, the audience tag or the allowlist missing, the app admits
+nobody.
 
 The Worker reads CloudWatch with an access key for an IAM user allowed only
 `cloudwatch:GetMetricData` and `cloudwatch:ListMetrics` in one region, stored as Worker secrets.
