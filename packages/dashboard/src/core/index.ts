@@ -20,6 +20,8 @@ export {
   hasHeadroom,
   nextAvailable,
   nextRunOut,
+  type PoolTone,
+  poolTone,
   type RunOut,
 } from './headline'
 export {

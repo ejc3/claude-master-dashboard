@@ -19,6 +19,8 @@ interface Props {
   /** Whole-number data (counts): axis ticks stay whole. */
   integer?: boolean
   height?: number
+  /** Shade the area under a single line. */
+  area?: boolean
   /** Clock for axis and tooltip labels. */
   now: EpochMs
 }
@@ -50,7 +52,8 @@ export const LineChart = memo(function LineChart({
   series,
   format,
   integer = false,
-  height = 180,
+  height = 200,
+  area = false,
   now,
 }: Props) {
   const [ref, width] = useWidth<HTMLDivElement>()
@@ -224,6 +227,20 @@ export const LineChart = memo(function LineChart({
                   {formatWhen(t, now)}
                 </text>
               ))}
+              {area &&
+                series.length === 1 &&
+                series.map((s) => (
+                  <polygon
+                    key={`${s.key}-area`}
+                    className="cmd-area"
+                    fill={s.color}
+                    points={[
+                      `${x(s.points[0]?.[0] ?? first)},${y(0)}`,
+                      ...s.points.map(([t, v]) => `${x(t)},${y(v)}`),
+                      `${x(s.points[s.points.length - 1]?.[0] ?? last)},${y(0)}`,
+                    ].join(' ')}
+                  />
+                ))}
               {series.map((s) => (
                 <polyline
                   key={s.key}
@@ -302,7 +319,6 @@ export const LineChart = memo(function LineChart({
               aria-hidden="true"
               style={flip ? { right: width - tooltipLeft + 10 } : { left: tooltipLeft + 10 }}
             >
-              <div className="cmd-tooltip-time">{formatWhen(activeTime, now)}</div>
               {series.map((s) => (
                 <div className="cmd-tooltip-row" key={s.key}>
                   <span className="cmd-swatch" style={{ color: s.color }} />
@@ -310,6 +326,7 @@ export const LineChart = memo(function LineChart({
                   <b>{format(s.points[active ?? 0]?.[1] ?? 0)}</b>
                 </div>
               ))}
+              <div className="cmd-tooltip-time">{formatWhen(activeTime, now)}</div>
             </div>
           )}
         </div>

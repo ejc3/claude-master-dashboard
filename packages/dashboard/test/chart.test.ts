@@ -8,6 +8,7 @@ import {
   timeTicks,
   valueTicks,
 } from '../src/react/LineChart'
+import { sharedPeak, sparkBars, sparkHeights } from '../src/react/Sparkline'
 
 const NOW = Date.UTC(2026, 9, 9, 12, 7)
 
@@ -111,5 +112,41 @@ describe('axis', () => {
     expect(valueTicks(5, true)).toEqual([0, 5])
     expect(valueTicks(200, true)).toEqual([0, 100, 200])
     expect(valueTicks(0.05, false)).toEqual([0, 0.025, 0.05])
+  })
+})
+
+describe('sparkline scale', () => {
+  it('lets the busiest row reach full height on noisy data', () => {
+    // 288 five-minute points whose single-point spike (200) far exceeds their typical value (10):
+    // a shared scale estimated from the largest point would leave every bar short.
+    const noisy: Array<[number, number]> = Array.from({ length: 288 }, (_, i) => [
+      i * 300_000,
+      i === 7 ? 200 : 10,
+    ])
+    const quiet: Array<[number, number]> = noisy.map(([t]) => [t, 2])
+    const peak = Math.max(...[noisy, quiet].flatMap((points) => sparkBars(points)))
+    expect(Math.max(...sparkHeights(sparkBars(noisy), peak))).toBeCloseTo(26, 9)
+    // The quieter row compares by height on the same scale.
+    expect(Math.max(...sparkHeights(sparkBars(quiet), peak))).toBeLessThan(26 / 4)
+  })
+
+  it('sums every point into at most 24 bars and keeps a nonzero bar visible', () => {
+    const points: Array<[number, number]> = Array.from({ length: 50 }, (_, i) => [i, 1])
+    const bars = sparkBars(points)
+    expect(bars).toHaveLength(24)
+    expect(bars.reduce((a, b) => a + b, 0)).toBe(50)
+    expect(sparkHeights([0, 0.001, 100])).toEqual([0, 1.5, 26])
+  })
+})
+
+describe('sharedPeak', () => {
+  it('takes the tallest bar of rows that draw a sparkline only', () => {
+    const drawn: Array<[number, number]> = [
+      [0, 1],
+      [1, 2],
+    ]
+    // One point draws no sparkline: its 50 must not shrink the drawn row's bars.
+    expect(sharedPeak([{ points: drawn }, { points: [[0, 50]] }])).toBe(2)
+    expect(sharedPeak([])).toBe(0)
   })
 })

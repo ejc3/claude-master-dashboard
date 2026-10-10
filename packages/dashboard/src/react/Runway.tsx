@@ -116,28 +116,39 @@ function WindowRow(props: { name: string; window: QuotaWindow; now: EpochMs }) {
   )
 }
 
+/**
+ * One subscription as a row of the subscriptions panel: its name, state and details, then a
+ * runway per quota window. The panel lays rows out as columns on wide screens and stacks them on
+ * narrow ones.
+ */
 export function RunwayCard({ status, now }: { status: ProfileStatus; now: EpochMs }) {
   const card = cardStatus(status, now)
   const b = blocked(status, now)
   return (
-    <article className="cmd-card" data-status={card} aria-label={`Subscription ${status.profile}`}>
-      <div className="cmd-card-head">
-        <h3 className="cmd-profile">{status.profile}</h3>
-        <StatusBadge status={card} />
+    <article className="cmd-row" data-status={card} aria-label={`Subscription ${status.profile}`}>
+      <div className="cmd-row-main">
+        <div className="cmd-row-title">
+          <h3 className="cmd-profile">{status.profile}</h3>
+          <StatusBadge status={card} />
+        </div>
+        <p className="cmd-row-meta">
+          {b?.until != null && (
+            <span data-warn="true">Takes work again in {formatCountdown(b.until - now)}</span>
+          )}
+          {card === 'login' && <span data-warn="true">Log the profile in again on the server</span>}
+          {status.tokenExpiresAt !== null && status.tokenExpiresAt > now && (
+            // Access tokens renew on their own; an expired one is reported above.
+            <span>Login renews in {formatCountdown(status.tokenExpiresAt - now)}</span>
+          )}
+          <span>p95 {formatDuration(status.latencyMs.p95)}</span>
+        </p>
       </div>
       <WindowRow name="Weekly" window={status.weekly} now={now} />
-      {status.fiveHour !== null && <WindowRow name="5-hour" window={status.fiveHour} now={now} />}
-      <div className="cmd-card-foot">
-        {b?.until != null && (
-          <span data-warn="true">Takes work again in {formatCountdown(b.until - now)}</span>
-        )}
-        {card === 'login' && <span data-warn="true">Log the profile in again on the server</span>}
-        {status.tokenExpiresAt !== null && status.tokenExpiresAt > now && (
-          // Access tokens renew on their own; an expired one is reported above.
-          <span>Login renews in {formatCountdown(status.tokenExpiresAt - now)}</span>
-        )}
-        <span>p95 {formatDuration(status.latencyMs.p95)}</span>
-      </div>
+      {status.fiveHour === null ? (
+        <p className="cmd-window cmd-window-none">No 5-hour reading</p>
+      ) : (
+        <WindowRow name="5-hour" window={status.fiveHour} now={now} />
+      )}
     </article>
   )
 }

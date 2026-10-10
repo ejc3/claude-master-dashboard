@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { type ReactNode, useMemo, useState } from 'react'
 import {
   type EpochMs,
   formatCount,
@@ -11,6 +11,8 @@ import {
   hasHeadroom,
   nextAvailable,
   nextRunOut,
+  type PoolTone,
+  poolTone,
   type SeriesQuery,
   type Snapshot,
   sumBetween,
@@ -63,46 +65,64 @@ const data = <T,>(loaded: Loaded<T>): T | null => (loaded.state === 'ready' ? lo
 const failureOf = <T,>(loaded: Loaded<T>): PollFailure | null =>
   loaded.state === 'error' ? loaded.failure : loaded.state === 'ready' ? loaded.failure : null
 
+// Shape as well as color: check, triangle, cross, circle.
+const TONE_ICON: Record<PoolTone, ReactNode> = {
+  success: <path d="M3 8.5l3 3 7-7" fill="none" stroke="currentColor" strokeWidth="2" />,
+  warning: (
+    <path
+      d="M8 2.5L14 13.5H2zM8 6.5v3.5M8 11.5v.5"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinejoin="round"
+    />
+  ),
+  error: <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="2" />,
+  info: <circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" strokeWidth="1.6" />,
+}
+
+/** The pool's state in one or two sentences, as an alert whose tone says how it reads. */
 function Headline({ snapshot, now }: { snapshot: Snapshot | null; now: EpochMs }) {
   const hydrated = useHydrated()
-  if (snapshot === null) {
-    return (
-      <div>
-        <p className="cmd-headline">Waiting for the first reading.</p>
-        <p className="cmd-subline">
-          The metrics source did not answer yet; this page retries every minute.
-        </p>
-      </div>
-    )
-  }
-  const { profiles } = snapshot
-  const ready = profiles.filter((p) => hasHeadroom(p, now)).length
   let headline: string
   let detail: string | null = null
-  if (profiles.length === 0) {
-    headline = 'No subscription has reported yet.'
-    detail = 'Readings arrive a few minutes after claude-master starts exporting metrics.'
-  } else if (ready === 0) {
-    headline = 'No subscription can take work right now.'
-    const next = nextAvailable(profiles, now)
-    if (next !== null) {
-      detail = `${next.profile} can take work again in ${formatCountdown(next.at - now)}${hydrated ? `, at ${formatWhen(next.at, now)}` : ''}.`
-    }
+  if (snapshot === null) {
+    headline = 'Waiting for the first reading.'
+    detail = 'The metrics source did not answer yet; this page retries every minute.'
   } else {
-    const runOut = nextRunOut(profiles, now)
-    headline =
-      ready === profiles.length
-        ? `All ${profiles.length} subscriptions have headroom.`
-        : `${ready} of ${profiles.length} subscriptions have headroom.`
-    detail =
-      runOut === null
-        ? 'At the current pace every subscription lasts until its window resets.'
-        : `${runOut.profile} runs out of its ${runOut.window === 'weekly' ? 'weekly allowance' : '5-hour window'} in ${formatCountdown(runOut.at - now)} at this pace.`
+    const { profiles } = snapshot
+    const ready = profiles.filter((p) => hasHeadroom(p, now)).length
+    if (profiles.length === 0) {
+      headline = 'No subscription has reported yet.'
+      detail = 'Readings arrive a few minutes after claude-master starts exporting metrics.'
+    } else if (ready === 0) {
+      headline = 'No subscription can take work right now.'
+      const next = nextAvailable(profiles, now)
+      if (next !== null) {
+        detail = `${next.profile} can take work again in ${formatCountdown(next.at - now)}${hydrated ? `, at ${formatWhen(next.at, now)}` : ''}.`
+      }
+    } else {
+      const runOut = nextRunOut(profiles, now)
+      headline =
+        ready === profiles.length
+          ? `All ${profiles.length} subscriptions have headroom.`
+          : `${ready} of ${profiles.length} subscriptions have headroom.`
+      detail =
+        runOut === null
+          ? 'At the current pace every subscription lasts until its window resets.'
+          : `${runOut.profile} runs out of its ${runOut.window === 'weekly' ? 'weekly allowance' : '5-hour window'} in ${formatCountdown(runOut.at - now)} at this pace.`
+    }
   }
+  const tone = poolTone(snapshot?.profiles ?? null, now)
   return (
-    <div>
-      <p className="cmd-headline">{headline}</p>
-      {detail !== null && <p className="cmd-subline">{detail}</p>}
+    <div className="cmd-alert" data-tone={tone}>
+      <svg className="cmd-alert-icon" viewBox="0 0 16 16" aria-hidden="true">
+        {TONE_ICON[tone]}
+      </svg>
+      <div>
+        <p className="cmd-headline">{headline}</p>
+        {detail !== null && <p className="cmd-subline">{detail}</p>}
+      </div>
     </div>
   )
 }
@@ -197,7 +217,7 @@ export function Dashboard(props: DashboardProps) {
       t,
       r === 0 ? 0 : (errorsHourly.get(t) ?? 0) / r,
     ])
-    return [{ key: 'error-rate', label: 'Error rate', color: 'var(--cmd-ink-2)', points }]
+    return [{ key: 'error-rate', label: 'Error rate', color: 'var(--cmd-series-1)', points }]
   }, [requestsTotal, errorsData])
 
   const failures = [
@@ -224,15 +244,35 @@ export function Dashboard(props: DashboardProps) {
   const backupTotal = data(backup)
   const rangeWords = rangeName === '24h' ? 'last 24 hours' : 'last 7 days'
 
+  const rangeControl = (
+    <fieldset className="cmd-segmented">
+      <legend className="cmd-visually-hidden">Time range for the charts and table</legend>
+      {(Object.keys(RANGES) as RangeName[]).map((name) => (
+        <button
+          type="button"
+          key={name}
+          aria-pressed={name === rangeName}
+          onClick={() => setRangeName(name)}
+        >
+          {RANGES[name].label}
+        </button>
+      ))}
+    </fieldset>
+  )
+
   return (
     <div className="cmd-root">
       <div className="cmd-frame">
         <header className="cmd-header">
-          <h1 className="cmd-title">{title}</h1>
-          <span className="cmd-freshness" data-stale={stale || snapshotFailure !== null}>
-            {freshness}
-            {snapshotFailure !== null && !signedOut ? '; the last refresh failed' : ''}
-          </span>
+          <div className="cmd-header-text">
+            <h1 className="cmd-title">{title}</h1>
+            <span className="cmd-freshness" data-stale={stale || snapshotFailure !== null}>
+              <span className="cmd-pulse" aria-hidden="true" />
+              {freshness}
+              {snapshotFailure !== null && !signedOut ? '; the last refresh failed' : ''}
+            </span>
+          </div>
+          <div className="cmd-controls">{rangeControl}</div>
         </header>
 
         {signedOut && (
@@ -244,78 +284,51 @@ export function Dashboard(props: DashboardProps) {
 
         <Headline snapshot={snapshot} now={now} />
 
-        <div className="cmd-layout">
-          <section aria-labelledby="cmd-subscriptions">
-            <h2 className="cmd-section-title" id="cmd-subscriptions">
-              Subscriptions
-            </h2>
-            <div className="cmd-runways">
-              {(snapshot?.profiles ?? []).map((p) => (
-                <RunwayCard key={p.profile} status={p} now={now} />
-              ))}
-            </div>
-          </section>
+        <section className="cmd-kpis" aria-label="Traffic">
+          <Kpi
+            label="Requests, last hour"
+            value={formatCount(requestsLastHour)}
+            note={
+              requestsHourBefore === null
+                ? undefined
+                : `${formatCount(requestsHourBefore)} the hour before`
+            }
+          />
+          <Kpi
+            label="Error rate, last hour"
+            value={formatPercent(
+              requestsLastHour === null || errorsLastHour === null || requestsLastHour === 0
+                ? null
+                : errorsLastHour / requestsLastHour,
+            )}
+            note={
+              errorsLastHour === null
+                ? failureOf(kpiErrors) === null
+                  ? undefined
+                  : 'Error counts are unavailable'
+                : `${formatCount(errorsLastHour)} errors from Anthropic`
+            }
+          />
+          <Kpi
+            label="Conversations now"
+            value={formatCount(snapshot?.sessions ?? null)}
+            note={
+              snapshot?.activeConnections == null
+                ? undefined
+                : `${formatCount(snapshot.activeConnections)} open connections`
+            }
+          />
+          <Kpi
+            label={`Paid API backup, ${rangeWords}`}
+            value={formatCount(
+              backupTotal === null ? null : sumBetween(sumSeries(backupTotal), 0, Infinity),
+            )}
+            note="Requests no subscription could take"
+          />
+        </section>
 
+        <div className="cmd-charts">
           <div>
-            <h2 className="cmd-section-title">Traffic</h2>
-            <div className="cmd-kpis">
-              <Kpi
-                label="Requests, last hour"
-                value={formatCount(requestsLastHour)}
-                note={
-                  requestsHourBefore === null
-                    ? undefined
-                    : `${formatCount(requestsHourBefore)} the hour before`
-                }
-              />
-              <Kpi
-                label="Error rate, last hour"
-                value={formatPercent(
-                  requestsLastHour === null || errorsLastHour === null || requestsLastHour === 0
-                    ? null
-                    : errorsLastHour / requestsLastHour,
-                )}
-                note={
-                  errorsLastHour === null
-                    ? failureOf(kpiErrors) === null
-                      ? undefined
-                      : 'Error counts are unavailable'
-                    : `${formatCount(errorsLastHour)} errors from Anthropic`
-                }
-              />
-              <Kpi
-                label="Conversations now"
-                value={formatCount(snapshot?.sessions ?? null)}
-                note={
-                  snapshot?.activeConnections == null
-                    ? undefined
-                    : `${formatCount(snapshot.activeConnections)} open connections`
-                }
-              />
-              <Kpi
-                label={`Paid API backup, ${rangeWords}`}
-                value={formatCount(
-                  backupTotal === null ? null : sumBetween(sumSeries(backupTotal), 0, Infinity),
-                )}
-                note="Requests no subscription could take"
-              />
-            </div>
-
-            <div className="cmd-controls">
-              <fieldset className="cmd-segmented">
-                <legend className="cmd-visually-hidden">Time range for the charts and table</legend>
-                {(Object.keys(RANGES) as RangeName[]).map((name) => (
-                  <button
-                    type="button"
-                    key={name}
-                    aria-pressed={name === rangeName}
-                    onClick={() => setRangeName(name)}
-                  >
-                    {RANGES[name].label}
-                  </button>
-                ))}
-              </fieldset>
-            </div>
             {byProfile.state === 'error' && (
               <p className="cmd-error">{byProfile.failure.message}</p>
             )}
@@ -329,6 +342,8 @@ export function Dashboard(props: DashboardProps) {
                 now={now}
               />
             )}
+          </div>
+          <div>
             {errors.state === 'error' && <p className="cmd-error">{errors.failure.message}</p>}
             {errorRate.length > 0 && (
               <LineChart
@@ -336,11 +351,28 @@ export function Dashboard(props: DashboardProps) {
                 series={errorRate}
                 format={(v) => formatPercent(v)}
                 now={now}
-                height={140}
+                area
               />
             )}
           </div>
         </div>
+
+        <section className="cmd-panel cmd-stream" aria-labelledby="cmd-subscriptions">
+          <div className="cmd-panel-header cmd-stream-columns">
+            <h2 className="cmd-panel-label" id="cmd-subscriptions">
+              Subscriptions
+            </h2>
+            <span className="cmd-panel-label cmd-wide-only" aria-hidden="true">
+              Weekly allowance
+            </span>
+            <span className="cmd-panel-label cmd-wide-only" aria-hidden="true">
+              5-hour window
+            </span>
+          </div>
+          {(snapshot?.profiles ?? []).map((p) => (
+            <RunwayCard key={p.profile} status={p} now={now} />
+          ))}
+        </section>
 
         <Breakdown
           apiBase={apiBase}

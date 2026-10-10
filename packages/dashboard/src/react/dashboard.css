@@ -1,36 +1,55 @@
 /* claude-master dashboard. Everything is scoped to .cmd-root and sits in one cascade layer, so a
-   host app's styles win wherever they overlap and nothing here touches the host's own pages. */
+   host app's styles win wherever they overlap and nothing here touches the host's own pages. The
+   look follows an error-monitoring console: quiet panels on a pale violet-gray page, one violet
+   accent, tinted status tags and alerts. A host restyles it by overriding the --cmd-* tokens. */
 @layer cmd {
   .cmd-root {
     color-scheme: light;
-    --cmd-page: #eef1f4;
+    --cmd-page: #faf9fb;
     --cmd-surface: #ffffff;
-    --cmd-ink: #14213d;
-    --cmd-ink-2: #4a5568;
-    --cmd-ink-3: #5f6a78;
-    --cmd-rule: #d6dce4;
-    --cmd-track: #e3e8ee;
-    --cmd-elapsed: #c3ccd7;
-    --cmd-fill: #2f5bea;
-    --cmd-now: #14213d;
-    --cmd-ok: #13795b;
-    --cmd-reserve: #8a5c00;
-    --cmd-exhausted: #b42318;
-    --cmd-series-1: #2a78d6;
-    --cmd-series-2: #eb6834;
-    --cmd-series-3: #1baf7a;
-    --cmd-series-4: #eda100;
-    --cmd-series-5: #e87ba4;
-    --cmd-series-6: #008300;
-    --cmd-series-7: #4a3aa7;
-    --cmd-series-8: #e34948;
-    --cmd-focus: #2f5bea;
-    --cmd-font: var(--cmd-font-sans, "Barlow", ui-sans-serif, system-ui, sans-serif);
-    --cmd-font-display: var(--cmd-font-condensed, "Barlow Condensed", var(--cmd-font));
+    --cmd-raised: #faf9fb;
+    --cmd-ink: #2b2233;
+    --cmd-ink-2: #3e3446;
+    --cmd-ink-3: #71637e;
+    --cmd-rule: #e0dce5;
+    --cmd-inner: #f0ecf3;
+    --cmd-track: #f0ecf3;
+    --cmd-elapsed: #dcd6e3;
+    --cmd-fill: #6c5fc7;
+    --cmd-now: #2b2233;
+    --cmd-accent: #6c5fc7;
+    --cmd-accent-strong: #584ac0;
+    --cmd-accent-soft: rgb(108 95 199 / 0.09);
+    --cmd-ok: #207964;
+    --cmd-ok-mark: #2ba185;
+    --cmd-ok-soft: rgb(43 161 133 / 0.1);
+    --cmd-reserve: #856c00;
+    --cmd-reserve-mark: #ebc000;
+    --cmd-reserve-soft: rgb(235 192 0 / 0.1);
+    --cmd-exhausted: #cf2126;
+    --cmd-exhausted-mark: #f55459;
+    --cmd-exhausted-soft: rgb(245 84 89 / 0.09);
+    --cmd-info: #2562d4;
+    --cmd-info-soft: rgb(60 116 221 / 0.09);
+    --cmd-shadow: 0 2px 0 rgb(37 11 54 / 0.04);
+    --cmd-shadow-control: 0 1px 2px rgb(43 34 51 / 0.08);
+    --cmd-shadow-pop: 0 4px 24px rgb(43 34 51 / 0.12);
+    --cmd-focus: #6c5fc7;
+    --cmd-series-1: #6c5fc7;
+    --cmd-series-2: #e8742e;
+    --cmd-series-3: #1f9c88;
+    --cmd-series-4: #d99a00;
+    --cmd-series-5: #9a4fa0;
+    --cmd-series-6: #6f8f2a;
+    --cmd-series-7: #3c74dd;
+    --cmd-series-8: #d6567f;
+
+    --cmd-font: var(--cmd-font-sans, "Rubik", ui-sans-serif, system-ui, sans-serif);
+    --cmd-radius: 6px;
     background: var(--cmd-page);
     color: var(--cmd-ink);
     font-family: var(--cmd-font);
-    font-size: 16px;
+    font-size: 14px;
     line-height: 1.45;
     font-variant-numeric: tabular-nums;
     min-height: 100dvh;
@@ -40,55 +59,87 @@
   @media (prefers-color-scheme: dark) {
     :root:where(:not([data-theme="light"])) .cmd-root {
       color-scheme: dark;
-      --cmd-page: #0e1520;
-      --cmd-surface: #162130;
-      --cmd-ink: #e6ebf2;
-      --cmd-ink-2: #b3bfcd;
-      --cmd-ink-3: #8794a5;
-      --cmd-rule: #2a3a4f;
-      --cmd-track: #213045;
-      --cmd-elapsed: #34465e;
-      --cmd-fill: #7aa2ff;
-      --cmd-now: #e6ebf2;
-      --cmd-ok: #4cc79a;
-      --cmd-reserve: #e3b341;
-      --cmd-exhausted: #f47067;
-      --cmd-series-1: #3987e5;
-      --cmd-series-2: #d95926;
-      --cmd-series-3: #199e70;
-      --cmd-series-4: #c98500;
-      --cmd-series-5: #d55181;
-      --cmd-series-6: #008300;
-      --cmd-series-7: #9085e9;
-      --cmd-series-8: #e66767;
-      --cmd-focus: #7aa2ff;
+      --cmd-page: #1a141f;
+      --cmd-surface: #241d2a;
+      --cmd-raised: #2a2230;
+      --cmd-ink: #ebe6ef;
+      --cmd-ink-2: #d3cad9;
+      --cmd-ink-3: #a397ae;
+      --cmd-rule: #3e3446;
+      --cmd-inner: #322a38;
+      --cmd-track: #322a38;
+      --cmd-elapsed: #4a4052;
+      --cmd-fill: #8b7fe0;
+      --cmd-now: #ebe6ef;
+      --cmd-accent: #9d92ea;
+      --cmd-accent-strong: #b3aaf0;
+      --cmd-accent-soft: rgb(139 127 224 / 0.16);
+      --cmd-ok: #4cc9a6;
+      --cmd-ok-mark: #33bf9e;
+      --cmd-ok-soft: rgb(51 191 158 / 0.13);
+      --cmd-reserve: #f5cc4a;
+      --cmd-reserve-mark: #e5b800;
+      --cmd-reserve-soft: rgb(229 184 0 / 0.12);
+      --cmd-exhausted: #ff7a7e;
+      --cmd-exhausted-mark: #fa4747;
+      --cmd-exhausted-soft: rgb(250 71 71 / 0.14);
+      --cmd-info: #7ea6f2;
+      --cmd-info-soft: rgb(90 140 235 / 0.15);
+      --cmd-shadow: 0 2px 0 rgb(0 0 0 / 0.16);
+      --cmd-shadow-control: 0 1px 2px rgb(0 0 0 / 0.3);
+      --cmd-shadow-pop: 0 4px 24px rgb(0 0 0 / 0.4);
+      --cmd-focus: #9d92ea;
+      --cmd-series-1: #8b7fe0;
+      --cmd-series-2: #e0702a;
+      --cmd-series-3: #1f9c88;
+      --cmd-series-4: #bd8200;
+      --cmd-series-5: #b066b6;
+      --cmd-series-6: #7a9a30;
+      --cmd-series-7: #4a86ec;
+      --cmd-series-8: #dc5f88;
     }
   }
 
   :root[data-theme="dark"] .cmd-root {
     color-scheme: dark;
-    --cmd-page: #0e1520;
-    --cmd-surface: #162130;
-    --cmd-ink: #e6ebf2;
-    --cmd-ink-2: #b3bfcd;
-    --cmd-ink-3: #8794a5;
-    --cmd-rule: #2a3a4f;
-    --cmd-track: #213045;
-    --cmd-elapsed: #34465e;
-    --cmd-fill: #7aa2ff;
-    --cmd-now: #e6ebf2;
-    --cmd-ok: #4cc79a;
-    --cmd-reserve: #e3b341;
-    --cmd-exhausted: #f47067;
-    --cmd-series-1: #3987e5;
-    --cmd-series-2: #d95926;
-    --cmd-series-3: #199e70;
-    --cmd-series-4: #c98500;
-    --cmd-series-5: #d55181;
-    --cmd-series-6: #008300;
-    --cmd-series-7: #9085e9;
-    --cmd-series-8: #e66767;
-    --cmd-focus: #7aa2ff;
+    --cmd-page: #1a141f;
+    --cmd-surface: #241d2a;
+    --cmd-raised: #2a2230;
+    --cmd-ink: #ebe6ef;
+    --cmd-ink-2: #d3cad9;
+    --cmd-ink-3: #a397ae;
+    --cmd-rule: #3e3446;
+    --cmd-inner: #322a38;
+    --cmd-track: #322a38;
+    --cmd-elapsed: #4a4052;
+    --cmd-fill: #8b7fe0;
+    --cmd-now: #ebe6ef;
+    --cmd-accent: #9d92ea;
+    --cmd-accent-strong: #b3aaf0;
+    --cmd-accent-soft: rgb(139 127 224 / 0.16);
+    --cmd-ok: #4cc9a6;
+    --cmd-ok-mark: #33bf9e;
+    --cmd-ok-soft: rgb(51 191 158 / 0.13);
+    --cmd-reserve: #f5cc4a;
+    --cmd-reserve-mark: #e5b800;
+    --cmd-reserve-soft: rgb(229 184 0 / 0.12);
+    --cmd-exhausted: #ff7a7e;
+    --cmd-exhausted-mark: #fa4747;
+    --cmd-exhausted-soft: rgb(250 71 71 / 0.14);
+    --cmd-info: #7ea6f2;
+    --cmd-info-soft: rgb(90 140 235 / 0.15);
+    --cmd-shadow: 0 2px 0 rgb(0 0 0 / 0.16);
+    --cmd-shadow-control: 0 1px 2px rgb(0 0 0 / 0.3);
+    --cmd-shadow-pop: 0 4px 24px rgb(0 0 0 / 0.4);
+    --cmd-focus: #9d92ea;
+    --cmd-series-1: #8b7fe0;
+    --cmd-series-2: #e0702a;
+    --cmd-series-3: #1f9c88;
+    --cmd-series-4: #bd8200;
+    --cmd-series-5: #b066b6;
+    --cmd-series-6: #7a9a30;
+    --cmd-series-7: #4a86ec;
+    --cmd-series-8: #dc5f88;
   }
 
   .cmd-root *,
@@ -107,150 +158,369 @@
     max-width: 1280px;
     margin: 0 auto;
     display: grid;
-    gap: 28px;
+    gap: 16px;
   }
 
-  /* Header: what this is, how fresh it is. */
+  /* Header: what this is and how fresh it is, with the time range beside it. */
   .cmd-header {
     display: flex;
     flex-wrap: wrap;
-    align-items: baseline;
+    align-items: center;
     justify-content: space-between;
-    gap: 4px 16px;
+    gap: 12px 16px;
+  }
+
+  .cmd-header-text {
+    display: grid;
+    gap: 2px;
   }
 
   .cmd-title {
-    font-family: var(--cmd-font-display);
     font-weight: 600;
-    font-size: 1.25rem;
-    letter-spacing: 0.01em;
+    font-size: 1.375rem;
+    line-height: 1.2;
     margin: 0;
   }
 
   .cmd-freshness {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
     color: var(--cmd-ink-3);
-    font-size: 0.875rem;
+    font-size: 0.8125rem;
+  }
+
+  .cmd-pulse {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--cmd-pulse-mark, var(--cmd-ok-mark));
+    flex: none;
   }
 
   .cmd-freshness[data-stale="true"] {
     color: var(--cmd-reserve);
   }
 
-  /* The headline: the pool's state in one or two sentences. */
-  .cmd-headline {
-    font-family: var(--cmd-font-display);
-    font-weight: 500;
-    font-size: clamp(1.6rem, 4.2vw, 2.6rem);
-    line-height: 1.12;
-    margin: 0;
-    max-width: 30ch;
-    text-wrap: balance;
+  .cmd-freshness[data-stale="true"] {
+    --cmd-pulse-mark: var(--cmd-reserve-mark);
   }
 
-  .cmd-headline strong {
-    font-weight: 700;
+  /* The headline: the pool's state, as an alert tinted by how it reads. */
+  .cmd-alert {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 10px;
+    align-items: start;
+    padding: 12px 16px;
+    border: 1px solid var(--cmd-info);
+    border-radius: var(--cmd-radius);
+    background: var(--cmd-info-soft);
+  }
+
+  .cmd-alert-icon {
+    width: 16px;
+    height: 16px;
+    margin-top: 2px;
+    color: var(--cmd-info);
+  }
+
+  .cmd-alert[data-tone="success"] {
+    border-color: var(--cmd-ok-mark);
+    background: var(--cmd-ok-soft);
+  }
+
+  .cmd-alert[data-tone="success"] .cmd-alert-icon {
+    color: var(--cmd-ok);
+  }
+
+  .cmd-alert[data-tone="warning"] {
+    border-color: var(--cmd-reserve-mark);
+    background: var(--cmd-reserve-soft);
+  }
+
+  .cmd-alert[data-tone="warning"] .cmd-alert-icon {
+    color: var(--cmd-reserve);
+  }
+
+  .cmd-alert[data-tone="error"] {
+    border-color: var(--cmd-exhausted-mark);
+    background: var(--cmd-exhausted-soft);
+  }
+
+  .cmd-alert[data-tone="error"] .cmd-alert-icon {
+    color: var(--cmd-exhausted);
+  }
+
+  .cmd-headline {
+    font-weight: 600;
+    font-size: 1rem;
+    line-height: 1.35;
+    margin: 0;
   }
 
   .cmd-subline {
-    margin: 6px 0 0;
+    margin: 2px 0 0;
     color: var(--cmd-ink-2);
-    max-width: 62ch;
+    max-width: 72ch;
   }
 
-  .cmd-layout {
+  /* Panels. */
+  .cmd-panel {
+    background: var(--cmd-surface);
+    border: 1px solid var(--cmd-rule);
+    border-radius: var(--cmd-radius);
+    box-shadow: var(--cmd-shadow);
+    padding: 14px 16px 12px;
+    min-width: 0;
+  }
+
+  .cmd-panel-flush {
+    padding: 14px 0 0;
+    overflow: hidden;
+  }
+
+  .cmd-panel-pad {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .cmd-panel-header {
+    background: var(--cmd-raised);
+    border-bottom: 1px solid var(--cmd-rule);
+    padding: 10px 16px;
+  }
+
+  .cmd-panel-label {
+    margin: 0;
+    font-size: 0.75rem;
+    font-weight: 600;
+    line-height: 1.4;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    color: var(--cmd-ink-3);
+  }
+
+  .cmd-panel-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 6px 12px;
+    margin-bottom: 8px;
+  }
+
+  .cmd-panel-title {
+    font-family: var(--cmd-font);
+    font-size: 0.875rem;
+    font-weight: 600;
+    margin: 0;
+  }
+
+  /* Key numbers: one widget each. */
+  .cmd-kpis {
     display: grid;
-    gap: 28px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
   }
 
-  @media (min-width: 1000px) {
-    .cmd-layout {
-      grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
-      align-items: start;
+  @media (min-width: 900px) {
+    .cmd-kpis {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
     }
   }
 
-  .cmd-section-title {
-    font-family: var(--cmd-font-display);
-    font-weight: 600;
-    font-size: 1.05rem;
-    margin: 0 0 10px;
+  .cmd-kpi {
+    background: var(--cmd-surface);
+    border: 1px solid var(--cmd-rule);
+    border-radius: var(--cmd-radius);
+    box-shadow: var(--cmd-shadow);
+    padding: 12px 16px 14px;
+    min-width: 0;
   }
 
-  /* Subscriptions: one runway card each. */
-  .cmd-runways {
+  .cmd-kpi-label {
+    font-size: 0.875rem;
+    font-weight: 500;
+    margin: 0;
+  }
+
+  .cmd-kpi-value {
+    font-size: 1.75rem;
+    font-weight: 400;
+    line-height: 1.15;
+    margin: 6px 0 0;
+  }
+
+  @media (min-width: 900px) {
+    .cmd-kpi-value {
+      font-size: 2.25rem;
+    }
+  }
+
+  .cmd-kpi-note {
+    font-size: 0.75rem;
+    color: var(--cmd-ink-3);
+    margin: 4px 0 0;
+  }
+
+  /* Subscriptions: a list panel, one row each. A bar on the row's left edge carries its state. */
+  .cmd-stream {
+    padding: 0;
+    overflow: hidden;
+  }
+
+  .cmd-row {
+    position: relative;
+    padding: 14px 16px 14px 19px;
     display: grid;
     gap: 12px;
   }
 
-  .cmd-card {
-    background: var(--cmd-surface);
-    border: 1px solid var(--cmd-rule);
-    border-radius: 6px;
-    padding: 14px 16px 16px;
+  /* State rules set colors through custom properties, never `background` on the marks
+     themselves, so the forced-colors override below (equal specificity, later) always wins. */
+  .cmd-row {
+    --cmd-row-mark: var(--cmd-ok-mark);
+    --cmd-runway-fill: var(--cmd-fill);
   }
 
-  .cmd-card[data-status="used-up"],
-  .cmd-card[data-status="login"] {
-    border-left: 4px solid var(--cmd-exhausted);
+  .cmd-row[data-status="low"],
+  .cmd-row[data-status="cooling"] {
+    --cmd-row-mark: var(--cmd-reserve-mark);
   }
 
-  .cmd-card[data-status="low"],
-  .cmd-card[data-status="cooling"],
-  .cmd-card[data-status="unknown"] {
-    border-left: 4px solid var(--cmd-reserve);
+  .cmd-row[data-status="used-up"],
+  .cmd-row[data-status="login"] {
+    --cmd-row-mark: var(--cmd-exhausted-mark);
   }
 
-  .cmd-card-head {
+  .cmd-row[data-status="used-up"] {
+    --cmd-runway-fill: var(--cmd-exhausted-mark);
+  }
+
+  .cmd-row[data-status="unknown"] {
+    --cmd-row-mark: var(--cmd-rule);
+  }
+
+  .cmd-row + .cmd-row {
+    border-top: 1px solid var(--cmd-inner);
+  }
+
+  .cmd-row::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 14px;
+    bottom: 14px;
+    width: 3px;
+    border-radius: 0 3px 3px 0;
+    background: var(--cmd-row-mark);
+  }
+
+  .cmd-wide-only {
+    display: none;
+  }
+
+  @media (min-width: 900px) {
+    .cmd-row,
+    .cmd-stream-columns {
+      grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr) minmax(0, 1fr);
+      gap: 28px;
+      align-items: start;
+    }
+
+    .cmd-stream-columns {
+      display: grid;
+      padding-left: 19px;
+    }
+
+    .cmd-wide-only {
+      display: block;
+    }
+
+    /* The column headers name the windows; the name stays for screen readers. */
+    .cmd-row .cmd-window-name {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip: rect(0 0 0 0);
+      white-space: nowrap;
+    }
+  }
+
+  .cmd-row-title {
     display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 12px;
-    margin-bottom: 12px;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 10px;
   }
 
   .cmd-profile {
-    font-family: var(--cmd-font-display);
-    font-size: 1.35rem;
+    font-size: 0.9375rem;
     font-weight: 600;
     margin: 0;
     overflow-wrap: anywhere;
   }
 
+  .cmd-row-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px 14px;
+    margin: 4px 0 0;
+    font-size: 0.8125rem;
+    color: var(--cmd-ink-3);
+  }
+
+  .cmd-row-meta [data-warn="true"] {
+    color: var(--cmd-reserve);
+    font-weight: 500;
+  }
+
+  /* Status tags: tinted pills with an icon, so the state never rests on color alone. */
   .cmd-status {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
-    font-size: 0.875rem;
-    font-weight: 600;
+    gap: 5px;
+    height: 22px;
+    padding: 0 9px 0 7px;
+    border-radius: 11px;
+    border: 1px solid transparent;
+    font-size: 0.75rem;
+    font-weight: 500;
     white-space: nowrap;
   }
 
   .cmd-status svg {
-    width: 14px;
-    height: 14px;
+    width: 12px;
+    height: 12px;
     flex: none;
   }
 
   .cmd-status[data-status="ok"] {
     color: var(--cmd-ok);
+    background: var(--cmd-ok-soft);
+    border-color: color-mix(in srgb, var(--cmd-ok-mark) 35%, transparent);
   }
 
   .cmd-status[data-status="low"],
   .cmd-status[data-status="cooling"] {
     color: var(--cmd-reserve);
+    background: var(--cmd-reserve-soft);
+    border-color: color-mix(in srgb, var(--cmd-reserve-mark) 45%, transparent);
   }
 
   .cmd-status[data-status="used-up"],
   .cmd-status[data-status="login"] {
     color: var(--cmd-exhausted);
+    background: var(--cmd-exhausted-soft);
+    border-color: color-mix(in srgb, var(--cmd-exhausted-mark) 40%, transparent);
   }
 
   .cmd-status[data-status="unknown"] {
     color: var(--cmd-ink-3);
-  }
-
-  .cmd-window + .cmd-window {
-    margin-top: 14px;
+    background: var(--cmd-raised);
+    border-color: var(--cmd-rule);
   }
 
   .cmd-window-labels {
@@ -258,7 +528,7 @@
     justify-content: space-between;
     align-items: baseline;
     gap: 12px;
-    font-size: 0.9rem;
+    font-size: 0.8125rem;
     margin-bottom: 6px;
   }
 
@@ -268,12 +538,18 @@
 
   .cmd-window-used {
     font-weight: 600;
-    font-size: 1rem;
+    font-size: 0.875rem;
   }
 
   .cmd-window-reset {
-    color: var(--cmd-ink-2);
+    color: var(--cmd-ink-3);
     text-align: right;
+  }
+
+  .cmd-window-none {
+    margin: 0;
+    font-size: 0.8125rem;
+    color: var(--cmd-ink-3);
   }
 
   /* A runway: the window from its start (left) to its reset (right). The pale band is time
@@ -281,7 +557,7 @@
      the allowance goes faster than the window. */
   .cmd-runway {
     position: relative;
-    height: 14px;
+    height: 12px;
     border-radius: 4px;
     background: var(--cmd-track);
     overflow: hidden;
@@ -296,14 +572,10 @@
   .cmd-runway-used {
     position: absolute;
     left: 0;
-    top: 4px;
-    bottom: 4px;
-    background: var(--cmd-fill);
+    top: 3px;
+    bottom: 3px;
+    background: var(--cmd-runway-fill, var(--cmd-fill));
     border-radius: 0 3px 3px 0;
-  }
-
-  .cmd-card[data-status="used-up"] .cmd-runway-used {
-    background: var(--cmd-exhausted);
   }
 
   /* A ring in the surface color keeps the mark visible over the fill and the track alike. */
@@ -319,8 +591,8 @@
 
   .cmd-window-note {
     margin: 6px 0 0;
-    font-size: 0.875rem;
-    color: var(--cmd-ink-2);
+    font-size: 0.75rem;
+    color: var(--cmd-ink-3);
   }
 
   .cmd-window-note[data-pace="ahead"] {
@@ -331,93 +603,25 @@
     color: var(--cmd-exhausted);
   }
 
-  .cmd-card-foot {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 4px 18px;
-    margin-top: 14px;
-    padding-top: 10px;
-    border-top: 1px solid var(--cmd-rule);
-    font-size: 0.875rem;
-    color: var(--cmd-ink-2);
-  }
-
-  .cmd-card-foot [data-warn="true"] {
-    color: var(--cmd-reserve);
-    font-weight: 600;
-  }
-
-  /* Key numbers. */
-  .cmd-kpis {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 1px;
-    background: var(--cmd-rule);
-    border: 1px solid var(--cmd-rule);
-    border-radius: 6px;
-    overflow: hidden;
-  }
-
-  .cmd-kpi {
-    background: var(--cmd-surface);
-    padding: 12px 14px;
-    min-width: 0;
-  }
-
-  .cmd-kpi-label {
-    font-size: 0.875rem;
-    color: var(--cmd-ink-2);
-    margin: 0;
-  }
-
-  .cmd-kpi-value {
-    font-family: var(--cmd-font-display);
-    font-size: 2rem;
-    font-weight: 600;
-    line-height: 1.1;
-    margin: 2px 0 0;
-  }
-
-  .cmd-kpi-note {
-    font-size: 0.8125rem;
-    color: var(--cmd-ink-3);
-    margin: 2px 0 0;
-  }
-
-  .cmd-spark {
-    display: block;
-    width: 100%;
-    height: 28px;
-    margin-top: 6px;
-    color: var(--cmd-series-1);
-  }
-
   /* Charts. */
-  .cmd-panel {
-    background: var(--cmd-surface);
-    border: 1px solid var(--cmd-rule);
-    border-radius: 6px;
-    padding: 14px 16px 12px;
+  .cmd-charts {
+    display: grid;
+    gap: 12px;
   }
 
-  .cmd-panel + .cmd-panel {
-    margin-top: 12px;
-  }
-
-  .cmd-panel-head {
+  .cmd-charts > div {
     display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 6px 12px;
-    margin-bottom: 8px;
+    flex-direction: column;
   }
 
-  .cmd-panel-title {
-    font-family: var(--cmd-font);
-    font-size: 1rem;
-    font-weight: 600;
-    margin: 0;
+  .cmd-charts > div > .cmd-panel {
+    flex: 1;
+  }
+
+  @media (min-width: 900px) {
+    .cmd-charts {
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    }
   }
 
   .cmd-legend {
@@ -427,7 +631,7 @@
     margin: 0 0 8px;
     padding: 0;
     list-style: none;
-    font-size: 0.875rem;
+    font-size: 0.75rem;
     color: var(--cmd-ink-2);
   }
 
@@ -438,10 +642,11 @@
   }
 
   .cmd-swatch {
-    width: 12px;
-    height: 3px;
-    border-radius: 2px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
     background: currentColor;
+    flex: none;
   }
 
   .cmd-chart {
@@ -461,8 +666,12 @@
   }
 
   .cmd-grid {
-    stroke: var(--cmd-rule);
+    stroke: var(--cmd-inner);
     stroke-width: 1;
+  }
+
+  .cmd-area {
+    opacity: 0.14;
   }
 
   .cmd-tooltip {
@@ -471,83 +680,141 @@
     pointer-events: none;
     background: var(--cmd-surface);
     border: 1px solid var(--cmd-rule);
-    border-radius: 4px;
-    padding: 6px 8px;
+    border-radius: var(--cmd-radius);
+    padding: 8px 0 0;
     font-size: 0.8125rem;
-    box-shadow: 0 2px 8px rgb(20 33 61 / 0.12);
+    box-shadow: var(--cmd-shadow-pop);
     white-space: nowrap;
     z-index: 1;
-  }
-
-  .cmd-tooltip-time {
-    color: var(--cmd-ink-3);
-    margin-bottom: 2px;
+    min-width: 160px;
   }
 
   .cmd-tooltip-row {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 8px;
+    padding: 2px 12px;
   }
 
   .cmd-tooltip-row b {
     margin-left: auto;
-    padding-left: 12px;
+    padding-left: 16px;
+    font-weight: 600;
+  }
+
+  .cmd-tooltip-time {
+    margin-top: 6px;
+    padding: 6px 12px;
+    border-top: 1px solid var(--cmd-inner);
+    color: var(--cmd-ink-3);
+    font-size: 0.75rem;
   }
 
   .cmd-toggle {
     font: inherit;
-    font-size: 0.8125rem;
-    color: var(--cmd-ink-2);
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--cmd-accent);
     background: none;
     border: 0;
     padding: 2px 0;
-    text-decoration: underline;
-    text-underline-offset: 3px;
     cursor: pointer;
   }
 
-  /* Controls: one row above the charts. */
+  .cmd-toggle:hover {
+    color: var(--cmd-accent-strong);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+
+  /* The time range: a segmented control. */
   .cmd-controls {
     display: flex;
     flex-wrap: wrap;
     gap: 8px 16px;
     align-items: center;
-    margin: 16px 0 12px;
   }
 
   .cmd-segmented {
     margin: 0;
-    padding: 0;
+    padding: 2px;
     min-inline-size: 0;
     display: inline-flex;
     flex-wrap: wrap;
+    gap: 2px;
     max-width: 100%;
     border: 1px solid var(--cmd-rule);
-    border-radius: 6px;
-    overflow: hidden;
-    background: var(--cmd-surface);
+    border-radius: var(--cmd-radius);
+    background: var(--cmd-raised);
   }
 
   .cmd-segmented button {
     font: inherit;
-    font-size: 0.875rem;
-    color: var(--cmd-ink-2);
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--cmd-ink-3);
     background: none;
-    border: 0;
-    padding: 6px 12px;
-    min-height: 36px;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    padding: 4px 12px;
+    min-height: 32px;
     cursor: pointer;
   }
 
-  .cmd-segmented button + button {
-    border-left: 1px solid var(--cmd-rule);
+  .cmd-segmented button:hover {
+    color: var(--cmd-ink);
   }
 
+  /* The chosen range: accent text and border, so it stands out by more than its fill. */
   .cmd-segmented button[aria-pressed="true"] {
-    background: var(--cmd-ink);
-    color: var(--cmd-surface);
-    font-weight: 600;
+    background: var(--cmd-surface);
+    border-color: var(--cmd-accent);
+    color: var(--cmd-accent);
+    box-shadow: var(--cmd-shadow-control);
+  }
+
+  /* Tabs: what the breakdown splits by. */
+  .cmd-tabs {
+    margin: 0;
+    padding: 0;
+    min-inline-size: 0;
+    border: 0;
+    border-bottom: 1px solid var(--cmd-rule);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0 20px;
+  }
+
+  .cmd-tabs button {
+    position: relative;
+    font: inherit;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--cmd-ink-3);
+    background: none;
+    border: 0;
+    padding: 8px 0 10px;
+    min-height: 40px;
+    cursor: pointer;
+  }
+
+  .cmd-tabs button:hover {
+    color: var(--cmd-ink);
+  }
+
+  .cmd-tabs button[aria-pressed="true"] {
+    color: var(--cmd-accent);
+  }
+
+  .cmd-tabs button[aria-pressed="true"]::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -1px;
+    height: 3px;
+    border-radius: 3px 3px 0 0;
+    background: var(--cmd-accent);
   }
 
   /* Tables. */
@@ -558,25 +825,60 @@
   .cmd-table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 0.9rem;
+    font-size: 0.875rem;
   }
 
   .cmd-table th,
   .cmd-table td {
     text-align: left;
-    padding: 8px 10px 8px 0;
-    border-bottom: 1px solid var(--cmd-rule);
+    padding: 8px 12px 8px 0;
+    border-bottom: 1px solid var(--cmd-inner);
     vertical-align: middle;
   }
 
-  .cmd-table th {
+  .cmd-table thead th {
+    font-size: 0.75rem;
     font-weight: 600;
-    color: var(--cmd-ink-2);
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    color: var(--cmd-ink-3);
+    border-bottom-color: var(--cmd-rule);
+  }
+
+  .cmd-table .cmd-row-head {
+    font-weight: 500;
+    color: inherit;
   }
 
   .cmd-table td.cmd-num,
   .cmd-table th.cmd-num {
     text-align: right;
+  }
+
+  /* In a flush panel the table runs edge to edge, its header on the raised strip. */
+  .cmd-panel-flush .cmd-table th,
+  .cmd-panel-flush .cmd-table td {
+    padding: 10px 16px;
+  }
+
+  .cmd-panel-flush .cmd-table thead th {
+    background: var(--cmd-raised);
+  }
+
+  .cmd-panel-flush .cmd-table tbody tr:last-child > * {
+    border-bottom: 0;
+  }
+
+  .cmd-trend {
+    width: 132px;
+  }
+
+  .cmd-spark {
+    display: block;
+    width: 100%;
+    height: 28px;
+    fill: var(--cmd-accent);
+    opacity: 0.75;
   }
 
   .cmd-share {
@@ -594,11 +896,28 @@
     background: var(--cmd-fill);
   }
 
+  .cmd-share-cell {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .cmd-share-cell .cmd-share {
+    flex: 1;
+  }
+
+  .cmd-share-value {
+    min-width: 3.5em;
+    text-align: right;
+    color: var(--cmd-ink-3);
+  }
+
   .cmd-empty,
   .cmd-error {
-    color: var(--cmd-ink-2);
-    font-size: 0.9rem;
-    padding: 16px 0;
+    color: var(--cmd-ink-3);
+    font-size: 0.875rem;
+    padding-block: 16px;
+    margin: 0;
   }
 
   .cmd-error {
@@ -627,58 +946,56 @@
   }
 
   .cmd-end-label {
-    font-size: 12px;
+    font-size: 11px;
     fill: var(--cmd-ink-2);
   }
 
   .cmd-banner {
     margin: 0;
     padding: 10px 14px;
-    border: 1px solid var(--cmd-exhausted);
-    border-radius: 6px;
-    background: var(--cmd-surface);
+    border: 1px solid var(--cmd-exhausted-mark);
+    border-radius: var(--cmd-radius);
+    background: var(--cmd-exhausted-soft);
   }
 
   .cmd-banner a {
-    color: inherit;
+    color: var(--cmd-accent-strong);
     font-weight: 600;
-  }
-
-  .cmd-share-cell {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-
-  .cmd-share-cell .cmd-share {
-    flex: 1;
-  }
-
-  .cmd-share-value {
-    min-width: 3.5em;
-    text-align: right;
-    color: var(--cmd-ink-2);
   }
 
   @media (forced-colors: active) {
     .cmd-runway,
-    .cmd-share {
+    .cmd-share,
+    .cmd-status,
+    .cmd-alert {
       border: 1px solid CanvasText;
     }
 
     .cmd-runway-used,
     .cmd-runway-now,
-    .cmd-share span {
+    .cmd-share span,
+    .cmd-row::before {
       background: CanvasText;
     }
 
     .cmd-swatch,
-    .cmd-line,
-    .cmd-spark {
+    .cmd-line {
       forced-color-adjust: none;
     }
 
-    .cmd-segmented button[aria-pressed="true"] {
+    .cmd-spark {
+      fill: CanvasText;
+      opacity: 1;
+    }
+
+    .cmd-pulse {
+      background: CanvasText;
+    }
+
+    /* Without this the browser paints a Canvas backplate behind the label, hiding it. */
+    .cmd-segmented button[aria-pressed="true"],
+    .cmd-tabs button[aria-pressed="true"] {
+      forced-color-adjust: none;
       background: Highlight;
       color: HighlightText;
     }
