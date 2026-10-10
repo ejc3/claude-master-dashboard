@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import {
   type EpochMs,
   formatCount,
@@ -57,6 +57,35 @@ export function requestTable(series: Series[]): Array<Series & { total: number }
     .map((s) => ({ ...s, total: s.points.reduce((sum, [, v]) => sum + v, 0) }))
     .filter((s) => s.total > 0)
     .sort((a, b) => b.total - a.total)
+}
+
+/**
+ * The rows as stacked chart series: each on one grid of every row's times (a row with no point at
+ * a time is 0 there, so the bands add up to the total at every point), the smallest beyond eight
+ * folded into Other, named by `labels`. A key in `known` (the page's subscription colors) keeps its
+ * color; any other key takes a color from all the rows' keys, so a row folding into Other does not
+ * repaint the rest.
+ */
+export function stackedRows(
+  rows: ReadonlyArray<{ key: string; points: ReadonlyArray<[EpochMs, number]> }>,
+  labels: ReadonlyMap<string, string>,
+  known?: ReadonlyMap<string, string>,
+): ChartSeries[] {
+  const times = [...new Set(rows.flatMap((r) => r.points.map(([t]) => t)))].sort((a, b) => a - b)
+  const onGrid = rows.map((r) => {
+    const byTime = new Map<EpochMs, number>()
+    for (const [t, v] of r.points) byTime.set(t, (byTime.get(t) ?? 0) + v)
+    return { key: r.key, points: times.map((t): [EpochMs, number] => [t, byTime.get(t) ?? 0]) }
+  })
+  const folded = foldSeries(onGrid)
+  const shown = folded.map((r) => r.key)
+  const free = seriesColors(known === undefined ? rows.map((r) => r.key) : [...known.keys()], shown)
+  return folded.map((r) => ({
+    key: r.key,
+    label: labels.get(r.key) ?? r.key,
+    color: known?.get(r.key) ?? free.get(r.key) ?? 'var(--cmd-ink-3)',
+    points: r.points,
+  }))
 }
 
 /** A row's name: in full, and on a phone without the prefix every subscription shares. */
@@ -124,18 +153,28 @@ export function Breakdown(props: {
   const coverage = typesReady ? tokenCoverage(firstAt, props.range, props.stepSeconds) : null
   const showTokens = split.tokens && coverage !== null && coverage !== 'none'
 
-  const tokenTable = showTokens
-    ? tokenRows(
-        Object.fromEntries(
-          TOKEN_TYPES.map((t) => {
-            const series: Series[] = byType?.data[t] ?? []
-            return [t, fromFirstBucket(series, firstAt, props.stepSeconds)]
-          }),
-        ) as Record<TokenType, Series[]>,
-        props.tokenChoice,
-      )
-    : []
-  const requestRows = requests.state === 'ready' ? requestTable(requests.data) : []
+  // Worked out again only when an answer or a choice changes, not on every tick of the clock.
+  const typeData = byType?.data
+  const tokenTable = useMemo(
+    () =>
+      showTokens
+        ? tokenRows(
+            Object.fromEntries(
+              TOKEN_TYPES.map((t) => {
+                const series: Series[] = typeData?.[t] ?? []
+                return [t, fromFirstBucket(series, firstAt, props.stepSeconds)]
+              }),
+            ) as Record<TokenType, Series[]>,
+            props.tokenChoice,
+          )
+        : [],
+    [showTokens, typeData, firstAt, props.stepSeconds, props.tokenChoice],
+  )
+  const requestData = requests.state === 'ready' ? requests.data : null
+  const requestRows = useMemo(
+    () => (requestData === null ? [] : requestTable(requestData)),
+    [requestData],
+  )
   // A token query that failed shows its error, never a quiet switch to requests.
   const tokenError =
     split.tokens && typeFailure !== undefined && typeFailure.state === 'error'
@@ -147,25 +186,19 @@ export function Breakdown(props: {
   // One scale for every row's trend (the tallest bar of any row), so a small series does not
   // look as busy as a large one and the busiest row's peak fills its height.
   const peak = sharedPeak(rows)
-  const short =
-    split.dimension === 'profile' ? shortNames(rows.map((r) => r.key)) : new Map<string, string>()
+  const short = useMemo(
+    () =>
+      split.dimension === 'profile'
+        ? shortNames(rows.map((r) => r.key))
+        : new Map<string, string>(),
+    [rows, split.dimension],
+  )
   const color = (key: string) =>
     split.dimension === 'profile' ? props.colors?.get(key) : undefined
-  // Each row's share over time, stacked, so the top is the total and each band one row; the
-  // smallest beyond eight fold into Other. Subscriptions keep their colors from the rest of the
-  // page (seriesColors over the known ones, as the subscription chart does), and a key that is not
-  // one (the paid API) takes a free color.
-  const folded = foldSeries(rows)
-  const chartColors = seriesColors(
-    split.dimension === 'profile' ? [...(props.colors?.keys() ?? [])] : folded.map((r) => r.key),
-    folded.map((r) => r.key),
+  const stacked = useMemo(
+    () => stackedRows(rows, short, split.dimension === 'profile' ? props.colors : undefined),
+    [rows, short, split.dimension, props.colors],
   )
-  const stacked: ChartSeries[] = folded.map((r) => ({
-    key: r.key,
-    label: short.get(r.key) ?? r.key,
-    color: chartColors.get(r.key) ?? 'var(--cmd-ink-3)',
-    points: r.points,
-  }))
 
   const what = showTokens
     ? props.tokenChoice === 'all'
