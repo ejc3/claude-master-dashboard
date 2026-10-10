@@ -314,16 +314,23 @@ export interface PoolGaps {
 
 /** How far ahead the gaps are looked for, and how finely. */
 export const GAPS_HORIZON_MS = 7 * 24 * HOUR_MS
-const GAPS_STEP_MS = 5 * 60_000
-/** A bound on the list; more gaps than this within a week say nothing new. */
-const MAX_GAPS = 50
+// As fine as the 5-hour card's, so a gap it shows is not stepped over here.
+const GAPS_STEP_MS = STEP_MS.fiveHour
 
 interface JointSlot extends Slot {
   /**
-   * The 5-hour window. One that was not read is taken as unused, and starts when the
-   * subscription next takes work (as a 5-hour window does on its first request).
+   * The 5-hour window. A 5-hour window opens with the first request after the last one closed:
+   * here one with no reset time and nothing used (not read, or no window open) is closed, opens
+   * when the subscription next takes work, and closes again at its reset.
    */
   five: SimWindow
+}
+
+/** Closes a 5-hour window whose reset has passed: the next work opens a new one. */
+function closeIfOver(w: SimWindow, t: EpochMs): void {
+  if (w.resetsAt === null || w.resetsAt > t) return
+  w.used = 0
+  w.resetsAt = null
 }
 
 // A share that floating-point sums leave a hair under full is full.
@@ -362,9 +369,10 @@ function availableAfter(s: JointSlot, t: EpochMs): { at: EpochMs; window: Window
  * each week's average), the 5-hour one from each window's average so far. Work goes only to a
  * subscription with room in both windows, and each step's work uses up both at those rates, so
  * during a gap neither is used. Each window resets on its own clock. A subscription without a
- * weekly reading is left out (`unreported`); one without a 5-hour reading starts an empty 5-hour
- * window when it first takes work. Gaps that have ended by `now` are skipped; after a gap the
- * simulation goes on from its end.
+ * weekly reading is left out (`unreported`). A 5-hour window opens with a subscription's first
+ * work after the last one closed (one not read, or with no window open, is closed), unlike
+ * poolForecast's, which restart at once. Gaps that have ended by `now` are skipped; after a gap
+ * the simulation goes on from its end. Every gap in the horizon is listed.
  */
 export function poolGaps(
   profiles: ProfileStatus[],
@@ -387,7 +395,7 @@ export function poolGaps(
     const f = reading(p, 'fiveHour')
     const five: SimWindow =
       f === null ? { used: 0, resetsAt: null, lengthMs: FIVE_HOURS_MS, known: false } : simWindow(f)
-    catchUp(five, from)
+    closeIfOver(five, from)
     const smooth = smoothed.get(p.profile)
     weeklyDemand += rate(
       smooth !== null && smooth !== undefined && Number.isFinite(smooth)
@@ -414,10 +422,10 @@ export function poolGaps(
   const open = (s: JointSlot) => !isFull(s.weekly) && !isFull(s.five)
   const gaps: PoolGap[] = []
   const end = from + GAPS_HORIZON_MS
-  for (let t = from; t <= end && gaps.length < MAX_GAPS; t += step) {
+  for (let t = from; t <= end; t += step) {
     for (const s of slots) {
       catchUp(s.weekly, t)
-      catchUp(s.five, t)
+      closeIfOver(s.five, t)
     }
     const ready = slots.filter(open)
     if (ready.length === 0) {
@@ -455,8 +463,8 @@ export function poolGaps(
       const byFive = perFive > 0 ? (1 - s.five.used) / perFive : Number.POSITIVE_INFINITY
       const take = Math.min(left, byWeek, byFive)
       if (take <= 0) continue
-      // An unread 5-hour window starts with the subscription's first work.
-      if (s.five.resetsAt === null && !s.five.known) s.five.resetsAt = t + s.five.lengthMs
+      // A closed 5-hour window opens with the subscription's work.
+      if (s.five.resetsAt === null && s.five.used === 0) s.five.resetsAt = t + s.five.lengthMs
       s.weekly.used = Math.min(1, s.weekly.used + take * perWeek)
       s.five.used = Math.min(1, s.five.used + take * perFive)
       left -= take
@@ -607,10 +615,10 @@ function gapLength(gap: PoolGap, from: EpochMs): string {
 
 /**
  * The answer to "will we run out?" from the pool's gaps: when no subscription can take work, for
- * how long, and which reset ends it. The first gap, and then: after a 5-hour gap, the first
- * one a week ends (so a weekly gap of days is not lost behind 5-hour ones, which recur every few
- * hours); after a weekly gap, the first one that lasts longer. Partial when some
- * subscriptions have no weekly reading, so they may still have room.
+ * how long, and which reset ends it. The first gap, and then the first later one that a week
+ * ends and that lasts longer (so a weekly gap of days is not lost behind 5-hour ones, which
+ * recur every few hours). Partial when some subscriptions have no weekly reading, so they may
+ * still have room.
  */
 export function gapsHeadline(
   g: PoolGaps | null,
@@ -618,29 +626,30 @@ export function gapsHeadline(
 ): { tone: PoolTone; headline: string } {
   if (g === null) return { tone: 'info', headline: 'Waiting for the first reading.' }
   const partial = g.unreported > 0
-  const among = partial ? ` (the ${g.counted} reporting their usage)` : ''
+  const among = partial ? ` (the ${g.counted} reporting their weekly usage)` : ''
   if (g.lasts === 'unknown') {
-    return { tone: 'info', headline: 'No subscription has reported its usage yet.' }
+    return { tone: 'info', headline: 'No subscription has reported its weekly usage yet.' }
   }
   if (g.lasts === 'logins') {
     return partial
       ? {
           tone: 'warning',
-          headline: `Every subscription reporting its usage has an expired login${among}.`,
+          headline: `Every subscription reporting its weekly usage has an expired login${among}.`,
         }
       : { tone: 'error', headline: 'No subscription can take work: every login has expired.' }
   }
   const [first, ...rest] = g.gaps
   if (first === undefined) {
-    return { tone: 'success', headline: 'At this pace the pool does not run out.' }
+    return {
+      tone: 'success',
+      headline: `At this pace the pool does not run out in the next ${GAPS_HORIZON_MS / (24 * HOUR_MS)} days.`,
+    }
   }
   const length = (gap: PoolGap) =>
     gap.end === null ? Number.POSITIVE_INFINITY : gap.end - Math.max(gap.start, now)
-  // 5-hour gaps come back every few hours; after one, what matters is the first week to run out.
-  const later =
-    first.endsWith === 'fiveHour'
-      ? rest.find((gap) => gap.endsWith !== 'fiveHour')
-      : rest.find((gap) => length(gap) > length(first))
+  // 5-hour gaps come back every few hours; what matters after the first gap is the first one a
+  // week ends that lasts longer.
+  const later = rest.find((gap) => gap.endsWith !== 'fiveHour' && length(gap) > length(first))
   const out = first.start <= now
   const lead = out
     ? `The pool is out now${gapLength(first, now)}`
