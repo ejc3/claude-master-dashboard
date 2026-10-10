@@ -250,10 +250,10 @@ describe('the first paint', () => {
 
   it('without a reported time zone, renders countdowns only and adds clock times in the browser', async () => {
     const { container, serverText, recoverable } = await hydrated(undefined)
-    // The run-out's clock times ("9:57 PM until 10:09 PM") need the viewer's zone.
-    expect(serverText).not.toMatch(/\d:\d{2} [AP]M until /)
+    // A reset's clock time ("Resets in 2h 12m, 8:14 PM") needs the viewer's zone.
+    expect(serverText).not.toMatch(/Resets in [^,]+, [^R]*\d:\d{2} [AP]M/)
     expect(recoverable).toEqual([])
-    expect(container.textContent).toMatch(/\d:\d{2} [AP]M until /)
+    expect(container.textContent).toMatch(/Resets in [^,]+, [^R]*\d:\d{2} [AP]M/)
     // The browser reports its zone for the next visit.
     expect(document.cookie).toContain(`cmd-tz=${encodeURIComponent(ZONE)}`)
   })
@@ -931,8 +931,8 @@ describe('the banner', () => {
       ) as HTMLButtonElement
     expect(tab('Projected').getAttribute('aria-pressed')).toBe('true')
     const projected = weeklyTitle()
-    act(() => tab('If use stops').click())
-    expect(tab('If use stops').getAttribute('aria-pressed')).toBe('true')
+    act(() => tab('Subscription resets').click())
+    expect(tab('Subscription resets').getAttribute('aria-pressed')).toBe('true')
     // Now the same (90% left now): the title is what is left now either way.
     expect(weeklyTitle()).toBe(projected)
     const slider = container.querySelector('.cmd-capacity-weekly [role="slider"]') as HTMLElement
@@ -950,5 +950,36 @@ describe('the banner', () => {
     expect(container.querySelector('.cmd-account-detail')?.textContent).toMatch(
       /At this pace \d+% of the week goes unused at its reset/,
     )
+  })
+})
+
+describe("the banner's run-out line", () => {
+  it('is countdowns only, with no clock times', () => {
+    const container = document.createElement('div')
+    container.innerHTML = renderToString(
+      <PoolOutlook
+        gaps={poolGaps(
+          [
+            {
+              profile: 'a',
+              band: 'ok',
+              weekly: { usedFraction: 0.9, resetsAt: NOW + 50 * HOUR_MS, lengthMs: 168 * HOUR_MS },
+              fiveHour: null,
+              rateLimitedUntil: null,
+              tokenExpiresAt: null,
+              latencyMs: { p50: null, p95: null, p99: null },
+            },
+          ],
+          NOW,
+          new Map([['a', 0.1]]),
+          NOW,
+        )}
+        profiles={null}
+        now={NOW}
+      />,
+    )
+    const facts = [...container.querySelectorAll('.cmd-facts li')].map((e) => e.textContent)
+    expect(container.querySelector('.cmd-headline')?.textContent).toBe('Runs out in 1h for 2d')
+    expect(facts.some((f) => / until /.test(f ?? ''))).toBe(false)
   })
 })

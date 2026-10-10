@@ -337,7 +337,7 @@ export function CapacityOutlook(props: {
               aria-pressed={weeklyView === 'stopped'}
               onClick={() => setWeeklyView('stopped')}
             >
-              If use stops
+              Subscription resets
             </button>
           </fieldset>
         )}
@@ -366,11 +366,8 @@ export function PoolOutlook(props: {
 }) {
   const { now } = props
   const when = useWhen()
-  const { tone, headline, facts } = gapsHeadline(
-    props.gaps,
-    now,
-    when === null ? null : (at) => when(at, now),
-  )
+  // No clock times in the banner: the countdowns say it.
+  const { tone, headline, facts } = gapsHeadline(props.gaps, now)
   const forecasting =
     props.gaps !== null && props.gaps.lasts !== 'unknown' && props.gaps.lasts !== 'logins'
   // The formula, briefly: the pace carried forward.
