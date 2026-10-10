@@ -36,7 +36,7 @@ from the proxy's own `duration_quantile` gauges.
 | `./react` | The dashboard components | browser | 2 |
 | `./next` | `DashboardPage` and `createDashboardHandler(config)` | server | 2 |
 | `./access` | `cloudflareAccess()`: verifies the Cloudflare Access assertion | server | 3 |
-| `./cloudwatch` | The CloudWatch source; `@aws-sdk/client-cloudwatch` is a peer dependency | Node | 3 |
+| `./cloudwatch` | The CloudWatch source (GetMetricData over the JSON protocol, signed by `aws4fetch`) and `selectSource` | server, Workers included | 4 |
 
 From step 2, a host app mounts it with two files:
 
@@ -101,8 +101,11 @@ Each step is its own pull request, stacked on the previous one:
 1. Workspace, core types, catalog, pacing, demo source, CI.
 2. The components and the reference app on demo data.
 3. Cloudflare Access sign-in and the Worker build and deploy.
-4. The CloudWatch source, cache and coalescing, and the catalog's snapshot metrics (quota band,
-   cooldown, latency quantiles, sessions, connections, Anthropic's per-window utilization).
+4. The CloudWatch source, cache and coalescing, and the snapshot's gauges (quota band, cooldown,
+   latency quantiles, sessions, connections, Anthropic's 5-hour utilization and reset). Done: one
+   Metrics Insights query per GetMetricData call (the API's limit), each answered once a minute
+   however many viewers ask; the app picks CloudWatch when the read-only key is set and labels
+   the page "Demo data" otherwise; a CloudWatch failure is an error, never demo data.
 5. Production on CloudWatch.
 
 Configuration that names a real account, key, team, person or host lives in the Worker's secrets,

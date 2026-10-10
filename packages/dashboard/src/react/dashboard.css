@@ -182,6 +182,21 @@
     margin: 0;
   }
 
+  /* Made-up numbers are labelled, in the heading, in the warning color. */
+  .cmd-demo {
+    display: inline-block;
+    margin-left: 10px;
+    padding: 1px 8px;
+    border: 1px solid var(--cmd-reserve-mark);
+    border-radius: 999px;
+    color: var(--cmd-reserve);
+    font-size: 0.75rem;
+    font-weight: 600;
+    vertical-align: middle;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
   .cmd-freshness {
     display: inline-flex;
     align-items: center;

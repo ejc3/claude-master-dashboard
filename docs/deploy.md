@@ -36,7 +36,7 @@ Set from `apps/web` with `wrangler secret put <NAME>`, reading the value from st
 |---|---|
 | `CF_ACCESS_TEAM_DOMAIN` | The Access team domain, `https://<team>.cloudflareaccess.com` (Terraform output) |
 | `CF_ACCESS_AUD` | The Access application's audience tag (Terraform output) |
-| `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION` | The read-only key, from its Secrets Manager secret (read by the CloudWatch source) |
+| `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION` | The read-only key, from its Secrets Manager secret. With all three set the page reads CloudWatch; otherwise it shows the demo fixture and says "Demo data" in its heading |
 | `DASHBOARD_ALLOWED_EMAILS` | Required. The addresses admitted, separated by commas or spaces. The app checks the address in the Access assertion against it, so a policy widened by mistake in Access admits no one new |
 | `DASHBOARD_SERVICE_TOKEN_CLIENT_ID` | Optional. Admits that service token. Access issues one only if the application has a service-auth policy for it, and none is configured |
 

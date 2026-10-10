@@ -28,8 +28,10 @@ export default function Page() {
 }
 ```
 
-`source` returns a `MetricsSource` (`createDemoSource()` from `@ejc3/claude-master-dashboard/demo`
-until a CloudWatch source is configured). `authorize` is required; nothing is served without it.
+`source` returns a `MetricsSource`: `selectSource(process.env, createDemoSource())` from
+`@ejc3/claude-master-dashboard/cloudwatch` picks the CloudWatch source when `AWS_ACCESS_KEY_ID`,
+`AWS_SECRET_ACCESS_KEY` and `AWS_REGION` are set and the demo fixture otherwise (pass its `kind`
+to `DashboardPage` as `demoData` so the page labels made-up numbers). `authorize` is required; nothing is served without it.
 
 Behind Cloudflare Access, create one checker per process (it caches the team's keys) and use it in
 both places:

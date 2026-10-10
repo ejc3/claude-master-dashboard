@@ -6,16 +6,30 @@ import {
   accessOptionsFromEnv,
   cloudflareAccess,
 } from '@ejc3/claude-master-dashboard/access'
+import { type SourceSelection, selectSource } from '@ejc3/claude-master-dashboard/cloudwatch'
 import { createDemoSource } from '@ejc3/claude-master-dashboard/demo'
 import { headers } from 'next/headers'
 
 export const API_BASE = '/api/claude-master'
 
-const demo = createDemoSource()
+let selection: SourceSelection | undefined
 
-/** The demo source until a CloudWatch source is configured for this deployment. */
+// Chosen on first use: on Workers the environment is filled in per request, after module load.
+// CloudWatch when the read-only key is set (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION),
+// the demo fixture otherwise, and the page says which. A CloudWatch failure is an error on the
+// page, never a quiet switch to demo data.
+function selected(): SourceSelection {
+  if (selection === undefined) selection = selectSource(process.env, createDemoSource())
+  return selection
+}
+
 export function source(): MetricsSource {
-  return demo
+  return selected().source
+}
+
+/** True when the page shows the demo fixture, so it can say so. */
+export function demoData(): boolean {
+  return selected().kind === 'demo'
 }
 
 /**

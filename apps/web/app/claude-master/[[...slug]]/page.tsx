@@ -1,5 +1,5 @@
 import { DashboardPage } from '@ejc3/claude-master-dashboard/next'
-import { API_BASE, authorizePage, source } from '@/lib/dashboard'
+import { API_BASE, authorizePage, demoData, source } from '@/lib/dashboard'
 
 export const dynamic = 'force-dynamic'
 
@@ -9,6 +9,7 @@ export default function Page() {
       source={source}
       authorize={authorizePage}
       apiBase={API_BASE}
+      demoData={demoData()}
       // Cloudflare Access signs the viewer in again when the page reloads.
       signInHref="/claude-master"
       unauthorized={
