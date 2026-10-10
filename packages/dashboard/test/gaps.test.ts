@@ -77,9 +77,7 @@ describe('poolGaps: both windows in one simulation', () => {
       { start: 7 + 2 / 60, end: 8 + 46 / 60, endsWith: 'fiveHour' },
       { start: 11 + 56 / 60, end: 58, endsWith: 'weekly' },
     ])
-    expect(headline(g)).toBe(
-      'On pace to run out in 2h | Out for 1h 45m, until a 5-hour window resets | Then again in 11h 56m, for 1d 22h, until a week resets',
-    )
+    expect(headline(g)).toBe('Runs out in 2h for 1h 45m')
     expect(gapsHeadline(g, NOW).tone).toBe('warning')
   })
 
@@ -89,7 +87,7 @@ describe('poolGaps: both windows in one simulation', () => {
       NOW,
     )
     expect(hours(g)[0]).toEqual({ start: 0, end: 50, endsWith: 'weekly' })
-    expect(headline(g)).toMatch(/^Out of capacity now \| Work resumes in 2d 2h, when a week resets/)
+    expect(headline(g)).toMatch(/^Out now · back in 2d$/)
     expect(gapsHeadline(g, NOW).tone).toBe('error')
   })
 
@@ -111,9 +109,7 @@ describe('poolGaps: both windows in one simulation', () => {
       end: 50,
       endsWith: 'weekly',
     })
-    expect(headline(g)).toBe(
-      'On pace to run out in 30m | Out for 4h, until a 5-hour window resets | Then again in 15h 16m, for 1d 10h, until a week resets',
-    )
+    expect(headline(g)).toBe('Runs out in 30m for 4h')
   })
 
   it('has no 5-hour gap inside a weekly one', () => {
@@ -124,7 +120,7 @@ describe('poolGaps: both windows in one simulation', () => {
     )
     expect(hours(g)[0]).toEqual({ start: 1, end: 50, endsWith: 'weekly' })
     expect((hours(g)[1]?.start ?? Infinity) >= 50).toBe(true)
-    expect(headline(g)).toBe('On pace to run out in 1h | Out for 2d 1h, until a week resets')
+    expect(headline(g)).toBe('Runs out in 1h for 2d')
   })
 
   it('keeps the others working through one subscription’s gap', () => {
@@ -141,9 +137,7 @@ describe('poolGaps: both windows in one simulation', () => {
     // The week resets in an hour, but the 5-hour window is full for four.
     const one = poolGaps([sub('a', [1, H], [1, 4 * H])], NOW)
     expect(hours(one)[0]).toEqual({ start: 0, end: 4, endsWith: 'fiveHour' })
-    expect(headline(one)).toBe(
-      'Out of capacity now | Work resumes in 4h, when a 5-hour window resets',
-    )
+    expect(headline(one)).toBe('Out now · back in 4h')
     // With a second subscription whose week resets in two hours, that ends it.
     const two = poolGaps([sub('a', [1, H], [1, 4 * H]), sub('b', [1, 2 * H], [0.1, 3 * H])], NOW)
     expect(hours(two)[0]).toEqual({ start: 0, end: 2, endsWith: 'weekly' })
@@ -158,7 +152,7 @@ describe('poolGaps: both windows in one simulation', () => {
       rates({ a: 0.001, b: 0.001 }),
     )
     expect(hours(g)[0]).toEqual({ start: 2, end: 5, endsWith: 'fiveHour' })
-    expect(headline(g)).toBe('On pace to run out in 2h | Out for 3h, until a 5-hour window resets')
+    expect(headline(g)).toBe('Runs out in 2h for 3h')
     // a's window resets five minutes in, while its week is full: the next opens when work
     // resumes at 4h, not on the old window's five-hour clock.
     const c = sub('c', [0.3, 100 * H], [0.5, H], { tokenExpiresAt: NOW - H })
@@ -177,12 +171,13 @@ describe('poolGaps: both windows in one simulation', () => {
     )
     const g = poolGaps(subs, NOW, new Map(subs.map((s) => [s.profile, 0.012])))
     expect(g.gaps.length).toBeGreaterThan(50)
-    expect(headline(g)).toMatch(/ \| Then again in 4d 19h, for 1d 10h, until a week resets$/)
+    // The weekly gap of days after them is in the list (and on the charts).
+    expect(hours(g).some((gap) => gap.endsWith === 'weekly' && gap.start > 4 * 24)).toBe(true)
   })
 
   it('finds a run-out of a few minutes, as the 5-hour card does', () => {
     const g = poolGaps([sub('a', [0.1, 100 * H], [0.99, 4.5 * M])], NOW)
-    expect(headline(g)).toBe('On pace to run out in 4m | Out for 30s, until a 5-hour window resets')
+    expect(headline(g)).toBe('Runs out in 4m for 30s')
   })
 
   it('after a short weekly gap, names the next weekly one that lasts longer, past 5-hour ones', () => {
@@ -191,9 +186,7 @@ describe('poolGaps: both windows in one simulation', () => {
       NOW,
       rates({ a: 0.02, b: 0.02 }),
     )
-    expect(headline(g)).toBe(
-      'Out of capacity now | Work resumes in 10m, when a week resets | Then again in 2d 13h, for 10h 50m, until a week resets',
-    )
+    expect(headline(g)).toBe('Out now · back in 10m')
   })
 
   it('keeps a full 5-hour window closed until its reset, from the readings time', () => {
@@ -213,7 +206,7 @@ describe('poolGaps: both windows in one simulation', () => {
   it('keeps a rate-limited subscription out of work until the limit ends', () => {
     const g = poolGaps([sub('a', [0.3, 100 * H], null, { rateLimitedUntil: NOW + 2 * H })], NOW)
     expect(hours(g)[0]).toEqual({ start: 0, end: 2, endsWith: 'rateLimit' })
-    expect(headline(g)).toBe('Out of capacity now | Work resumes in 2h, when a rate limit ends')
+    expect(headline(g)).toBe('Out now · back in 2h')
   })
 
   it('a pool hit by its 5-hour limits: out within minutes, not "two can take work"', () => {
@@ -231,9 +224,7 @@ describe('poolGaps: both windows in one simulation', () => {
       rates({ a: 0.05, b: 0.05, c: 0.05, d: 0.05, e: 0.05 }),
     )
     expect(hours(g)[0]).toEqual({ start: 4 / 60, end: 1, endsWith: 'fiveHour' })
-    expect(headline(g)).toMatch(
-      /^On pace to run out in 4m \| Out for 56m, until a 5-hour window resets/,
-    )
+    expect(headline(g)).toMatch(/^Runs out in 4m for 56m$/)
   })
 
   it('skips a gap that has ended by now, and starts from the readings', () => {
@@ -264,6 +255,144 @@ describe('poolGaps: both windows in one simulation', () => {
       'logins',
     )
   })
+})
+
+describe('when the pool runs out and for how long: the matrix', () => {
+  // Each row: a pool, then the first gap worked out by hand (hours from now): when no
+  // subscription can take work, and when the first one can again, which needs room in its week
+  // and its 5-hour window and no rate limit. Then the headline that says it.
+  type Row = {
+    name: string
+    profiles: ProfileStatus[]
+    rates?: Record<string, number>
+    from?: number
+    gap: { start: number; end: number | null; endsWith: string | null } | null
+    headline: string
+  }
+  const rows: Row[] = [
+    {
+      name: 'week used up, 5-hour room: out until the week resets',
+      profiles: [sub('a', [1, 10 * H], [0.2, 3 * H])],
+      gap: { start: 0, end: 10, endsWith: 'weekly' },
+      headline: 'Out now · back in 10h',
+    },
+    {
+      name: '5-hour used up, week room: out until the 5-hour window resets',
+      profiles: [sub('a', [0.3, 100 * H], [1, 2 * H])],
+      gap: { start: 0, end: 2, endsWith: 'fiveHour' },
+      headline: 'Out now · back in 2h',
+    },
+    {
+      name: 'both used up, the week resets first: back when the 5-hour window does',
+      profiles: [sub('a', [1, H], [1, 4 * H])],
+      gap: { start: 0, end: 4, endsWith: 'fiveHour' },
+      headline: 'Out now · back in 4h',
+    },
+    {
+      name: 'both used up, the 5-hour window resets first: back when the week does',
+      profiles: [sub('a', [1, 4 * H], [1, H])],
+      gap: { start: 0, end: 4, endsWith: 'weekly' },
+      headline: 'Out now · back in 4h',
+    },
+    {
+      name: 'rate limited with room in both: back when the rate limit ends',
+      profiles: [sub('a', [0.3, 100 * H], [0.2, 3 * H], { rateLimitedUntil: NOW + 2 * H })],
+      gap: { start: 0, end: 2, endsWith: 'rateLimit' },
+      headline: 'Out now · back in 2h',
+    },
+    {
+      name: 'rate limited, and the week used up for longer: back when the week resets',
+      profiles: [sub('a', [1, 5 * H], [0.2, 3 * H], { rateLimitedUntil: NOW + 2 * H })],
+      gap: { start: 0, end: 5, endsWith: 'weekly' },
+      headline: 'Out now · back in 5h',
+    },
+    {
+      name: 'week used up with no reset time read: out with no end known',
+      profiles: [
+        {
+          ...sub('a', [1, H], [0.2, 3 * H]),
+          weekly: { usedFraction: 1, resetsAt: null, lengthMs: WEEK_MS },
+        },
+      ],
+      gap: { start: 0, end: null, endsWith: null },
+      headline: 'Out now · no reset time known',
+    },
+    {
+      name: 'two out for different reasons: back when the first of them can work',
+      profiles: [sub('a', [1, 10 * H], [0.2, 3 * H]), sub('b', [0.3, 100 * H], [1, 3 * H])],
+      gap: { start: 0, end: 3, endsWith: 'fiveHour' },
+      headline: 'Out now · back in 3h',
+    },
+    {
+      name: 'one out, one with room and nothing used: never runs out',
+      profiles: [sub('a', [1, 10 * H], [0.2, 3 * H]), sub('b', [0.3, 100 * H], [0, null])],
+      rates: { a: 0, b: 0 },
+      gap: null,
+      headline: "Won't run out in the next 7 days",
+    },
+    {
+      name: 'a subscription with an expired login does not count as room',
+      profiles: [
+        sub('a', [0.1, 100 * H], [0, null], { tokenExpiresAt: NOW - 1 }),
+        sub('b', [1, 6 * H], [0.2, 3 * H]),
+      ],
+      gap: { start: 0, end: 6, endsWith: 'weekly' },
+      headline: 'Out now · back in 6h',
+    },
+    {
+      name: 'the week runs out at its pace: from an hour on, until the week resets',
+      // 10% left at 10% of a week an hour; no 5-hour reading, so no 5-hour use measured.
+      profiles: [sub('a', [0.9, 50 * H], null)],
+      rates: { a: 0.1 },
+      gap: { start: 1, end: 50, endsWith: 'weekly' },
+      headline: 'Runs out in 1h for 2d',
+    },
+    {
+      name: 'the 5-hour window runs out at its pace: from an hour on, until it resets',
+      // Half used an hour into the window: half an hour's worth an hour, half left.
+      profiles: [sub('a', [0.1, 100 * H], [0.5, 4 * H])],
+      rates: { a: 0 },
+      gap: { start: 1, end: 4, endsWith: 'fiveHour' },
+      headline: 'Runs out in 1h for 3h',
+    },
+    {
+      name: 'the week resets while the 5-hour window is still full: back at the 5-hour reset',
+      profiles: [sub('a', [1, 2 * H], [1, 3 * H]), sub('b', [1, 5 * H], [0, null])],
+      gap: { start: 0, end: 3, endsWith: 'fiveHour' },
+      headline: 'Out now · back in 3h',
+    },
+    {
+      name: 'a gap over before now (readings from earlier) is not reported',
+      // Read three hours ago: the week was full until an hour ago; nothing used since.
+      from: NOW - 3 * H,
+      profiles: [
+        {
+          ...sub('a', [1, 0], [0, null]),
+          weekly: { usedFraction: 1, resetsAt: NOW - H, lengthMs: WEEK_MS },
+        },
+      ],
+      rates: { a: 0 },
+      gap: null,
+      headline: "Won't run out in the next 7 days",
+    },
+  ]
+  for (const row of rows) {
+    it(row.name, () => {
+      const g = poolGaps(row.profiles, row.from ?? NOW, rates(row.rates ?? {}), NOW)
+      const [first] = g.gaps
+      if (row.gap === null) {
+        expect(first).toBeUndefined()
+      } else {
+        if (first === undefined) throw new Error('no gap')
+        // Within a step of the hand-worked times: the simulation moves two minutes at a time.
+        expect(Math.abs(first.start - (NOW + row.gap.start * H))).toBeLessThanOrEqual(2 * M)
+        if (row.gap.end === null) expect(first.end).toBeNull()
+        else expect(first.end).toBe(NOW + row.gap.end * H)
+        expect(first.endsWith).toBe(row.gap.endsWith)
+      }
+      expect(gapsHeadline(g, NOW).headline).toBe(row.headline)
+    })
+  }
 })
 
 describe('poolGaps capacity trace', () => {
@@ -339,6 +468,7 @@ describe('gapsHeadline', () => {
     capacity: 2,
     ...over,
   })
+  const clock = (at: number) => `T+${(at - NOW) / H}h`
 
   it('says when nothing runs out, or nothing is known', () => {
     expect(gapsHeadline(null, NOW)).toEqual({
@@ -353,7 +483,7 @@ describe('gapsHeadline', () => {
     })
     expect(gapsHeadline(g({ lasts: 'horizon' }), NOW)).toEqual({
       tone: 'success',
-      headline: 'Not on pace to run out in the next 7 days',
+      headline: "Won't run out in the next 7 days",
       facts: [],
     })
   })
@@ -362,12 +492,12 @@ describe('gapsHeadline', () => {
     expect(gapsHeadline(g({ lasts: 'logins' }), NOW)).toEqual({
       tone: 'error',
       headline: 'Every login has expired',
-      facts: ['Log the subscriptions in again'],
+      facts: ['Log in again on the server'],
     })
     expect(gapsHeadline(g({ lasts: 'logins', counted: 1, unreported: 1 }), NOW)).toEqual({
       tone: 'warning',
       headline: 'Every login has expired',
-      facts: ['Counting the 1 that report their weekly usage'],
+      facts: ['Based on 1 of 2 subscriptions'],
     })
   })
 
@@ -379,11 +509,8 @@ describe('gapsHeadline', () => {
     })
     expect(gapsHeadline(out, NOW)).toEqual({
       tone: 'warning',
-      headline: 'Out of capacity now',
-      facts: [
-        'Work resumes in 2h, when a week resets',
-        'Counting the 3 that report their weekly usage',
-      ],
+      headline: 'Out now · back in 2h',
+      facts: ['Based on 3 of 4 subscriptions'],
     })
   })
 
@@ -391,23 +518,25 @@ describe('gapsHeadline', () => {
     expect(gapsHeadline(g({ gaps: [{ start: NOW + H, end: null, endsWith: null }] }), NOW)).toEqual(
       {
         tone: 'warning',
-        headline: 'On pace to run out in 1h',
-        facts: ['No reset time is known'],
+        headline: 'Runs out in 1h · no reset time known',
+        facts: [],
       },
     )
   })
 
-  it('names a later gap only when a week ends it and it lasts longer', () => {
-    const week = { start: NOW + H, end: NOW + 30 * H, endsWith: 'weekly' as const }
-    const shorter = { start: NOW + 40 * H, end: NOW + 44 * H, endsWith: 'fiveHour' as const }
-    const longer = { start: NOW + 50 * H, end: NOW + 100 * H, endsWith: 'weekly' as const }
-    expect(gapsHeadline(g({ gaps: [week, shorter] }), NOW).facts).toEqual([
-      'Out for 1d 5h, until a week resets',
-    ])
-    expect(gapsHeadline(g({ gaps: [week, shorter, longer] }), NOW).facts).toEqual([
-      'Out for 1d 5h, until a week resets',
-      'Then again in 2d 2h, for 2d 2h, until a week resets',
-    ])
+  it("gives the clock times when it has the viewer's zone", () => {
+    const first = { start: NOW + H, end: NOW + 30 * H, endsWith: 'weekly' as const }
+    const later = { start: NOW + 50 * H, end: NOW + 100 * H, endsWith: 'weekly' as const }
+    expect(gapsHeadline(g({ gaps: [first, later] }), NOW, clock)).toEqual({
+      tone: 'warning',
+      headline: 'Runs out in 1h for 1d 5h',
+      facts: ['T+1h until T+30h'],
+    })
+    expect(gapsHeadline(g({ gaps: [{ ...first, start: NOW }] }), NOW, clock)).toEqual({
+      tone: 'error',
+      headline: 'Out now · back in 1d 6h',
+      facts: ['Back T+30h'],
+    })
   })
 })
 
@@ -450,6 +579,16 @@ describe('poolGaps invariants (seeded)', () => {
         previousEnd = gap.end ?? Number.POSITIVE_INFINITY
       }
       expect(g.lasts === null, `seed ${seed}`).toBe(g.gaps.length > 0)
+      // The charts agree with the headline: the 5-hour capacity that can be used (windows whose
+      // week has room) is nil in a gap and only there, since a subscription that can take work
+      // has room in both. (No rate limits here, which stop work without using capacity.)
+      const inGap = (t: number) =>
+        g.gaps.some((gap) => t >= gap.start && (gap.end === null || t < gap.end))
+      for (const point of g.trace) {
+        if (point.at < NOW) continue
+        const where = `seed ${seed} at ${(point.at - NOW) / H}h: ${JSON.stringify(hours(g))}`
+        expect(point.fiveHour <= 1e-9, where).toBe(inGap(point.at))
+      }
       // The status line and each fact start with a capital and are not sentences.
       const h = gapsHeadline(g, NOW)
       for (const line of [h.headline, ...h.facts]) {

@@ -664,26 +664,24 @@ export function forecastHeadline(
   }
 }
 
-const RESET_WORDS: Record<WindowKind | 'rateLimit', string> = {
-  weekly: 'a week resets',
-  fiveHour: 'a 5-hour window resets',
-  rateLimit: 'a rate limit ends',
-}
-
 /**
- * The answer to "will we run out?" from the pool's gaps, in the way a status line reads: a short
- * headline ("On pace to run out in 2h 27m"), then the facts behind it, one per line: how long the
- * gap lasts and which reset ends it, and the first later gap that a week ends and that lasts
- * longer (so a weekly gap of days is not lost behind 5-hour ones, which recur every few hours).
- * Partial when some subscriptions have no weekly reading, so they may still have room.
+ * The answer to "when do I run out, and for how long?", from the pool's first gap: the first
+ * time no subscription can take work, whether a weekly or a 5-hour limit (or a rate limit) is
+ * what stops each, and how long until the first of them can take work again, which needs room
+ * in both its limits. "Runs out in 9h 57m for 1d 19h", then the clock times when the viewer's
+ * zone is known ("22:43 until Mon 17:59"). Partial when some subscriptions have no weekly
+ * reading, so they may still have room.
  */
 export function gapsHeadline(
   g: PoolGaps | null,
   now: EpochMs,
+  clock: ((at: EpochMs) => string) | null = null,
 ): { tone: PoolTone; headline: string; facts: string[] } {
   if (g === null) return { tone: 'info', headline: 'Waiting for the first reading', facts: [] }
   const partial = g.unreported > 0
-  const among = partial ? [`Counting the ${g.counted} that report their weekly usage`] : []
+  const among = partial
+    ? [`Based on ${g.counted} of ${g.counted + g.unreported} subscriptions`]
+    : []
   if (g.lasts === 'unknown') {
     return { tone: 'info', headline: 'No weekly usage reported yet', facts: [] }
   }
@@ -693,51 +691,30 @@ export function gapsHeadline(
       : {
           tone: 'error',
           headline: 'Every login has expired',
-          facts: ['Log the subscriptions in again'],
+          facts: ['Log in again on the server'],
         }
   }
-  const [first, ...rest] = g.gaps
+  const [first] = g.gaps
   if (first === undefined) {
-    return {
-      tone: 'success',
-      headline: `Not on pace to run out in the next ${GAPS_HORIZON_MS / (24 * HOUR_MS)} days`,
-      facts: among,
-    }
+    const days = GAPS_HORIZON_MS / (24 * HOUR_MS)
+    return { tone: 'success', headline: `Won't run out in the next ${days} days`, facts: among }
   }
-  const length = (gap: PoolGap) =>
-    gap.end === null ? Number.POSITIVE_INFINITY : gap.end - Math.max(gap.start, now)
-  // 5-hour gaps come back every few hours; what matters after the first gap is the first one a
-  // week ends that lasts longer.
-  const later = rest.find(
-    (gap) => (gap.endsWith === 'weekly' || gap.endsWith === null) && length(gap) > length(first),
-  )
-  const until = (gap: PoolGap) =>
-    gap.end === null || gap.endsWith === null ? 'no reset time is known' : RESET_WORDS[gap.endsWith]
   const out = first.start <= now
-  const facts = [
-    out
-      ? first.end === null
-        ? 'No reset time is known'
-        : `Work resumes in ${formatCountdown(first.end - now)}, when ${until(first)}`
-      : first.end === null
-        ? 'No reset time is known'
-        : `Out for ${formatCountdown(first.end - first.start)}, until ${until(first)}`,
-    ...(later === undefined
+  const end = first.end
+  const headline = out
+    ? end === null
+      ? 'Out now · no reset time known'
+      : `Out now · back in ${formatCountdown(end - now)}`
+    : end === null
+      ? `Runs out in ${formatCountdown(first.start - now)} · no reset time known`
+      : `Runs out in ${formatCountdown(first.start - now)} for ${formatCountdown(end - first.start)}`
+  const times =
+    clock === null
       ? []
-      : [
-          `Then again in ${formatCountdown(later.start - now)}${
-            later.end === null
-              ? ', with no reset time known'
-              : `, for ${formatCountdown(later.end - later.start)}, until ${until(later)}`
-          }`,
-        ]),
-    ...among,
-  ]
-  return {
-    tone: out && !partial ? 'error' : 'warning',
-    headline: out
-      ? 'Out of capacity now'
-      : `On pace to run out in ${formatCountdown(first.start - now)}`,
-    facts,
-  }
+      : out
+        ? end === null
+          ? []
+          : [`Back ${clock(end)}`]
+        : [`${clock(first.start)} until ${end === null ? 'unknown' : clock(end)}`]
+  return { tone: out && !partial ? 'error' : 'warning', headline, facts: [...times, ...among] }
 }

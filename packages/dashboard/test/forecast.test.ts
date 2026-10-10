@@ -13,7 +13,6 @@ import {
   WEEK_MS,
 } from '../src/core/index'
 import { lastReady } from '../src/react/hooks'
-import { forecastCellState, rateNote } from '../src/react/Pool'
 
 const NOW = Date.UTC(2026, 9, 9, 12)
 const MIN = 60_000
@@ -267,7 +266,7 @@ describe('forecastHeadline from both forecasts', () => {
       sub('a', 1, 50 * HOUR_MS, 0.1, 3 * HOUR_MS),
       sub('b', 1, 60 * HOUR_MS, 0.1, 3 * HOUR_MS),
     ])
-    const headline = 'The pool is out of weekly allowance now, for 2d 2h.'
+    const headline = 'The pool is out of weekly allowance now, for 2d.'
     expect(forecastHeadline(forecasts, NOW).headline).toBe(headline)
     expect(forecastHeadline([...forecasts].reverse(), NOW).headline).toBe(headline)
   })
@@ -422,16 +421,6 @@ describe('review fixes', () => {
     const f = poolForecast([profile('a', { fiveHour: five })], 'fiveHour', NOW, rates({ a: 0.3 }))
     expectNear(f.clipsAt, NOW + (1 / 0.3) * HOUR_MS, 2 * MIN)
     expect(f.recoversAt).toBe(NOW + FIVE_HOURS_MS)
-  })
-
-  it('describes how the demand was measured', () => {
-    const f = poolForecast([profile('a'), profile('b')], 'weekly', NOW, rates({ a: 0.1 }))
-    expect(f.smoothedCount).toBe(1)
-    expect(rateNote(f)).toBe(
-      'smoothed over up to the last 24 hours for 1 of 2, else the average since each reset',
-    )
-    expect(rateNote({ ...f, smoothedCount: 2 })).toBe('smoothed over up to the last 24 hours')
-    expect(rateNote({ ...f, smoothedCount: 0 })).toBe('the average since each reset')
   })
 
   it('reports expired logins among only those reporting the window as a warning', () => {
@@ -647,28 +636,6 @@ describe('review fixes', () => {
         headline,
       })
     }
-  })
-
-  it('styles the cell as an error only when the state covers every subscription', () => {
-    const f = (over: Partial<PoolForecast>): PoolForecast => ({
-      window: 'weekly',
-      counted: 1,
-      unreported: 0,
-      smoothedCount: 0,
-      used: 1,
-      burnPerHour: 0.1,
-      clipsAt: null,
-      recoversAt: null,
-      lasts: null,
-      ...over,
-    })
-    expect(forecastCellState(f({ lasts: 'logins' }), NOW)).toBe('out')
-    expect(forecastCellState(f({ lasts: 'logins', unreported: 1 }), NOW)).toBe('partial')
-    expect(forecastCellState(f({ clipsAt: NOW }), NOW)).toBe('out')
-    expect(forecastCellState(f({ clipsAt: NOW, unreported: 1 }), NOW)).toBe('partial')
-    expect(forecastCellState(f({ clipsAt: NOW + HOUR_MS }), NOW)).toBe('clips')
-    expect(forecastCellState(f({ lasts: 'horizon' }), NOW)).toBe('lasts')
-    expect(forecastCellState(f({ lasts: 'unknown' }), NOW)).toBe('unknown')
   })
 
   it('lets a week that resets inside the 5-hour horizon take work again', () => {

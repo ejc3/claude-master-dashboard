@@ -10,7 +10,8 @@ export function formatCountdown(ms: number): string {
   if (ms >= DAY) {
     const days = Math.floor(ms / DAY)
     const hours = Math.floor((ms % DAY) / HOUR)
-    return hours === 0 ? `${days}d` : `${days}d ${hours}h`
+    // Past two days the hours say little (a clock time is usually beside it): days only.
+    return hours === 0 || days >= 2 ? `${days}d` : `${days}d ${hours}h`
   }
   if (ms >= HOUR) {
     const hours = Math.floor(ms / HOUR)

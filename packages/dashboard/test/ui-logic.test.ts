@@ -136,7 +136,10 @@ describe('headline', () => {
 
 describe('format', () => {
   it('counts down in the two largest units', () => {
-    expect(formatCountdown(3 * 24 * HOUR_MS + 2 * HOUR_MS + 5 * 60_000)).toBe('3d 2h')
+    // Past two days, days only: the hours say little there.
+    expect(formatCountdown(3 * 24 * HOUR_MS + 2 * HOUR_MS + 5 * 60_000)).toBe('3d')
+    expect(formatCountdown(2 * 24 * HOUR_MS + 23 * HOUR_MS)).toBe('2d')
+    expect(formatCountdown(24 * HOUR_MS + 23 * HOUR_MS)).toBe('1d 23h')
     expect(formatCountdown(2 * 24 * HOUR_MS)).toBe('2d')
     expect(formatCountdown(2 * HOUR_MS + 12 * 60_000)).toBe('2h 12m')
     expect(formatCountdown(12 * 60_000 + 59_000)).toBe('12m')

@@ -48,7 +48,12 @@ describe('dashboard.css', () => {
     const canvasText = rules(forced)
       .filter(([, body]) => /background:\s*CanvasText/.test(body))
       .flatMap(([selector]) => selector.split(',').map((x) => x.trim()))
-    for (const mark of ['.cmd-runway-used', '.cmd-row::before', '.cmd-pulse', '.cmd-pool-fill']) {
+    for (const mark of [
+      '.cmd-runway-used',
+      '.cmd-row::before',
+      '.cmd-pulse',
+      '.cmd-account-bar > span',
+    ]) {
       expect(canvasText).toContain(mark)
     }
     // The class (or pseudo-element) each mark selector ends in.

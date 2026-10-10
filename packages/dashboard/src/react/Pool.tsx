@@ -1,37 +1,23 @@
 'use client'
 
-import { type ReactNode, useMemo } from 'react'
+import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  among,
+  blocked,
   type EpochMs,
-  FORECAST_HORIZON_MS,
   fiveHourAt,
-  forecastState,
   formatCountdown,
   formatPercent,
   gapsHeadline,
   HOUR_MS,
   hasHeadroom,
-  type PoolForecast,
   type PoolGaps,
   type PoolTone,
   type ProfileStatus,
-  reportingAll,
   TRACE_STEP_MS,
   type WindowKind,
 } from '../core'
 import { useWhen } from './hooks'
 import { LineChart } from './LineChart'
-
-const WINDOW_NAME: Record<WindowKind, string> = {
-  weekly: 'Weekly allowance',
-  fiveHour: '5-hour capacity',
-}
-
-const HORIZON_WORDS: Record<WindowKind, string> = {
-  weekly: 'the next 7 days',
-  fiveHour: 'the next 24 hours',
-}
 
 // Shape as well as color: check, triangle, cross, circle.
 const TONE_ICON: Record<PoolTone, ReactNode> = {
@@ -47,94 +33,6 @@ const TONE_ICON: Record<PoolTone, ReactNode> = {
   ),
   error: <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="2" />,
   info: <circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" strokeWidth="1.6" />,
-}
-
-/** How the demand was measured, in words. */
-export function rateNote(f: PoolForecast): string {
-  const average =
-    f.window === 'weekly' ? 'the average since each reset' : "each window's average so far"
-  if (f.smoothedCount === 0) return average
-  if (f.smoothedCount === f.counted) return 'smoothed over up to the last 24 hours'
-  return `smoothed over up to the last 24 hours for ${f.smoothedCount} of ${f.counted}, else ${average}`
-}
-
-/**
- * The cell's look: 'out' (an error) when the pool is out or every login has expired, 'partial'
- * (a warning) when that holds only among the subscriptions reporting the window.
- */
-export function forecastCellState(
-  f: PoolForecast,
-  now: EpochMs,
-): 'out' | 'partial' | 'clips' | 'lasts' | 'unknown' {
-  const { state, partial } = forecastState(f, now)
-  if (state === 'logins' || state === 'out') return partial ? 'partial' : 'out'
-  return state
-}
-
-function ForecastCell(props: { forecast: PoolForecast; now: EpochMs }) {
-  const { forecast: f, now } = props
-  const when = useWhen()
-  const at = (t: EpochMs) => (when === null ? '' : `, ${when(t, now)}`)
-  let value: string
-  let detail: string
-  const state = forecastCellState(f, now)
-  const { state: kind } = forecastState(f, now)
-  if (kind === 'logins') {
-    value = 'Logins expired'
-    detail = reportingAll(f)
-      ? 'Log the subscriptions in again on the server.'
-      : `Every subscription reporting this window${among(f)} needs logging in again.`
-  } else if (kind === 'out') {
-    value = 'Out now'
-    detail =
-      f.recoversAt === null
-        ? 'No reset time is known.'
-        : `Work resumes in ${formatCountdown(f.recoversAt - now)}${at(f.recoversAt)}.`
-  } else if (kind === 'clips' && f.clipsAt !== null) {
-    const clipsAt = f.clipsAt
-    value = `Runs out in ${formatCountdown(clipsAt - now)}`
-    const then = when === null ? 'Then' : when(clipsAt, now)
-    detail =
-      f.recoversAt === null
-        ? `${then}; no reset time is known.`
-        : `${then}, for ${formatCountdown(f.recoversAt - clipsAt)} until the first reset.`
-  } else if (kind === 'unknown') {
-    value = 'No reading'
-    detail = 'No subscription reports this window yet.'
-  } else {
-    value = f.lasts === 'idle' ? 'Not in use' : "Won't run out"
-    detail = `No run-out in ${HORIZON_WORDS[f.window]} at this pace.`
-  }
-  const used = f.used === null ? null : Math.min(1, Math.max(0, f.used))
-  const horizonHours = FORECAST_HORIZON_MS[f.window] / 3_600_000
-  return (
-    <div className="cmd-forecast" data-state={state}>
-      <h3 className="cmd-panel-label">{WINDOW_NAME[f.window]}</h3>
-      <p className="cmd-forecast-value">{value}</p>
-      <p className="cmd-forecast-detail">{detail}</p>
-      <div className="cmd-forecast-usage">
-        <span>
-          Pool used <b>{formatPercent(used)}</b>
-        </span>
-        <span>
-          {f.unreported === 0
-            ? `${f.counted} ${f.counted === 1 ? 'subscription' : 'subscriptions'}`
-            : `${f.counted} of ${f.counted + f.unreported} report this`}
-        </span>
-      </div>
-      <div
-        className="cmd-pool-bar"
-        role="img"
-        aria-label={`${WINDOW_NAME[f.window]}: ${formatPercent(used)} used across the pool`}
-      >
-        {used !== null && <span className="cmd-pool-fill" style={{ width: `${used * 100}%` }} />}
-      </div>
-      <p className="cmd-forecast-note">
-        Using {formatPercent(f.burnPerHour)} of one subscription's allowance per hour ({rateNote(f)}
-        ); looks {horizonHours >= 48 ? `${horizonHours / 24} days` : `${horizonHours} hours`} ahead.
-      </p>
-    </div>
-  )
 }
 
 /** The names without what they all start with ("claude-colin", "claude-thao" → "colin", "thao"). */
@@ -163,42 +61,158 @@ function UsedBar(props: { used: number | null; window: WindowKind }) {
   )
 }
 
-/** Each subscription's weekly and 5-hour use, as two tiny bars, and whether it can take work. */
+/**
+ * An iCalendar file for one moment, as a link a phone's calendar opens: a reminder at a reset.
+ * Times are UTC, so it lands right in any zone.
+ */
+export function calendarHref(title: string, at: EpochMs): string {
+  const stamp = (t: EpochMs) =>
+    new Date(t)
+      .toISOString()
+      .replace(/[-:]/g, '')
+      .replace(/\.\d{3}/, '')
+  const ics = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//claude-master//dashboard//EN',
+    'BEGIN:VEVENT',
+    `UID:${at}-${title.replace(/[^A-Za-z0-9]/g, '')}@claude-master`,
+    `DTSTAMP:${stamp(at)}`,
+    `DTSTART:${stamp(at)}`,
+    `DTEND:${stamp(at + 15 * 60_000)}`,
+    `SUMMARY:${title.replace(/[\\;,\n]/g, ' ')}`,
+    'END:VEVENT',
+    'END:VCALENDAR',
+  ].join('\r\n')
+  return `data:text/calendar;charset=utf-8,${encodeURIComponent(ics)}`
+}
+
+/** One window of the detail: its use, and when it resets with a link to add that to a calendar. */
+function WindowDetail(props: {
+  name: string
+  who: string
+  window: { usedFraction: number | null; resetsAt: EpochMs | null } | null
+  closed?: boolean
+  now: EpochMs
+}) {
+  const when = useWhen()
+  const { window: w, now } = props
+  if (w === null) return <li>{props.name}: no reading</li>
+  if (props.closed) return <li>{props.name}: not in use</li>
+  const used = share(w.usedFraction)
+  const resets = w.resetsAt !== null && w.resetsAt > now ? w.resetsAt : null
+  return (
+    <li>
+      {props.name} {formatPercent(used)} used
+      {resets === null ? (
+        ' · reset time unknown'
+      ) : (
+        <>
+          {' · resets '}
+          <a
+            href={calendarHref(`${props.who}: ${props.name.toLowerCase()} limit resets`, resets)}
+            download={`${props.who}-${props.name.toLowerCase()}-reset.ics`}
+            title="Add to calendar"
+          >
+            {when === null ? `in ${formatCountdown(resets - now)}` : when(resets, now)}
+          </a>
+          {when === null ? '' : ` (in ${formatCountdown(resets - now)})`}
+        </>
+      )}
+    </li>
+  )
+}
+
+/** Whether a subscription can take work, or until when it cannot, in words. */
+function availability(p: ProfileStatus, now: EpochMs): string {
+  const b = blocked(p, now)
+  if (b === null) return 'Available'
+  if (b.reason === 'login-expired') return 'Login expired · log in again on the server'
+  if (b.reason === 'no-reading') return 'No reading'
+  const back = b.until === null ? 'back time unknown' : `back in ${formatCountdown(b.until - now)}`
+  return b.reason === 'rate-limited' ? `Rate limited · ${back}` : `Used up · ${back}`
+}
+
+/**
+ * Each subscription's weekly and 5-hour use, as two tiny bars, and whether it can take work.
+ * Hovering (with a mouse) or tapping one shows its detail below the row: when each limit resets,
+ * with a link to put that in a calendar. A tap anywhere else, or Escape, closes it.
+ */
 export function PoolAccounts(props: { profiles: ProfileStatus[]; now: EpochMs }) {
   const names = shortNames(props.profiles.map((p) => p.profile))
+  const [open, setOpen] = useState<string | null>(null)
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (open === null) return
+    const away = (event: Event) => {
+      if (!ref.current?.contains(event.target as Node)) setOpen(null)
+    }
+    const onEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(null)
+    }
+    document.addEventListener('pointerdown', away)
+    document.addEventListener('keydown', onEscape)
+    return () => {
+      document.removeEventListener('pointerdown', away)
+      document.removeEventListener('keydown', onEscape)
+    }
+  }, [open])
   if (props.profiles.length === 0) return null
+  const shown = props.profiles.find((p) => p.profile === open) ?? null
   return (
-    <div className="cmd-accounts">
+    <div className="cmd-accounts" ref={ref}>
       <p className="cmd-accounts-key" aria-hidden="true">
-        Week, 5-hour
+        Used: week · 5-hour
       </p>
       <ul aria-label="Each subscription's weekly and 5-hour use">
         {props.profiles.map((p) => {
           const weekly = share(p.weekly.usedFraction)
           // As of now: a read window whose reset has passed is no window open.
           const five = share(fiveHourAt(p.fiveHour, props.now)?.usedFraction)
-          const words = `${p.profile}: week ${formatPercent(weekly)}, 5-hour ${
-            five === null ? 'no reading' : formatPercent(five)
-          }${hasHeadroom(p, props.now) ? '' : ', cannot take work now'}`
+          const available = hasHeadroom(p, props.now)
           return (
-            <li
-              key={p.profile}
-              className="cmd-account"
-              data-open={hasHeadroom(p, props.now)}
-              title={words}
-            >
-              <span className="cmd-account-bars" aria-hidden="true">
-                <UsedBar used={weekly} window="weekly" />
-                <UsedBar used={five} window="fiveHour" />
-              </span>
-              <span className="cmd-account-name" aria-hidden="true">
-                {names.get(p.profile)}
-              </span>
-              <span className="cmd-visually-hidden">{words}</span>
+            <li key={p.profile} className="cmd-account" data-open={available}>
+              <button
+                type="button"
+                aria-expanded={open === p.profile}
+                aria-controls="cmd-account-detail"
+                onClick={() => setOpen((o) => (o === p.profile ? null : p.profile))}
+                onPointerEnter={(event) => {
+                  if (event.pointerType === 'mouse') setOpen(p.profile)
+                }}
+              >
+                <span className="cmd-account-bars" aria-hidden="true">
+                  <UsedBar used={weekly} window="weekly" />
+                  <UsedBar used={five} window="fiveHour" />
+                </span>
+                <span className="cmd-account-name">{names.get(p.profile)}</span>
+                <span className="cmd-visually-hidden">
+                  {`: week ${formatPercent(weekly)} used, 5-hour ${
+                    five === null ? 'no reading' : `${formatPercent(five)} used`
+                  }${available ? '' : ', not available'}`}
+                </span>
+              </button>
             </li>
           )
         })}
       </ul>
+      {shown !== null && (
+        <div id="cmd-account-detail" className="cmd-account-detail" role="status">
+          <p>
+            <b>{shown.profile}</b> · {availability(shown, props.now)}
+          </p>
+          <ul>
+            <WindowDetail name="Weekly" who={shown.profile} window={shown.weekly} now={props.now} />
+            <WindowDetail
+              name="5-hour"
+              who={shown.profile}
+              window={fiveHourAt(shown.fiveHour, props.now)}
+              closed={shown.fiveHour?.resetsAt != null && shown.fiveHour.resetsAt <= props.now}
+              now={props.now}
+            />
+          </ul>
+        </div>
+      )}
     </div>
   )
 }
@@ -206,9 +220,9 @@ export function PoolAccounts(props: { profiles: ProfileStatus[]; now: EpochMs })
 const asPercent = (v: number) => `${Math.round(v * 100)}%`
 
 /**
- * What is left of each window across the pool, from now to the furthest weekly reset, at this
- * pace (the same simulation as the headline): five unused subscriptions are 500%. Shaded where
- * no subscription can take work.
+ * What is left of each limit across the pool, from now to the furthest weekly reset, if recent use
+ * goes on (the same simulation as the headline), as a share of the whole pool: 100% is every
+ * subscription unused. Shaded where no subscription is available.
  */
 export function CapacityOutlook(props: {
   gaps: PoolGaps | null
@@ -236,7 +250,7 @@ export function CapacityOutlook(props: {
     const points = (key: 'weekly' | 'fiveHour', until: EpochMs, every: number) =>
       gaps.trace
         .filter((p) => p.at >= now - every && p.at <= until && (p.at - start) % every === 0)
-        .map((p): [EpochMs, number] => [p.at, p[key]])
+        .map((p): [EpochMs, number] => [p.at, p[key] / gaps.capacity])
     return {
       weekly: points('weekly', weeklyUntil, HOUR_MS),
       fiveHour: points('fiveHour', fiveUntil, TRACE_STEP_MS),
@@ -250,47 +264,56 @@ export function CapacityOutlook(props: {
     points: Array<[EpochMs, number]>,
     title: string,
     color: string,
-  ) =>
-    points.length < 2 ? null : (
+  ) => {
+    // The title carries what is left now: the point at or before now.
+    const current = points.filter(([t]) => t <= props.now).at(-1)?.[1] ?? points[0]?.[1]
+    const label = current === undefined ? title : `${title} · ${asPercent(current)}`
+    return points.length < 2 ? null : (
       <LineChart
-        title={title}
+        title={label}
         series={[{ key, label: title, color, points }]}
         format={asPercent}
-        max={charts.capacity}
+        max={1}
         bands={charts.bands}
-        bandLabel="No subscription can take work"
+        bandLabel="None available"
         table={false}
+        height={160}
         now={now}
         area
       />
     )
+  }
   return (
     <div className="cmd-capacity">
-      {chart('weekly', charts.weekly, 'Weekly allowance left, at this pace', 'var(--cmd-series-1)')}
-      {chart(
-        'fiveHour',
-        charts.fiveHour,
-        '5-hour capacity left, next 24 hours',
-        'var(--cmd-series-2)',
-      )}
+      {chart('weekly', charts.weekly, 'Weekly limit left', 'var(--cmd-series-1)')}
+      {chart('fiveHour', charts.fiveHour, '5-hour limit left, next 24h', 'var(--cmd-series-2)')}
+      <p className="cmd-capacity-note">
+        100% = all {charts.capacity} subscriptions unused · shaded: none available
+      </p>
     </div>
   )
 }
 
 /**
- * The top of the dashboard: will the pool run out, as a status line and the facts behind it,
- * each subscription's use at a glance, and one cell per window with its own forecast.
+ * The top of the dashboard: when the pool runs out, as a status line and the facts behind it,
+ * how it is worked out, each subscription's use at a glance, and what is left over time.
  */
 export function PoolOutlook(props: {
-  forecasts: PoolForecast[] | null
   gaps: PoolGaps | null
   profiles: ProfileStatus[] | null
   now: EpochMs
   detail?: string | null
 }) {
-  const { forecasts, now } = props
-  const { tone, headline, facts } = gapsHeadline(props.gaps, now)
+  const { now } = props
+  const when = useWhen()
+  const { tone, headline, facts } = gapsHeadline(
+    props.gaps,
+    now,
+    when === null ? null : (at) => when(at, now),
+  )
   const lines = props.detail == null ? facts : [...facts, props.detail]
+  const forecasting =
+    props.gaps !== null && props.gaps.lasts !== 'unknown' && props.gaps.lasts !== 'logins'
   return (
     <section className="cmd-pool" data-tone={tone} aria-labelledby="cmd-pool-headline">
       <div className="cmd-pool-head">
@@ -308,17 +331,29 @@ export function PoolOutlook(props: {
               ))}
             </ul>
           )}
+          {forecasting && (
+            <details className="cmd-method">
+              <summary>How this is worked out</summary>
+              <ul>
+                <li>
+                  Pace is how fast the pool has been using each limit: the weekly one over the last
+                  24 hours, the 5-hour one since each window opened.
+                </li>
+                <li>
+                  That pace is carried forward for 7 days, sending work to the subscriptions in
+                  claude-master's order; each limit resets on its own schedule.
+                </li>
+                <li>
+                  Running out means no subscription can take work, until the first one resets;
+                  requests go to the paid backup meanwhile.
+                </li>
+              </ul>
+            </details>
+          )}
         </div>
         {props.profiles !== null && <PoolAccounts profiles={props.profiles} now={now} />}
       </div>
       <CapacityOutlook gaps={props.gaps} profiles={props.profiles} now={now} />
-      {forecasts !== null && (
-        <div className="cmd-forecasts">
-          {forecasts.map((f) => (
-            <ForecastCell key={f.window} forecast={f} now={now} />
-          ))}
-        </div>
-      )}
     </section>
   )
 }

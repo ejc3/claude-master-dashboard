@@ -10,14 +10,9 @@ describe('Dashboard wiring', () => {
     expect(source).toMatch(/failureOf\(usedReadings\)/)
   })
 
-  it('forecasts from the readings time and judges run-outs against the clock', () => {
-    // One call per line: everything between `poolForecast(` and the line's closing `)`.
-    const calls = [...source.matchAll(/poolForecast\((.*)\),?$/gm)].map((m) => m[1] ?? '')
-    expect(calls).toHaveLength(2)
-    for (const args of calls) {
-      expect(args).toMatch(/snapshot\?\.asOf \?\? now/)
-      expect(args.trim().endsWith('now')).toBe(true)
-    }
+  it('shows one forecast: no per-window forecast beside the joint one', () => {
+    // Two models on one page gave two different run-out times.
+    expect(source).not.toMatch(/poolForecast\(/)
   })
 })
 
@@ -27,10 +22,8 @@ describe('Headline wiring', () => {
   it('reads the headline from one simulation of both windows, from the readings time', () => {
     expect(source).toMatch(/const asOf = snapshot\?\.asOf \?\? gapsAt/)
     expect(source).toMatch(/poolGaps\(profilesNow, asOf, smoothed, gapsAt\)/)
-    expect(source).toMatch(
-      /<PoolOutlook\s+forecasts=\{forecasts\}\s+gaps=\{gaps\}\s+profiles=\{profilesNow\}/,
-    )
-    expect(pool).toMatch(/gapsHeadline\(props\.gaps, now\)/)
+    expect(source).toMatch(/<PoolOutlook\s+gaps=\{gaps\}\s+profiles=\{profilesNow\}/)
+    expect(pool).toMatch(/gapsHeadline\(\s*props\.gaps,\s*now,/)
     expect(pool).not.toMatch(/forecastHeadline\(/)
   })
 

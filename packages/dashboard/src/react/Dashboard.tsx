@@ -10,8 +10,6 @@ import {
   fromFirstBucket,
   HOUR_MS,
   hasHeadroom,
-  nextAvailable,
-  poolForecast,
   poolGaps,
   type Series,
   type SeriesQuery,
@@ -230,14 +228,6 @@ function DashboardBody(props: DashboardProps) {
     return rates
   }, [usedData, smoothingRange.end])
   const profilesNow = snapshot?.profiles ?? null
-  const forecasts =
-    profilesNow === null
-      ? null
-      : [
-          // From the readings' own time: usage is as of asOf, not as of this second.
-          poolForecast(profilesNow, 'weekly', snapshot?.asOf ?? now, smoothed, now),
-          poolForecast(profilesNow, 'fiveHour', snapshot?.asOf ?? now, new Map(), now),
-        ]
   // When no subscription can take work, from both windows at once: the headline.
   // Once a minute, not every second: the simulation steps through a week.
   const gapsAt = Math.floor(now / 60_000) * 60_000
@@ -247,15 +237,12 @@ function DashboardBody(props: DashboardProps) {
     [profilesNow, asOf, smoothed, gapsAt],
   )
   const ready = (profilesNow ?? []).filter((p) => hasHeadroom(p, now)).length
-  const next = profilesNow === null || ready > 0 ? null : nextAvailable(profilesNow, now)
   const outlookDetail =
     profilesNow === null
-      ? 'The metrics source has not answered yet; this page retries every minute'
+      ? 'No data yet · retrying every minute'
       : profilesNow.length === 0
-        ? 'Readings arrive a few minutes after claude-master starts exporting metrics'
-        : `${ready} of ${profilesNow.length} subscriptions can take work now${
-            next === null ? '' : `; ${next.profile} again in ${formatCountdown(next.at - now)}`
-          }`
+        ? 'No subscriptions reporting yet'
+        : `${ready} of ${profilesNow.length} available now`
 
   const failures = [
     failureOf(snapshotLoaded),
@@ -349,13 +336,7 @@ function DashboardBody(props: DashboardProps) {
           </p>
         )}
 
-        <PoolOutlook
-          forecasts={forecasts}
-          gaps={gaps}
-          profiles={profilesNow}
-          now={now}
-          detail={outlookDetail}
-        />
+        <PoolOutlook gaps={gaps} profiles={profilesNow} now={now} detail={outlookDetail} />
 
         <section className="cmd-kpis" aria-label="Traffic">
           {tokensLastHour === null || tokensLastHourTotal === null ? (
