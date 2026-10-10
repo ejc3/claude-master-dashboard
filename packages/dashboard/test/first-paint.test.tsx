@@ -397,6 +397,29 @@ describe('answers shown together, while a moved range loads', () => {
     return page
   }
 
+  it('splits tokens by project, and never asks for requests by project', async () => {
+    const page = await hydrated(ZONE)
+    answer(() => true)
+    const table = page.container.querySelector(
+      'section[aria-labelledby="cmd-breakdown-title"]',
+    ) as HTMLElement
+    const tab = [...table.querySelectorAll('button')].find((b) => b.textContent === 'Projects')
+    if (tab === undefined) throw new Error('no Projects tab')
+    await act(async () => {
+      tab.click()
+      await vi.advanceTimersByTimeAsync(100)
+    })
+    const rows = [...table.querySelectorAll('tbody th')].map((e) => e.textContent)
+    expect(rows[0]).toBe('web-app')
+    expect(table.textContent).toContain('Tokens by project')
+    const asked = vi
+      .mocked(fetch)
+      .mock.calls.map(([input]) => new URL(String(input), 'http://localhost').searchParams)
+      .filter((p) => p.get('groupBy') === 'project')
+    expect(asked.length).toBe(4)
+    expect(asked.every((p) => p.get('metric') === 'tokens')).toBe(true)
+  })
+
   it('the error-rate chart has only hours both answers cover', async () => {
     const { container } = await stepOn(
       (p) => p.get('metric') === 'requests' && p.get('groupBy') === 'profile',

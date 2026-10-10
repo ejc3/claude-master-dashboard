@@ -34,17 +34,49 @@ export const SPLITS: ReadonlyArray<{
   column: string
   /** claude-master counts tokens by this split; models have no token projection. */
   tokens: boolean
+  /** claude-master counts requests by this split too, the table's fallback; not by project. */
+  requests: boolean
 }> = [
-  { dimension: 'client_account', label: 'People', noun: 'person', column: 'Person', tokens: true },
-  { dimension: 'client', label: 'Machines', noun: 'machine', column: 'Machine', tokens: true },
+  {
+    dimension: 'client_account',
+    label: 'People',
+    noun: 'person',
+    column: 'Person',
+    tokens: true,
+    requests: true,
+  },
+  {
+    dimension: 'client',
+    label: 'Machines',
+    noun: 'machine',
+    column: 'Machine',
+    tokens: true,
+    requests: true,
+  },
   {
     dimension: 'profile',
     label: 'Subscriptions',
     noun: 'subscription',
     column: 'Subscription',
     tokens: true,
+    requests: true,
   },
-  { dimension: 'model', label: 'Models', noun: 'model', column: 'Model', tokens: false },
+  {
+    dimension: 'project',
+    label: 'Projects',
+    noun: 'project',
+    column: 'Project',
+    tokens: true,
+    requests: false,
+  },
+  {
+    dimension: 'model',
+    label: 'Models',
+    noun: 'model',
+    column: 'Model',
+    tokens: false,
+    requests: true,
+  },
 ]
 
 export const KPI_STEP_SECONDS = 300
@@ -98,10 +130,10 @@ export function breakdownQueries(
   range: TimeRange,
   stepSeconds: number,
   split: (typeof SPLITS)[number],
-): { requests: SeriesQuery; tokens: Record<TokenType, SeriesQuery> | null } {
+): { requests: SeriesQuery | null; tokens: Record<TokenType, SeriesQuery> | null } {
   const base = { range, stepSeconds, groupBy: split.dimension }
   return {
-    requests: { ...base, metric: 'requests' },
+    requests: split.requests ? { ...base, metric: 'requests' } : null,
     tokens: split.tokens
       ? (Object.fromEntries(
           TOKEN_TYPES.map((tokenType) => [tokenType, { ...base, metric: 'tokens', tokenType }]),
@@ -138,7 +170,12 @@ export function firstQueries(now: EpochMs): SeriesQuery[] {
     kpiQuery(now, 'errors'),
     kpiTokensQuery(now),
     readingsQuery(now),
-    ...(table === null ? [] : [table.requests, ...Object.values(table.tokens ?? {})]),
+    ...(table === null
+      ? []
+      : [
+          ...(table.requests === null ? [] : [table.requests]),
+          ...Object.values(table.tokens ?? {}),
+        ]),
   ]
 }
 

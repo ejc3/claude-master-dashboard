@@ -53,6 +53,7 @@ export type Dimension =
   | 'profile'
   | 'client'
   | 'client_account'
+  | 'project'
   | 'model'
   | 'status_class'
   | 'status'

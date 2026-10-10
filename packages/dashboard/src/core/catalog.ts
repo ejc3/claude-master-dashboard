@@ -95,6 +95,8 @@ const CATALOG: Record<SemanticMetric, Entry> = {
     projections: {
       client_account: 'claude_master.inference.tokens.by_client_account',
       client: 'claude_master.inference.tokens.by_client',
+      // The project a launch was started in (claude-master releases that count it).
+      project: 'claude_master.inference.tokens.by_project',
     },
   },
 }
@@ -103,6 +105,7 @@ const DIMENSIONS: readonly Dimension[] = [
   'profile',
   'client',
   'client_account',
+  'project',
   'model',
   'status_class',
   'status',

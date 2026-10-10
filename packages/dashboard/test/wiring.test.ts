@@ -56,7 +56,9 @@ describe('Token wiring', () => {
   })
 
   it('keeps models on requests, and shows a failed token query as an error', () => {
-    expect(queries).toMatch(/dimension: 'model', label: 'Models'.*tokens: false/s)
+    expect(queries).toMatch(/dimension: 'model',\s+label: 'Models'.*tokens: false/s)
+    // Projects count tokens only: no requests fallback to ask for.
+    expect(queries).toMatch(/dimension: 'project',[^}]*tokens: true,\s+requests: false/s)
     expect(breakdown).toMatch(/does not count tokens by model; this view counts requests/)
     expect(breakdown).toMatch(/tokensPending \|\| tokenError !== null \? \[\] : requestRows/)
     // The title names the range the token totals cover.
