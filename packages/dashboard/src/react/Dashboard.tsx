@@ -26,6 +26,7 @@ import {
   tokensBetween,
   WEEKLY_SMOOTHING_MS,
 } from '../core'
+import { useSharedAnswers } from './answers'
 import { Breakdown } from './Breakdown'
 import {
   type FirstPaint,
@@ -153,7 +154,6 @@ function DashboardBody(props: DashboardProps) {
   const hourEndOf = (loaded: Loaded<unknown>) =>
     loaded.state === 'ready' && loaded.range !== undefined ? kpiHourEnd(loaded.range) : null
   const requestsEnd = hourEndOf(kpiRequests)
-  const errorsEnd = hourEndOf(kpiErrors)
   const tokensEnd = hourEndOf(kpiTokens.loaded)
   const kpiTokensData = data(kpiTokens.loaded)
   const tokensLastHour =
@@ -164,18 +164,17 @@ function DashboardBody(props: DashboardProps) {
     tokensLastHour === null ? null : TOKEN_TYPES.reduce((sum, t) => sum + tokensLastHour[t], 0)
   const total = (series: Series[] | null) => (series === null ? null : sumSeries(series))
   const kpiRequestsTotal = total(data(kpiRequests))
-  const kpiErrorsTotal = total(data(kpiErrors))
   const lastHour = (points: Array<[EpochMs, number]> | null, end: EpochMs | null, back = 0) =>
     points === null || end === null
       ? null
       : sumBetween(points, end - (back + 1) * HOUR_MS, end - back * HOUR_MS)
   const requestsLastHour = lastHour(kpiRequestsTotal, requestsEnd)
   const requestsHourBefore = lastHour(kpiRequestsTotal, requestsEnd, 1)
-  // The error rate needs one hour both answers cover: the earlier of their last full hours.
-  const rateEnd =
-    requestsEnd === null || errorsEnd === null ? null : Math.min(requestsEnd, errorsEnd)
-  const errorsLastHour = lastHour(kpiErrorsTotal, rateEnd)
-  const requestsForRate = lastHour(kpiRequestsTotal, rateEnd)
+  // The error rate needs one hour both answers cover.
+  const kpiRate = useSharedAnswers({ requests: kpiRequests, errors: kpiErrors })
+  const rateEnd = kpiRate === null ? null : kpiHourEnd(kpiRate.range)
+  const errorsLastHour = lastHour(total(kpiRate?.data.errors ?? null), rateEnd)
+  const requestsForRate = lastHour(total(kpiRate?.data.requests ?? null), rateEnd)
 
   const byProfileData = data(byProfile)
   const tokensByProfileData = data(tokensByProfile.loaded)
@@ -183,14 +182,9 @@ function DashboardBody(props: DashboardProps) {
   const chartData = showTokens
     ? fromFirstBucket(tokensByProfileData ?? [], tokensByProfile.firstAt, chosen.stepSeconds)
     : byProfileData
-  const errorsData = data(errors)
   const knownKey = (snapshot?.profiles ?? []).map((p) => p.profile).join('\n')
   const knownProfiles = useMemo(() => knownKey.split('\n').filter((n) => n !== ''), [knownKey])
 
-  const requestsTotal = useMemo(
-    () => (byProfileData === null ? null : sumSeries(byProfileData)),
-    [byProfileData],
-  )
   const profileLines: ChartSeries[] = useMemo(() => {
     if (chartData === null) return []
     const folded = foldSeries(chartData)
@@ -207,17 +201,19 @@ function DashboardBody(props: DashboardProps) {
   }, [chartData, knownProfiles])
 
   // Per hour, not per step: a few requests at night make a five-minute error rate swing wildly.
-  // Unknown when either side is unknown: a failed errors query is not a 0% error rate.
+  // Unknown when either side is unknown: a failed errors query is not a 0% error rate. Only the
+  // hours both answers cover.
+  const rateAnswers = useSharedAnswers({ requests: byProfile, errors })
   const errorRate: ChartSeries[] = useMemo(() => {
-    if (requestsTotal === null || errorsData === null) return []
-    const requestsHourly = hourly(requestsTotal)
-    const errorsHourly = new Map(hourly(sumSeries(errorsData)))
+    if (rateAnswers === null) return []
+    const requestsHourly = hourly(sumSeries(rateAnswers.data.requests))
+    const errorsHourly = new Map(hourly(sumSeries(rateAnswers.data.errors)))
     const points = requestsHourly.map(([t, r]): [EpochMs, number] => [
       t,
       r === 0 ? 0 : (errorsHourly.get(t) ?? 0) / r,
     ])
     return [{ key: 'error-rate', label: 'Error rate', color: 'var(--cmd-series-1)', points }]
-  }, [requestsTotal, errorsData])
+  }, [rateAnswers])
 
   // The weekly burn rate is smoothed over the last day of used-share readings; the 5-hour one is
   // each window's average so far (no history of it is exported yet).

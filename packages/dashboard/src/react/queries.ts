@@ -155,6 +155,7 @@ export function queryShape(query: SeriesQuery): string {
   return [
     query.metric,
     query.groupBy ?? '',
+    query.tokenType ?? '',
     query.stepSeconds,
     query.range.end - query.range.start,
   ].join('|')

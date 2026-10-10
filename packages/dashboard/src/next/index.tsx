@@ -1,5 +1,6 @@
 import 'server-only'
 
+import { after } from 'next/server'
 import type { ReactNode } from 'react'
 import {
   BadQueryError,
@@ -81,6 +82,13 @@ export interface DashboardPageProps {
    * Validated here; without it, wall-clock times appear once the page is running in the browser.
    */
   timeZone?: string | undefined
+  /**
+   * Keeps running, after the page is sent, a query the page stopped waiting for. Defaults to
+   * Next's after(), which is waitUntil on Workers and on Vercel: without it a runtime may cancel
+   * the query while a shared cache still holds it, and the browser's request for it would wait on
+   * a cancelled one.
+   */
+  keepAlive?: (work: Promise<unknown>) => void
 }
 
 const failed = (what: string, error: unknown) =>
@@ -96,24 +104,27 @@ const failed = (what: string, error: unknown) =>
 export const FIRST_QUERIES_BUDGET_MS = 2_500
 
 /** The answer, or null when it fails (thrown or rejected) or misses the budget. */
-async function withinBudget<T>(what: string, run: () => Promise<T>): Promise<T | null> {
+async function withinBudget<T>(
+  what: string,
+  run: () => Promise<T>,
+  keepAlive: (work: Promise<unknown>) => void,
+): Promise<T | null> {
+  const work = Promise.resolve()
+    .then(run)
+    .catch((error: unknown) => {
+      failed(what, error)
+      return null
+    })
   let timer: ReturnType<typeof setTimeout> | undefined
   const late = new Promise<null>((resolve) => {
     timer = setTimeout(() => {
       console.warn(`claude-master dashboard: ${what} missed the page's budget; the browser asks`)
+      keepAlive(work)
       resolve(null)
     }, FIRST_QUERIES_BUDGET_MS)
   })
   try {
-    return await Promise.race([
-      Promise.resolve()
-        .then(run)
-        .catch((error: unknown) => {
-          failed(what, error)
-          return null
-        }),
-      late,
-    ])
+    return await Promise.race([work, late])
   } finally {
     clearTimeout(timer)
   }
@@ -137,8 +148,10 @@ export async function DashboardPage(props: DashboardPageProps): Promise<ReactNod
       }),
     Promise.all(
       firstQueries(renderedAt).map(async (query) => {
-        const series = await withinBudget(`the first ${query.metric} query`, () =>
-          props.source().series(query),
+        const series = await withinBudget(
+          `the first ${query.metric} query`,
+          () => props.source().series(query),
+          props.keepAlive ?? after,
         )
         return series === null ? null : ([queryKey(query), series] as const)
       }),

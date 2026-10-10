@@ -17,6 +17,7 @@ import {
   tokenCoverage,
   tokenRows,
 } from '../core/index'
+import { useSharedAnswers } from './answers'
 import { useCountedSeries, useSeries, useWhen } from './hooks'
 import { breakdownQueries, SPLITS } from './queries'
 import { Sparkline, sharedPeak } from './Sparkline'
@@ -57,6 +58,13 @@ export function Breakdown(props: {
   const cacheRead = useCountedSeries(props.apiBase, tokenQuery('cache_read'))
   const cacheWrite = useCountedSeries(props.apiBase, tokenQuery('cache_creation'))
   const byTypeLoaded = { input, output, cache_read: cacheRead, cache_creation: cacheWrite }
+  // The rows add the types together: only the range all four answers cover.
+  const byType = useSharedAnswers({
+    input: input.loaded,
+    output: output.loaded,
+    cache_read: cacheRead.loaded,
+    cache_creation: cacheWrite.loaded,
+  })
 
   const typesReady = TOKEN_TYPES.every((t) => byTypeLoaded[t].loaded.state === 'ready')
   const typeFailure = TOKEN_TYPES.map((t) => byTypeLoaded[t].loaded).find(
@@ -73,8 +81,7 @@ export function Breakdown(props: {
     ? tokenRows(
         Object.fromEntries(
           TOKEN_TYPES.map((t) => {
-            const loaded = byTypeLoaded[t].loaded
-            const series: Series[] = loaded.state === 'ready' ? loaded.data : []
+            const series: Series[] = byType?.data[t] ?? []
             return [t, fromFirstBucket(series, firstAt, props.stepSeconds)]
           }),
         ) as Record<TokenType, Series[]>,

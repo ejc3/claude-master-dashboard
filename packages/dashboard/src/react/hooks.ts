@@ -100,12 +100,17 @@ export function useReportTimeZone(): void {
 export function useNow(everyMs: number, initial: EpochMs): EpochMs {
   const [now, setNow] = useState(initial)
   const visible = useVisible()
+  // A browser clock behind the server's would move every range back a step on hydrating, and the
+  // server's answers would no longer match: the clock runs from `initial` at the earliest.
+  const behind = useRef<number | null>(null)
   useEffect(() => {
     if (!visible) return
-    setNow(Date.now())
-    const timer = setInterval(() => setNow(Date.now()), everyMs)
+    behind.current ??= Math.max(0, initial - Date.now())
+    const read = () => Date.now() + (behind.current ?? 0)
+    setNow(read())
+    const timer = setInterval(() => setNow(read()), everyMs)
     return () => clearInterval(timer)
-  }, [everyMs, visible])
+  }, [everyMs, visible, initial])
   return now
 }
 

@@ -4,14 +4,18 @@ import { hydrateRoot, type Root } from 'react-dom/client'
 import { renderToString } from 'react-dom/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
+  formatCount,
   formatWhen,
   HOUR_MS,
   type MetricsSource,
   type ProfileStatus,
+  seriesQueryFromParams,
   timeZoneOrNull,
 } from '../src/core/index'
 import { createDemoSource } from '../src/demo/index'
 import { DashboardPage, FIRST_QUERIES_BUDGET_MS } from '../src/next/index'
+import { keepWhileLoading, type Loaded } from '../src/react/hooks'
+import { chartQuery, firstQueries } from '../src/react/queries'
 import { RunwayCard } from '../src/react/Runway'
 
 // A moment two minutes into a five-minute step, so a step boundary is near but not crossed.
@@ -51,6 +55,7 @@ afterEach(() => {
 async function serverPage(
   timeZone: string | undefined,
   source: MetricsSource = createDemoSource({ now: () => NOW }),
+  keepAlive: (work: Promise<unknown>) => void = () => {},
 ): Promise<ReactElement> {
   return (await DashboardPage({
     source: () => source,
@@ -58,13 +63,15 @@ async function serverPage(
     unauthorized: null,
     apiBase: '/api/claude-master',
     timeZone,
+    keepAlive,
   })) as ReactElement
 }
 
 /** Renders on the "server", then hydrates that HTML in the "browser". */
-async function hydrated(timeZone: string | undefined) {
+async function hydrated(timeZone: string | undefined, browserClock?: number) {
   const element = await serverPage(timeZone)
   const html = renderToString(element)
+  if (browserClock !== undefined) vi.setSystemTime(browserClock)
   const container = document.createElement('div')
   container.innerHTML = html
   document.body.append(container)
@@ -149,6 +156,27 @@ describe('the first paint', () => {
     expect(kpiValues(container)).toEqual(before)
   })
 
+  it('changes nothing when the browser clock is behind the server, across a step boundary', async () => {
+    // The server renders a second after a five-minute boundary; the browser's clock reads a
+    // second before it, so its ranges would end a step earlier than the server's answers.
+    const serverAt = Date.UTC(2026, 9, 9, 18, 5, 1)
+    vi.setSystemTime(serverAt)
+    const element = await serverPage(ZONE, createDemoSource({ now: () => serverAt }))
+    const container = document.createElement('div')
+    container.innerHTML = renderToString(element)
+    document.body.append(container)
+    const serverText = container.textContent ?? ''
+    vi.setSystemTime(serverAt - 2000)
+    act(() => {
+      roots.push(hydrateRoot(container, element))
+    })
+    expect(container.textContent).toBe(serverText)
+    const asked = vi
+      .mocked(fetch)
+      .mock.calls.filter(([input]) => String(input).includes('/series?'))
+    expect(asked).toEqual([])
+  })
+
   it('shows loading, not stale or zero numbers, after the page was away for hours', async () => {
     const { container } = await hydrated(ZONE)
     act(() => {
@@ -207,13 +235,23 @@ describe('the server render', () => {
       series: () => new Promise(() => {}),
     }
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    const page = serverPage(ZONE, hanging)
+    const kept: Array<Promise<unknown>> = []
+    const page = serverPage(ZONE, hanging, (work) => kept.push(work))
     await vi.advanceTimersByTimeAsync(FIRST_QUERIES_BUDGET_MS)
     const container = document.createElement('div')
     container.innerHTML = renderToString(await page)
     warn.mockRestore()
     expect(container.textContent).toContain('Subscriptions')
     expect(kpiValues(container)[0]).toBe('—')
+    // Each query it stopped waiting for keeps running after the page is sent, so a runtime does
+    // not cancel it while a shared cache holds it for the browser's request.
+    expect(kept).toHaveLength(firstQueries(NOW).length)
+  })
+
+  it('keeps nothing alive when every query answers in time', async () => {
+    const kept: Array<Promise<unknown>> = []
+    await serverPage(ZONE, createDemoSource({ now: () => NOW }), (work) => kept.push(work))
+    expect(kept).toEqual([])
   })
 })
 
@@ -257,5 +295,132 @@ describe('the login line', () => {
 
   it('warns when a renewal is overdue', () => {
     expect(line(NOW + 2 * HOUR_MS + 30 * 60_000)).toBe('Login not renewed; expires in 2h 30m')
+  })
+})
+
+describe('keepWhileLoading', () => {
+  const ready = (data: string[]): Loaded<string[]> => ({
+    state: 'ready',
+    data,
+    at: 0,
+    failure: null,
+  })
+  const at = Date.UTC(2026, 9, 10, 12, 4, 59)
+
+  it('keeps an answer while the same query, a step on, loads', () => {
+    const kept = { current: null }
+    keepWhileLoading(
+      kept,
+      chartQuery(at, '24h', { metric: 'tokens', groupBy: 'profile' }),
+      ready(['all']),
+    )
+    const next = chartQuery(at + 2000, '24h', { metric: 'tokens', groupBy: 'profile' })
+    expect(keepWhileLoading(kept, next, { state: 'loading' })).toMatchObject({ data: ['all'] })
+  })
+
+  it('never shows the answer for one token type as another', () => {
+    const kept = { current: null }
+    keepWhileLoading(
+      kept,
+      chartQuery(at, '24h', { metric: 'tokens', groupBy: 'profile' }),
+      ready(['all']),
+    )
+    // The viewer picks Input, and the step boundary passes before it answers.
+    const input = chartQuery(at + 2000, '24h', {
+      metric: 'tokens',
+      groupBy: 'profile',
+      tokenType: 'input',
+    })
+    expect(keepWhileLoading(kept, input, { state: 'loading' })).toEqual({ state: 'loading' })
+  })
+})
+
+describe('answers shown together, while a moved range loads', () => {
+  // Hydrated at 18:02 (ranges end 18:00), then past 18:05: one query answers its moved range, the
+  // others keep their answer from the range before.
+  const STEP_ON = NOW + 3.5 * 60_000
+  const demo = createDemoSource({ now: () => STEP_ON })
+
+  /** Answers the series requests `fresh` picks from the demo source; the rest never answer. */
+  function answer(fresh: (params: URLSearchParams) => boolean) {
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      const url = new URL(String(input), 'http://localhost')
+      if (!url.pathname.endsWith('/series') || !fresh(url.searchParams)) {
+        return new Promise<Response>(() => {})
+      }
+      return Response.json(await demo.series(seriesQueryFromParams(url.searchParams)))
+    })
+  }
+
+  async function stepOn(fresh: (params: URLSearchParams) => boolean) {
+    const page = await hydrated(ZONE)
+    answer(fresh)
+    await act(async () => {
+      vi.setSystemTime(STEP_ON)
+      await vi.advanceTimersByTimeAsync(1000)
+    })
+    // The moved queries' polls start, and the fresh ones answer.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(100)
+    })
+    return page
+  }
+
+  it('the error-rate chart has only hours both answers cover', async () => {
+    const { container } = await stepOn(
+      (p) => p.get('metric') === 'requests' && p.get('groupBy') === 'profile',
+    )
+    const figure = [...container.querySelectorAll('figure')].find((f) =>
+      f.textContent?.includes('Error rate per hour'),
+    )
+    const toggle = figure?.querySelector('button')
+    if (figure === undefined || toggle == null) throw new Error('no error-rate chart')
+    act(() => toggle.click())
+    const hours = [...figure.querySelectorAll('tbody tr td:first-child')].map((e) => e.textContent)
+    // 18:00 is in the new requests answer only; the kept errors answer ends there.
+    const sixPm = formatWhen(Date.UTC(2026, 9, 9, 18), STEP_ON)
+    expect(hours.length).toBeGreaterThan(0)
+    expect(hours).not.toContain(sixPm)
+  })
+
+  it('the key error rate keeps to an hour both answers cover', async () => {
+    const rateTile = (root: ParentNode) => root.querySelectorAll('.cmd-kpi')[1]?.textContent
+    const before = rateTile((await hydrated(ZONE)).container)
+    for (const root of roots) act(() => root.unmount())
+    roots = []
+    document.body.innerHTML = ''
+    vi.setSystemTime(NOW)
+    const { container } = await stepOn(
+      (p) => p.get('metric') === 'requests' && p.get('groupBy') === null,
+    )
+    // The rate and its error count, over the same hour as before the step.
+    expect(rateTile(container)).toBe(before)
+  })
+
+  it('the table adds token types over the range all four answers cover', async () => {
+    const { container } = await stepOn((p) => p.get('type') === 'input')
+    const rows = [
+      ...container.querySelectorAll('section[aria-labelledby="cmd-breakdown-title"] tbody tr'),
+    ]
+    const first = rows[0]
+    const person = first?.querySelector('th')?.textContent
+    const input = first?.querySelector('td')?.textContent
+    if (person == null || input == null) throw new Error('no table row')
+    // Input over the range every type covers: from the new start to the kept answers' end.
+    const newEnd = Date.UTC(2026, 9, 9, 18, 5)
+    const oldEnd = Date.UTC(2026, 9, 9, 18, 0)
+    const [inputSeries] = (
+      await demo.series({
+        metric: 'tokens',
+        tokenType: 'input',
+        groupBy: 'client_account',
+        range: { start: newEnd - 24 * HOUR_MS, end: newEnd },
+        stepSeconds: 300,
+      })
+    ).filter((s) => s.key === person)
+    const shared = (inputSeries?.points ?? [])
+      .filter(([t]) => t >= newEnd - 24 * HOUR_MS && t < oldEnd)
+      .reduce((sum, [, v]) => sum + v, 0)
+    expect(input).toBe(formatCount(shared))
   })
 })
