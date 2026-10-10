@@ -358,21 +358,33 @@ function outFor(f: PoolForecast): string {
     : `, for ${formatCountdown(f.recoversAt - f.clipsAt)}`
 }
 
-/** The other window, when it is out or runs out too: "; its weekly allowance runs out in …". */
-function alsoClause(f: PoolForecast | undefined, now: EpochMs): string {
-  if (f === undefined) return ''
-  const { state } = forecastState(f, now)
-  if (state === 'out') return `; it is out of ${ALLOWANCE[f.window]} too${among(f)}`
-  if (state === 'clips' && f.clipsAt !== null) {
-    return `; its ${ALLOWANCE[f.window]} runs out in ${formatCountdown(f.clipsAt - now)}${outFor(f)}${among(f)}`
-  }
-  return ''
+/** How long a pool that is out now stays out (", for 2d 2h"); nothing when that is unknown. */
+function outNowFor(f: PoolForecast, now: EpochMs): string {
+  return f.recoversAt === null ? '' : `, for ${formatCountdown(f.recoversAt - now)}`
+}
+
+/**
+ * The other window's run-out, when it comes after the first one is over: "; its weekly allowance
+ * then runs out in …". The two forecasts are made apart (the weekly one does not see 5-hour
+ * gaps, and the 5-hour one routes only to weeks with room), so one that falls within the first
+ * gap is not a separate event: during that gap no work flows to use either up. `paced` when the
+ * sentence already says "at this pace".
+ */
+function laterClause(
+  top: PoolForecast,
+  other: PoolForecast | undefined,
+  now: EpochMs,
+  paced: boolean,
+): string {
+  if (other === undefined || other.clipsAt === null || top.recoversAt === null) return ''
+  if (forecastState(other, now).state !== 'clips' || other.clipsAt < top.recoversAt) return ''
+  return `; ${paced ? '' : 'at this pace '}its ${ALLOWANCE[other.window]} then runs out in ${formatCountdown(other.clipsAt - now)}${outFor(other)}${among(other)}`
 }
 
 /**
  * The answer to "will we run out?": the most severe forecast, and its tone. When the other window
- * is out or runs out too, the headline says so as well, so a short 5-hour gap never hides a
- * weekly one of days.
+ * runs out after the first one's gap is over, the headline says so as well, so a short 5-hour
+ * gap never hides a weekly one of days; each gap says how long it lasts when that is known.
  */
 export function forecastHeadline(
   forecasts: PoolForecast[] | null,
@@ -381,14 +393,18 @@ export function forecastHeadline(
   if (forecasts === null || forecasts.length === 0) {
     return { tone: 'info', headline: 'Waiting for the first reading.', window: null }
   }
+  // On a tie the weekly one leads: a 5-hour forecast that is out with every week full is the
+  // weekly gap seen from the 5-hour side (it routes only to weeks with room).
+  const weeklyFirst = (f: PoolForecast) => (f.window === 'weekly' ? 0 : 1)
   const ranked = [...forecasts].sort(
     (a, b) =>
       forecastSeverity(a, now) - forecastSeverity(b, now) ||
-      (a.clipsAt ?? Number.POSITIVE_INFINITY) - (b.clipsAt ?? Number.POSITIVE_INFINITY),
+      (a.clipsAt ?? Number.POSITIVE_INFINITY) - (b.clipsAt ?? Number.POSITIVE_INFINITY) ||
+      weeklyFirst(a) - weeklyFirst(b),
   )
   const top = ranked[0] as PoolForecast
-  const also = alsoClause(ranked[1], now)
   const { state, partial } = forecastState(top, now)
+  const later = laterClause(top, ranked[1], now, state === 'clips')
   const window = top.window
   switch (state) {
     case 'logins':
@@ -406,13 +422,13 @@ export function forecastHeadline(
     case 'out':
       return {
         tone: partial ? 'warning' : 'error',
-        headline: `The pool is out of ${ALLOWANCE[window]} now${among(top)}${also}.`,
+        headline: `The pool is out of ${ALLOWANCE[window]} now${outNowFor(top, now)}${among(top)}${later}.`,
         window,
       }
     case 'clips':
       return {
         tone: 'warning',
-        headline: `At this pace the pool runs out of its ${ALLOWANCE[window]} in ${formatCountdown((top.clipsAt as EpochMs) - now)}${outFor(top)}${among(top)}${also}.`,
+        headline: `At this pace the pool runs out of its ${ALLOWANCE[window]} in ${formatCountdown((top.clipsAt as EpochMs) - now)}${outFor(top)}${among(top)}${later}.`,
         window,
       }
     case 'lasts':
