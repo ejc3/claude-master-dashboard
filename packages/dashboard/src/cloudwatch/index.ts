@@ -222,7 +222,7 @@ export function splitLabel(label: string): [string, string] {
 
 interface CacheEntry {
   expiresAt: EpochMs
-  value: Promise<InsightsResult[]>
+  result: InsightsResult[]
 }
 
 export function createCloudWatchSource(options: CloudWatchSourceOptions): MetricsSource {
@@ -306,7 +306,12 @@ export function createCloudWatchSource(options: CloudWatchSourceOptions): Metric
     }))
   }
 
-  /** The same query within a minute is answered once, concurrent callers included. */
+  /**
+   * The same query within a minute is answered once it has been answered. Only answers are
+   * shared, never a request in flight: on Workers a promise belongs to the request that made it,
+   * and another request waiting on it is cancelled when that one ends (the runtime reports it as
+   * hung, a 500). A failure is not kept: the next caller asks CloudWatch again.
+   */
   function cached(
     expression: string,
     start: EpochMs,
@@ -316,19 +321,17 @@ export function createCloudWatchSource(options: CloudWatchSourceOptions): Metric
     const now = clock()
     const key = `${expression}\n${start}\n${end}\n${periodSeconds}`
     const hit = cache.get(key)
-    if (hit !== undefined && hit.expiresAt > now) return hit.value
-    for (const [k, entry] of cache) if (entry.expiresAt <= now) cache.delete(k)
-    if (cache.size >= MAX_CACHE_ENTRIES) {
-      const oldest = cache.keys().next().value
-      if (oldest !== undefined) cache.delete(oldest)
-    }
-    const value = run(expression, start, end, periodSeconds)
-    cache.set(key, { expiresAt: now + cacheMs, value })
-    // A failure is not kept: the next caller asks CloudWatch again.
-    value.catch(() => {
-      if (cache.get(key)?.value === value) cache.delete(key)
+    if (hit !== undefined && hit.expiresAt > now) return Promise.resolve(hit.result)
+    return run(expression, start, end, periodSeconds).then((result) => {
+      const at = clock()
+      for (const [k, entry] of cache) if (entry.expiresAt <= at) cache.delete(k)
+      if (cache.size >= MAX_CACHE_ENTRIES) {
+        const oldest = cache.keys().next().value
+        if (oldest !== undefined) cache.delete(oldest)
+      }
+      cache.set(key, { expiresAt: at + cacheMs, result })
+      return result
     })
-    return value
   }
 
   // The gauges the snapshot reads; one query each, all in flight together.
