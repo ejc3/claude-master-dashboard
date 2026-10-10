@@ -272,10 +272,13 @@ describe('forecastHeadline from both forecasts', () => {
     expect(forecastHeadline([...forecasts].reverse(), NOW).headline).toBe(headline)
   })
 
-  it('leads with the longer gap when both windows are out now', () => {
-    // Both windows full: the week resets in an hour, the 5-hour window in four.
-    const forecasts = both([sub('a', 1, HOUR_MS, 1, 4 * HOUR_MS)])
-    const headline = 'The pool is out of 5-hour capacity now, for 4h.'
+  it('names the weekly gap when both are out and some weeks are what is full', () => {
+    // b's 5-hour window has room; its full week is what stops it.
+    const forecasts = both([
+      sub('a', 1, HOUR_MS, 1, 4 * HOUR_MS),
+      sub('b', 1, 2 * HOUR_MS, 0.1, 3 * HOUR_MS),
+    ])
+    const headline = 'The pool is out of weekly allowance now, for 1h.'
     expect(forecastHeadline(forecasts, NOW).headline).toBe(headline)
     expect(forecastHeadline([...forecasts].reverse(), NOW).headline).toBe(headline)
   })

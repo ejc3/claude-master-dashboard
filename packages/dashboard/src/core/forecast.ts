@@ -376,15 +376,13 @@ export function forecastHeadline(
   if (forecasts === null || forecasts.length === 0) {
     return { tone: 'info', headline: 'Waiting for the first reading.', window: null }
   }
-  // On a tie the longer gap leads (an unknown end counts as longest), then the weekly one: a
-  // 5-hour forecast that is out with every week full is the weekly gap seen from the 5-hour side.
-  const gapEnd = (f: PoolForecast) => f.recoversAt ?? Number.POSITIVE_INFINITY
+  // On a tie the weekly one leads, whatever the order given: a 5-hour forecast routes only to
+  // weeks with room, so when both are out at once it may be the weeks that are full.
   const weeklyFirst = (f: PoolForecast) => (f.window === 'weekly' ? 0 : 1)
   const ranked = [...forecasts].sort(
     (a, b) =>
       forecastSeverity(a, now) - forecastSeverity(b, now) ||
       (a.clipsAt ?? Number.POSITIVE_INFINITY) - (b.clipsAt ?? Number.POSITIVE_INFINITY) ||
-      (gapEnd(a) === gapEnd(b) ? 0 : gapEnd(a) > gapEnd(b) ? -1 : 1) ||
       weeklyFirst(a) - weeklyFirst(b),
   )
   const top = ranked[0] as PoolForecast
