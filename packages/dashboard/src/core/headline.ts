@@ -84,13 +84,3 @@ export function nextAvailable(
   }
   return soonest
 }
-
-/** How the pool reads at a glance: every subscription has headroom, some do, none do, or no reading. */
-export type PoolTone = 'success' | 'warning' | 'error' | 'info'
-
-export function poolTone(profiles: ProfileStatus[] | null, now: EpochMs): PoolTone {
-  if (profiles === null || profiles.length === 0) return 'info'
-  const ready = profiles.filter((p) => hasHeadroom(p, now)).length
-  if (ready === 0) return 'error'
-  return ready === profiles.length ? 'success' : 'warning'
-}

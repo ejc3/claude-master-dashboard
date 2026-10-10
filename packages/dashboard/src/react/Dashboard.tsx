@@ -1,27 +1,27 @@
 'use client'
 
-import { type ReactNode, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import {
+  burnRate,
   type EpochMs,
   formatCount,
   formatCountdown,
   formatPercent,
-  formatWhen,
   HOUR_MS,
   hasHeadroom,
   nextAvailable,
-  nextRunOut,
-  type PoolTone,
-  poolTone,
+  poolForecast,
   type SeriesQuery,
   type Snapshot,
   sumBetween,
   sumSeries,
   type TimeRange,
+  WEEKLY_SMOOTHING_MS,
 } from '../core'
 import { Breakdown } from './Breakdown'
-import { type Loaded, useHydrated, useNow, useSeries, useSnapshot } from './hooks'
+import { type Loaded, useLastReady, useNow, useReadings, useSeries, useSnapshot } from './hooks'
 import { type ChartSeries, foldSeries, LineChart, seriesColors } from './LineChart'
+import { PoolOutlook } from './Pool'
 import type { PollFailure } from './poller'
 import { RunwayCard } from './Runway'
 
@@ -64,68 +64,6 @@ function hourly(points: Array<[EpochMs, number]>): Array<[EpochMs, number]> {
 const data = <T,>(loaded: Loaded<T>): T | null => (loaded.state === 'ready' ? loaded.data : null)
 const failureOf = <T,>(loaded: Loaded<T>): PollFailure | null =>
   loaded.state === 'error' ? loaded.failure : loaded.state === 'ready' ? loaded.failure : null
-
-// Shape as well as color: check, triangle, cross, circle.
-const TONE_ICON: Record<PoolTone, ReactNode> = {
-  success: <path d="M3 8.5l3 3 7-7" fill="none" stroke="currentColor" strokeWidth="2" />,
-  warning: (
-    <path
-      d="M8 2.5L14 13.5H2zM8 6.5v3.5M8 11.5v.5"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.6"
-      strokeLinejoin="round"
-    />
-  ),
-  error: <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="2" />,
-  info: <circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" strokeWidth="1.6" />,
-}
-
-/** The pool's state in one or two sentences, as an alert whose tone says how it reads. */
-function Headline({ snapshot, now }: { snapshot: Snapshot | null; now: EpochMs }) {
-  const hydrated = useHydrated()
-  let headline: string
-  let detail: string | null = null
-  if (snapshot === null) {
-    headline = 'Waiting for the first reading.'
-    detail = 'The metrics source did not answer yet; this page retries every minute.'
-  } else {
-    const { profiles } = snapshot
-    const ready = profiles.filter((p) => hasHeadroom(p, now)).length
-    if (profiles.length === 0) {
-      headline = 'No subscription has reported yet.'
-      detail = 'Readings arrive a few minutes after claude-master starts exporting metrics.'
-    } else if (ready === 0) {
-      headline = 'No subscription can take work right now.'
-      const next = nextAvailable(profiles, now)
-      if (next !== null) {
-        detail = `${next.profile} can take work again in ${formatCountdown(next.at - now)}${hydrated ? `, at ${formatWhen(next.at, now)}` : ''}.`
-      }
-    } else {
-      const runOut = nextRunOut(profiles, now)
-      headline =
-        ready === profiles.length
-          ? `All ${profiles.length} subscriptions have headroom.`
-          : `${ready} of ${profiles.length} subscriptions have headroom.`
-      detail =
-        runOut === null
-          ? 'At the current pace every subscription lasts until its window resets.'
-          : `${runOut.profile} runs out of its ${runOut.window === 'weekly' ? 'weekly allowance' : '5-hour window'} in ${formatCountdown(runOut.at - now)} at this pace.`
-    }
-  }
-  const tone = poolTone(snapshot?.profiles ?? null, now)
-  return (
-    <div className="cmd-alert" data-tone={tone}>
-      <svg className="cmd-alert-icon" viewBox="0 0 16 16" aria-hidden="true">
-        {TONE_ICON[tone]}
-      </svg>
-      <div>
-        <p className="cmd-headline">{headline}</p>
-        {detail !== null && <p className="cmd-subline">{detail}</p>}
-      </div>
-    </div>
-  )
-}
 
 function Kpi(props: { label: string; value: string; note?: string | undefined }) {
   return (
@@ -220,6 +158,44 @@ export function Dashboard(props: DashboardProps) {
     return [{ key: 'error-rate', label: 'Error rate', color: 'var(--cmd-series-1)', points }]
   }, [requestsTotal, errorsData])
 
+  // The weekly burn rate is smoothed over the last day of used-share readings; the 5-hour one is
+  // each window's average so far (no history of it is exported yet).
+  const smoothingRange = rangeEnding(now, WEEKLY_SMOOTHING_MS, 600)
+  const usedReadings = useReadings(apiBase, {
+    metric: 'weeklyUsed',
+    groupBy: 'profile',
+    range: smoothingRange,
+    stepSeconds: 600,
+  })
+  // The last readings stay in use while the next range loads: the range moves every 10 minutes.
+  const usedData = useLastReady(usedReadings)
+  const smoothed = useMemo(() => {
+    const rates = new Map<string, number | null>()
+    for (const s of usedData ?? []) {
+      rates.set(s.key, burnRate(s.points, smoothingRange.end, WEEKLY_SMOOTHING_MS))
+    }
+    return rates
+  }, [usedData, smoothingRange.end])
+  const profilesNow = snapshot?.profiles ?? null
+  const forecasts =
+    profilesNow === null
+      ? null
+      : [
+          // From the readings' own time: usage is as of asOf, not as of this second.
+          poolForecast(profilesNow, 'weekly', snapshot?.asOf ?? now, smoothed, now),
+          poolForecast(profilesNow, 'fiveHour', snapshot?.asOf ?? now, new Map(), now),
+        ]
+  const ready = (profilesNow ?? []).filter((p) => hasHeadroom(p, now)).length
+  const next = profilesNow === null || ready > 0 ? null : nextAvailable(profilesNow, now)
+  const outlookDetail =
+    profilesNow === null
+      ? 'The metrics source did not answer yet; this page retries every minute.'
+      : profilesNow.length === 0
+        ? 'Readings arrive a few minutes after claude-master starts exporting metrics.'
+        : `${ready} of ${profilesNow.length} subscriptions can take work now${
+            next === null ? '' : `; ${next.profile} again in ${formatCountdown(next.at - now)}`
+          }.`
+
   const failures = [
     failureOf(snapshotLoaded),
     failureOf(byProfile),
@@ -227,6 +203,7 @@ export function Dashboard(props: DashboardProps) {
     failureOf(backup),
     failureOf(kpiRequests),
     failureOf(kpiErrors),
+    failureOf(usedReadings),
   ].filter((f): f is PollFailure => f !== null)
   const signedOut = failures.some((f) => f.status === 401)
   const snapshotFailure = failureOf(snapshotLoaded)
@@ -282,7 +259,7 @@ export function Dashboard(props: DashboardProps) {
           </p>
         )}
 
-        <Headline snapshot={snapshot} now={now} />
+        <PoolOutlook forecasts={forecasts} now={now} detail={outlookDetail} />
 
         <section className="cmd-kpis" aria-label="Traffic">
           <Kpi
