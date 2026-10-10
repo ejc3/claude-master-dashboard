@@ -347,12 +347,6 @@
     color: var(--cmd-ink-3);
   }
 
-  .cmd-accounts-key .cmd-account-bar {
-    background: none;
-    outline: 1px solid var(--cmd-ink-3);
-    outline-offset: -1px;
-  }
-
   .cmd-accounts-key-names {
     display: flex;
     gap: 4px;
@@ -401,6 +395,12 @@
     margin: 0 0 4px;
   }
 
+  .cmd-account-detail a {
+    color: var(--cmd-fill);
+    text-decoration-color: color-mix(in srgb, var(--cmd-fill) 40%, transparent);
+    text-underline-offset: 2px;
+  }
+
   .cmd-account-detail ul {
     margin: 0;
     padding: 0;
@@ -443,22 +443,17 @@
     overflow: hidden;
   }
 
+  .cmd-accounts-key .cmd-account-bar {
+    background: none;
+    outline: 1px solid var(--cmd-ink-3);
+    outline-offset: -1px;
+  }
+
   .cmd-account-bar > span {
     position: absolute;
     inset: auto 0 0;
     border-radius: 2px 2px 0 0;
     background: var(--cmd-account-fill, var(--cmd-fill));
-  }
-
-  /* The fill is the subscription's color; nearly full and full are said by an outline. */
-  .cmd-account-bar[data-level="high"] {
-    outline: 2px solid var(--cmd-reserve-mark);
-    outline-offset: 1px;
-  }
-
-  .cmd-account-bar[data-level="full"] {
-    outline: 2px solid var(--cmd-exhausted-mark);
-    outline-offset: 1px;
   }
 
   .cmd-account-bar[data-level="unknown"] {

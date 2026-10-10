@@ -57,7 +57,7 @@ const share = (f: number | null | undefined) =>
 
 /**
  * A tiny bar: how much of a window is used, in the subscription's own color (the same as in the
- * charts); a full one is outlined in the warning color; dashed and empty when there is no reading.
+ * charts); dashed and empty when there is no reading. A full bar says it is used up by itself.
  */
 function UsedBar(props: { used: number | null; window: WindowKind; color: string }) {
   const { used } = props
@@ -374,7 +374,7 @@ export function CapacityOutlook(props: {
             aria-pressed={weeklyView === 'stopped'}
             onClick={() => setWeeklyView('stopped')}
           >
-            Resets only
+            Resets
           </button>
         </fieldset>
       )}
@@ -409,11 +409,8 @@ export function CapacityOutlook(props: {
       </div>
       {chart('fiveHour', shown, '5-hour limit left, next 5h', 'var(--cmd-series-2)')}
       <p className="cmd-capacity-note">
-        {weeklyView === 'stopped'
-          ? 'If nothing more is used: capacity only comes back as each limit resets. '
-          : 'If use goes on at the recent pace. '}
-        100% = one subscription's limit · {projected.capacity * 100}% = all {projected.capacity}{' '}
-        unused · shaded: none available
+        {weeklyView === 'stopped' ? 'If usage stops' : 'At the current pace'} · 100% per
+        subscription · shaded: none available
       </p>
     </div>
   )

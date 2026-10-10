@@ -947,8 +947,8 @@ describe('the banner', () => {
       ) as HTMLButtonElement
     expect(tab('Projected').getAttribute('aria-pressed')).toBe('true')
     const projected = weeklyTitle()
-    act(() => tab('Resets only').click())
-    expect(tab('Resets only').getAttribute('aria-pressed')).toBe('true')
+    act(() => tab('Resets').click())
+    expect(tab('Resets').getAttribute('aria-pressed')).toBe('true')
     // Now the same (90% left now): the title is what is left now either way.
     expect(weeklyTitle()).toBe(projected)
     const slider = container.querySelector('.cmd-capacity-weekly [role="slider"]') as HTMLElement
@@ -958,9 +958,7 @@ describe('the banner', () => {
     // With no more use, every week is whole again by its reset: 200% for two subscriptions.
     expect(slider.getAttribute('aria-valuetext')).toMatch(/total 200%$/)
     // The toggle covers the 5-hour chart and says what it shows.
-    expect(container.querySelector('.cmd-capacity-note')?.textContent).toContain(
-      'If nothing more is used',
-    )
+    expect(container.querySelector('.cmd-capacity-note')?.textContent).toContain('If usage stops')
     const five = [...container.querySelectorAll('.cmd-capacity [role="slider"]')].at(
       -1,
     ) as HTMLElement
