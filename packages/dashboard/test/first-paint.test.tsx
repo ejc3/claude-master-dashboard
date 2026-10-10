@@ -947,8 +947,8 @@ describe('the banner', () => {
       ) as HTMLButtonElement
     expect(tab('Projected').getAttribute('aria-pressed')).toBe('true')
     const projected = weeklyTitle()
-    act(() => tab('Resets only').click())
-    expect(tab('Resets only').getAttribute('aria-pressed')).toBe('true')
+    act(() => tab('Resets').click())
+    expect(tab('Resets').getAttribute('aria-pressed')).toBe('true')
     // Now the same (90% left now): the title is what is left now either way.
     expect(weeklyTitle()).toBe(projected)
     const slider = container.querySelector('.cmd-capacity-weekly [role="slider"]') as HTMLElement

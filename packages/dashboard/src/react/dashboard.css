@@ -347,12 +347,6 @@
     color: var(--cmd-ink-3);
   }
 
-  .cmd-accounts-key .cmd-account-bar {
-    background: none;
-    outline: 1px solid var(--cmd-ink-3);
-    outline-offset: -1px;
-  }
-
   .cmd-accounts-key-names {
     display: flex;
     gap: 4px;
@@ -449,13 +443,18 @@
     overflow: hidden;
   }
 
+  .cmd-accounts-key .cmd-account-bar {
+    background: none;
+    outline: 1px solid var(--cmd-ink-3);
+    outline-offset: -1px;
+  }
+
   .cmd-account-bar > span {
     position: absolute;
     inset: auto 0 0;
     border-radius: 2px 2px 0 0;
     background: var(--cmd-account-fill, var(--cmd-fill));
   }
-
 
   .cmd-account-bar[data-level="unknown"] {
     background: none;

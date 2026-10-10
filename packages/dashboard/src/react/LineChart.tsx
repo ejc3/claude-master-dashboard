@@ -172,7 +172,7 @@ export const LineChart = memo(function LineChart({
         return acc
       }, [])
     : series.map((s) => s.points.map(([, v]) => v))
-  const max = fixedMax ?? niceMax(Math.max(0, ...tops.flatMap((values) => values)), integer)
+  const max = fixedMax ?? niceMax(Math.max(0, ...tops.flat()), integer)
   const first = times[0] ?? 0
   const last = times[times.length - 1] ?? 1
   const x = (t: EpochMs) =>
