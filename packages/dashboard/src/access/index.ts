@@ -9,8 +9,9 @@ export interface AccessOptions {
   /** The Access application's audience tag (AUD). */
   audience: string
   /**
-   * The addresses (any case) admitted. Required and non-empty: the app checks the signed-in
-   * address itself, so a policy widened by mistake in Access admits no one new here.
+   * The addresses admitted (letters A-Z in any case; other characters must match exactly).
+   * Required and non-empty: the app checks the signed-in address itself, so a policy widened by
+   * mistake in Access admits no one new here.
    */
   allowedEmails: readonly string[]
   /**
@@ -121,7 +122,7 @@ export function cloudflareAccess(options: AccessOptions): {
 }
 
 /**
- * An environment (process.env, a Worker's env) holding the settings by the names docs/deploy.md
+ * String settings (process.env, or a Worker's string vars and secrets) by the names docs/deploy.md
  * uses: CF_ACCESS_TEAM_DOMAIN, CF_ACCESS_AUD, DASHBOARD_ALLOWED_EMAILS and the optional
  * DASHBOARD_SERVICE_TOKEN_CLIENT_ID.
  */

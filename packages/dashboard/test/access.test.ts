@@ -144,6 +144,9 @@ describe('cloudflareAccess', () => {
     const a = access({ allowedEmails: ['kate@example.com'] })
     expect(await a.identify(await sign({ email: '\u212Aate@example.com' }))).toBeNull()
     expect(await a.identify(await sign({ email: 'Kate@Example.com' }))).not.toBeNull()
+    // The same on the list's side: a lookalike there matches no real address.
+    const lookalike = access({ allowedEmails: ['\u212Aate@example.com'] })
+    expect(await lookalike.identify(await sign({ email: 'kate@example.com' }))).toBeNull()
   })
 
   it('logs a refused address without naming it', async () => {
