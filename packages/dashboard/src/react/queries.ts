@@ -30,8 +30,12 @@ export const FIRST_RANGE: RangeName = '24h'
 export const SPLITS: ReadonlyArray<{
   dimension: Dimension
   label: string
+  /** The tab's name on a phone. */
+  shortLabel: string
   noun: string
   column: string
+  /** The column's name on a phone. */
+  shortColumn: string
   /** claude-master counts tokens by this split; models have no token projection. */
   tokens: boolean
   /** claude-master counts requests by this split too, the table's fallback; not by project. */
@@ -40,40 +44,50 @@ export const SPLITS: ReadonlyArray<{
   {
     dimension: 'client_account',
     label: 'People',
+    shortLabel: 'People',
     noun: 'person',
     column: 'Person',
+    shortColumn: 'Person',
     tokens: true,
     requests: true,
   },
   {
     dimension: 'client',
     label: 'Machines',
+    shortLabel: 'Machines',
     noun: 'machine',
     column: 'Machine',
+    shortColumn: 'Machine',
     tokens: true,
     requests: true,
   },
   {
     dimension: 'profile',
     label: 'Subscriptions',
+    shortLabel: 'Subs',
     noun: 'subscription',
     column: 'Subscription',
+    shortColumn: 'Sub',
     tokens: true,
     requests: true,
   },
   {
     dimension: 'project',
     label: 'Projects',
+    shortLabel: 'Projects',
     noun: 'project',
     column: 'Project',
+    shortColumn: 'Project',
     tokens: true,
     requests: false,
   },
   {
     dimension: 'model',
     label: 'Models',
+    shortLabel: 'Models',
     noun: 'model',
     column: 'Model',
+    shortColumn: 'Model',
     tokens: false,
     requests: true,
   },

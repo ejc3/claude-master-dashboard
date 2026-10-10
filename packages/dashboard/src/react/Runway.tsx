@@ -7,7 +7,6 @@ import {
   elapsedFraction,
   fiveHourAt,
   formatCountdown,
-  formatDuration,
   formatPercent,
   loginOverdue,
   type ProfileStatus,
@@ -21,7 +20,7 @@ import { useWhen } from './hooks'
 export type CardStatus = 'ok' | 'low' | 'used-up' | 'rate-limited' | 'login' | 'unknown'
 
 const STATUS_LABEL: Record<CardStatus, string> = {
-  ok: 'Has headroom',
+  ok: 'Available',
   low: 'Running low',
   'used-up': 'Used up',
   'rate-limited': 'Rate limited',
@@ -69,9 +68,10 @@ export function StatusBadge({ status }: { status: CardStatus }) {
   )
 }
 
-// Said only when it changes what to do: a used-up window, or one that runs out before its reset.
+// Said only when it changes what to do: a window that runs out before its reset. A used-up one says
+// so in the badge and the row's "Back in".
 function paceNote(window: QuotaWindow, now: EpochMs): string | null {
-  if (window.usedFraction !== null && window.usedFraction >= 1) return 'Used up until the reset.'
+  if (window.usedFraction !== null && window.usedFraction >= 1) return null
   const runOut = projectedExhaustion(window, now)
   return runOut === null ? null : `Runs out in ${formatCountdown(runOut - now)} at this pace.`
 }
@@ -155,7 +155,7 @@ export function RunwayCard({
         </div>
         <p className="cmd-row-meta">
           {b?.until != null && (
-            <span data-warn="true">Takes work again in {formatCountdown(b.until - now)}</span>
+            <span data-warn="true">Back in {formatCountdown(b.until - now)}</span>
           )}
           {card === 'login' && <span data-warn="true">Log the profile in again on the server</span>}
           {loginOverdue(status, now) && status.tokenExpiresAt !== null && (
@@ -163,7 +163,6 @@ export function RunwayCard({
               Login not renewed; expires in {formatCountdown(status.tokenExpiresAt - now)}
             </span>
           )}
-          <span>p95 {formatDuration(status.latencyMs.p95)}</span>
         </p>
       </div>
       <WindowRow name="Weekly" window={status.weekly} now={now} />
