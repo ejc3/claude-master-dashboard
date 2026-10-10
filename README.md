@@ -50,8 +50,10 @@ const allowed = async () =>
 
 The reference app deploys as a Cloudflare Worker: see [docs/deploy.md](docs/deploy.md).
 The look follows an error-monitoring console (pale violet-gray page, quiet panels, one violet
-accent, tinted status tags). Every color is a `--cmd-*` custom property on `.cmd-root`, so a host
-restyles it by overriding those. The font is optional: set `--cmd-font-sans` (the reference app
+accent, tinted status tags). Every color and shadow is a `--cmd-*` custom property on
+`.cmd-root`, so a host restyles it by overriding those. The dashboard's styles sit in the `cmd`
+cascade layer, so a host's own (unlayered) override wins in both themes: set its dark values
+under the host's dark-mode selector as well. The font is optional: set `--cmd-font-sans` (the reference app
 uses Rubik through `next/font`).
 
 ## Develop

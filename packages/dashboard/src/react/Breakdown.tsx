@@ -9,7 +9,7 @@ import {
   type TimeRange,
 } from '../core/index'
 import { useSeries } from './hooks'
-import { Sparkline } from './Sparkline'
+import { Sparkline, sparkBars } from './Sparkline'
 
 const SPLITS: Array<{ dimension: Dimension; label: string; noun: string; column: string }> = [
   { dimension: 'client_account', label: 'People', noun: 'person', column: 'Person' },
@@ -41,8 +41,9 @@ export function Breakdown(props: {
           .sort((a, b) => b.total - a.total)
       : []
   const all = rows.reduce((sum, r) => sum + r.total, 0)
-  // One scale for every row's trend, so a small series does not look as busy as a large one.
-  const peak = Math.max(0, ...rows.flatMap((r) => r.points.map(([, v]) => v)))
+  // One scale for every row's trend (the tallest bar of any row), so a small series does not
+  // look as busy as a large one and the busiest row's peak fills its height.
+  const peak = Math.max(0, ...rows.flatMap((r) => sparkBars(r.points)))
 
   return (
     <section className="cmd-panel cmd-panel-flush" aria-labelledby="cmd-breakdown-title">
@@ -104,7 +105,7 @@ export function Breakdown(props: {
                       </span>
                     </td>
                     <td className="cmd-trend">
-                      <Sparkline points={r.points} max={peak} />
+                      <Sparkline points={r.points} maxBar={peak} />
                     </td>
                   </tr>
                 )
