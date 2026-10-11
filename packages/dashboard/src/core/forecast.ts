@@ -318,6 +318,8 @@ export interface PoolGaps {
    * while its week has room, since one in a used-up week cannot be used.
    */
   trace: CapacityPoint[]
+  /** The forecast's clock (`now`): the trace has a point there, besides its 10-minute grid. */
+  clock: EpochMs
   /** The most the trace can show: one for each subscription that can work (login valid). */
   capacity: number
   /** The subscriptions the trace covers, in order (those that can work). */
@@ -479,6 +481,7 @@ export function poolGaps(
     gaps,
     lasts,
     trace,
+    clock: Math.max(now, from),
     capacity: slots.length,
     subscriptions: slots.map((s) => profiles[s.index]?.profile ?? ''),
     pace: { weekly: weeklyDemand, fiveHour: fiveDemand },
@@ -532,6 +535,8 @@ export function poolGaps(
   const gaps: PoolGap[] = []
   const end = from + GAPS_HORIZON_MS
   for (let t = from; t <= end; t += step) {
+    // Samples before this step first, each with only the resets due by its own time.
+    sampleUntil(t)
     for (const s of slots) {
       resetWeek(s, t)
       closeIfOver(s.five, t)

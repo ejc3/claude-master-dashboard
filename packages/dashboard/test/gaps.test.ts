@@ -437,6 +437,16 @@ describe('poolGaps capacity trace', () => {
     expect(g.trace[0]?.fiveHour).toBe(0)
     // Alpha's whole window, less the little simulated since the reset.
     expect(g.trace[1]?.fiveHour).toBeGreaterThan(0.95)
+    // A reset due after now does not show at now, even inside the same simulation step: a
+    // half-used window resetting 90 seconds in still reads about half left at 60 seconds.
+    const early = poolGaps(
+      [sub('a', [0.5, 50 * H], [0.5, 90_000])],
+      NOW,
+      rates({ a: 0 }),
+      NOW + 60_000,
+    )
+    expect(early.clock).toBe(NOW + 60_000)
+    expect(early.trace.find((p) => p.at === NOW + 60_000)?.fiveHour).toBeLessThan(0.6)
     // A now on a sample is that sample, not a second point.
     const onGrid = poolGaps(
       [sub('a', [0.5, 50 * H], null)],
@@ -518,6 +528,7 @@ describe('gapsHeadline', () => {
     gaps: [],
     lasts: null,
     trace: [],
+    clock: NOW,
     capacity: 2,
     subscriptions: [],
     pace: { weekly: 0, fiveHour: 0 },

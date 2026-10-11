@@ -352,12 +352,10 @@ function capacitySeries(gaps: PoolGaps | null, now: EpochMs, resets: EpochMs[]) 
   const weeklyUntil = Math.min(horizonEnd, Math.max(now + 24 * HOUR_MS, ...resets) + 12 * HOUR_MS)
   const fiveUntil = Math.min(horizonEnd, now + 5 * HOUR_MS)
   const start = gaps.trace[0]?.at ?? now
-  // Every `every` from the first sample, plus the forecast's own sample at its clock (the one
-  // point off the sample grid), so what is left now reads at now.
+  // Every `every` from the first sample, plus the forecast's own sample at its clock, so what is
+  // left now reads at now.
   const shown = (at: EpochMs, until: EpochMs, every: number) =>
-    at >= now - every &&
-    at <= until &&
-    ((at - start) % every === 0 || (at - start) % TRACE_STEP_MS !== 0)
+    at >= now - every && at <= until && ((at - start) % every === 0 || at === gaps.clock)
   const points = (key: 'weekly' | 'fiveHour', until: EpochMs, every: number) =>
     gaps.trace
       .filter((p) => shown(p.at, until, every))

@@ -660,6 +660,40 @@ describe('the account bars', () => {
 })
 
 describe('the capacity charts', () => {
+  it('read what is left at the forecast clock, also on the 10-minute grid between hours', () => {
+    // b's week resets ten minutes in: on the 10-minute grid, not the hourly one.
+    const ten = NOW + 10 * 60_000
+    const profiles: ProfileStatus[] = ['a', 'b'].map((name, i) => ({
+      profile: name,
+      band: 'ok',
+      weekly: {
+        usedFraction: i === 1 ? 1 : 0.5,
+        resetsAt: i === 1 ? ten : NOW + 30 * HOUR_MS,
+        lengthMs: 168 * HOUR_MS,
+      },
+      fiveHour: null,
+      rateLimitedUntil: null,
+      tokenExpiresAt: null,
+      latencyMs: { p50: null, p95: null, p99: null },
+    }))
+    const gaps = poolGaps(
+      profiles,
+      NOW,
+      new Map([
+        ['a', 0],
+        ['b', 0],
+      ]),
+      ten,
+    )
+    const container = document.createElement('div')
+    document.body.append(container)
+    const root = createRoot(container)
+    roots.push(root)
+    act(() => root.render(<CapacityOutlook gaps={gaps} profiles={profiles} now={ten} />))
+    // a's half week plus b's whole one, at once.
+    expect(container.querySelector('figcaption')?.textContent).toBe('Weekly limit left · 150%')
+  })
+
   it('show what is left of each window, weekly to the furthest reset and 5-hour over a day', () => {
     const profile = (name: string, weeklyResetIn: number): ProfileStatus => ({
       profile: name,
