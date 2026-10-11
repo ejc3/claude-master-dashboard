@@ -56,12 +56,14 @@ const share = (f: number | null | undefined) =>
   f === null || f === undefined || !Number.isFinite(f) ? null : Math.min(1, Math.max(0, f))
 
 /**
- * A tiny bar: how much of a window is used, in the subscription's own color (the same as in the
- * charts); dashed and empty when there is no reading. A full bar says it is used up by itself.
+ * A tiny bar: how much of a window is left, in the subscription's own color (the same as in the
+ * charts, which also show what is left); dashed and empty when there is no reading. A used-up
+ * window is an empty bar.
  */
-function UsedBar(props: { used: number | null; window: WindowKind; color: string }) {
+function LeftBar(props: { used: number | null; window: WindowKind; color: string }) {
   const { used } = props
   const level = used === null ? 'unknown' : used >= 1 ? 'full' : used >= 0.9 ? 'high' : 'ok'
+  const left = used === null ? null : 1 - used
   return (
     <span
       className="cmd-account-bar"
@@ -69,7 +71,74 @@ function UsedBar(props: { used: number | null; window: WindowKind; color: string
       data-level={level}
       style={{ '--cmd-account-fill': props.color } as CSSProperties}
     >
-      {used !== null && <span style={{ height: `${used * 100}%` }} />}
+      {left !== null && left > 0 && <span style={{ height: `${Math.round(left * 1000) / 10}%` }} />}
+    </span>
+  )
+}
+
+/**
+ * How long the sparkle is kept when a subscription takes work again: the last star's delay plus
+ * the animation (dashboard.css, .cmd-sparkle), so none is cut short.
+ */
+export const SPARKLE_MS = 2000
+
+/**
+ * The subscriptions that just took work again (unavailable on the last render, available now),
+ * each with the count of its returns, kept for SPARKLE_MS so its sparkle can play. The count keys
+ * the sparkle, so a second return while one plays starts it over. Nothing sparkles on the first
+ * render: quota that was already there did not just return.
+ */
+export function useReturned(available: ReadonlyMap<string, boolean>): ReadonlyMap<string, number> {
+  const [returned, setReturned] = useState<ReadonlyMap<string, number>>(() => new Map())
+  const last = useRef<ReadonlyMap<string, boolean> | null>(null)
+  const count = useRef(0)
+  const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>())
+  const key = [...available].map(([k, v]) => `${k}:${v}`).join('\n')
+  // biome-ignore lint/correctness/useExhaustiveDependencies: available is read through its key
+  useEffect(() => {
+    const before = last.current
+    last.current = available
+    if (before === null) return
+    const back = [...available].filter(([k, v]) => v && before.get(k) === false).map(([k]) => k)
+    if (back.length === 0) return
+    setReturned((r) => {
+      const next = new Map(r)
+      for (const k of back) next.set(k, ++count.current)
+      return next
+    })
+    for (const k of back) {
+      clearTimeout(timers.current.get(k))
+      timers.current.set(
+        k,
+        setTimeout(() => {
+          timers.current.delete(k)
+          setReturned((r) => {
+            const next = new Map(r)
+            next.delete(k)
+            return next
+          })
+        }, SPARKLE_MS),
+      )
+    }
+  }, [key])
+  useEffect(() => {
+    const pending = timers.current
+    return () => {
+      for (const t of pending.values()) clearTimeout(t)
+    }
+  }, [])
+  return returned
+}
+
+/** Four small stars that burst around a subscription's bars when it takes work again. */
+function Sparkle(props: { color: string }) {
+  return (
+    <span className="cmd-sparkle" aria-hidden="true" style={{ color: props.color }}>
+      {[0, 1, 2, 3].map((i) => (
+        <svg key={i} viewBox="0 0 10 10" data-star={i} aria-hidden="true">
+          <path d="M5 0 6 4 10 5 6 6 5 10 4 6 0 5 4 4Z" fill="currentColor" />
+        </svg>
+      ))}
     </span>
   )
 }
@@ -162,6 +231,9 @@ export function PoolAccounts(props: {
   const names = shortNames(props.profiles.map((p) => p.profile))
   const colors = props.colors ?? accountColors(props.profiles.map((p) => p.profile))
   const [open, setOpen] = useState<string | null>(null)
+  const returned = useReturned(
+    new Map(props.profiles.map((p) => [p.profile, hasHeadroom(p, props.now)])),
+  )
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
     if (open === null) return
@@ -192,16 +264,24 @@ export function PoolAccounts(props: {
           <span>week</span>
           <span>5h</span>
         </span>
-        <span className="cmd-accounts-key-caption">used</span>
+        <span className="cmd-accounts-key-caption">left</span>
       </div>
-      <ul aria-label="Each subscription's weekly and 5-hour use">
+      <ul aria-label="What each subscription has left of its weekly and 5-hour limits">
         {props.profiles.map((p) => {
           const weekly = share(p.weekly.usedFraction)
           // As of now: a read window whose reset has passed is no window open.
           const five = share(fiveHourAt(p.fiveHour, props.now)?.usedFraction)
           const available = hasHeadroom(p, props.now)
           return (
-            <li key={p.profile} className="cmd-account" data-open={available}>
+            <li
+              key={p.profile}
+              className="cmd-account"
+              data-open={available}
+              data-returned={returned.has(p.profile) || undefined}
+            >
+              {returned.has(p.profile) && (
+                <Sparkle key={returned.get(p.profile)} color={colors.get(p.profile) ?? ''} />
+              )}
               <button
                 type="button"
                 aria-expanded={open === p.profile}
@@ -212,13 +292,13 @@ export function PoolAccounts(props: {
                 }}
               >
                 <span className="cmd-account-bars" aria-hidden="true">
-                  <UsedBar used={weekly} window="weekly" color={colors.get(p.profile) ?? ''} />
-                  <UsedBar used={five} window="fiveHour" color={colors.get(p.profile) ?? ''} />
+                  <LeftBar used={weekly} window="weekly" color={colors.get(p.profile) ?? ''} />
+                  <LeftBar used={five} window="fiveHour" color={colors.get(p.profile) ?? ''} />
                 </span>
                 <span className="cmd-account-name">{names.get(p.profile)}</span>
                 <span className="cmd-visually-hidden">
-                  {`: week ${formatPercent(weekly)} used, 5-hour ${
-                    five === null ? 'no reading' : `${formatPercent(five)} used`
+                  {`: week ${formatPercent(weekly === null ? null : 1 - weekly)} left, 5-hour ${
+                    five === null ? 'no reading' : `${formatPercent(1 - five)} left`
                   }${available ? '' : ', not available'}`}
                 </span>
               </button>
@@ -272,15 +352,19 @@ function capacitySeries(gaps: PoolGaps | null, now: EpochMs, resets: EpochMs[]) 
   const weeklyUntil = Math.min(horizonEnd, Math.max(now + 24 * HOUR_MS, ...resets) + 12 * HOUR_MS)
   const fiveUntil = Math.min(horizonEnd, now + 5 * HOUR_MS)
   const start = gaps.trace[0]?.at ?? now
+  // Every `every` from the first sample, plus the forecast's own sample at its clock, so what is
+  // left now reads at now.
+  const shown = (at: EpochMs, until: EpochMs, every: number) =>
+    at >= now - every && at <= until && ((at - start) % every === 0 || at === gaps.clock)
   const points = (key: 'weekly' | 'fiveHour', until: EpochMs, every: number) =>
     gaps.trace
-      .filter((p) => p.at >= now - every && p.at <= until && (p.at - start) % every === 0)
+      .filter((p) => shown(p.at, until, every))
       .map((p): [EpochMs, number] => [p.at, p[key]])
   // Each subscription's week, for the stacked weekly chart.
   const weeklyBy = gaps.subscriptions.map((name, k) => ({
     name,
     points: gaps.trace
-      .filter((p) => p.at >= now - HOUR_MS && p.at <= weeklyUntil && (p.at - start) % HOUR_MS === 0)
+      .filter((p) => shown(p.at, weeklyUntil, HOUR_MS))
       .map((p): [EpochMs, number] => [p.at, p.weeklyBy[k] ?? 0]),
   }))
   return {

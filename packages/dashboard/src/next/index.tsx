@@ -34,6 +34,22 @@ function json(body: unknown, status = 200): Response {
  *   // app/api/claude-master/[...path]/route.ts
  *   export const { GET } = createDashboardHandler({ source, authorize })
  */
+/**
+ * The first path segment under `base` of a request URL, decoded ("" when there is none or its
+ * escape is malformed): which dashboard a request under one API mount is for.
+ */
+export function firstSegmentUnder(url: string, base: string): string {
+  const path = new URL(url).pathname
+  const prefix = base.endsWith('/') ? base : `${base}/`
+  if (!path.startsWith(prefix)) return ''
+  const [first = ''] = path.slice(prefix.length).split('/')
+  try {
+    return decodeURIComponent(first)
+  } catch {
+    return ''
+  }
+}
+
 export function createDashboardHandler(config: DashboardHandlerConfig): {
   GET: (request: Request) => Promise<Response>
 } {

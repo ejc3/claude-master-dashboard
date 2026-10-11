@@ -428,6 +428,36 @@ describe('allowance left on the table at weekly resets', () => {
 })
 
 describe('poolGaps capacity trace', () => {
+  it('has a point at now, so a reset since the last sample shows at once', () => {
+    // a's 5-hour window is used up and resets 2 minutes after the reading; now is a minute later,
+    // between the 10-minute samples.
+    const now = NOW + 3 * 60_000
+    const g = poolGaps([sub('a', [0.5, 50 * H], [1, 2 * 60_000])], NOW, rates({ a: 0 }), now)
+    expect(g.trace.map((p) => p.at).slice(0, 3)).toEqual([NOW, now, NOW + 10 * 60_000])
+    expect(g.trace[0]?.fiveHour).toBe(0)
+    // Alpha's whole window, less the little simulated since the reset.
+    expect(g.trace[1]?.fiveHour).toBeGreaterThan(0.95)
+    // A reset due after now does not show at now, even inside the same simulation step: a
+    // half-used window resetting 90 seconds in still reads about half left at 60 seconds.
+    const early = poolGaps(
+      [sub('a', [0.5, 50 * H], [0.5, 90_000])],
+      NOW,
+      rates({ a: 0 }),
+      NOW + 60_000,
+    )
+    expect(early.clock).toBe(NOW + 60_000)
+    expect(early.trace.find((p) => p.at === NOW + 60_000)?.fiveHour).toBeLessThan(0.6)
+    // A now on a sample is that sample, not a second point.
+    const onGrid = poolGaps(
+      [sub('a', [0.5, 50 * H], null)],
+      NOW,
+      rates({ a: 0 }),
+      NOW + 10 * 60_000,
+    )
+    const times = onGrid.trace.map((p) => p.at)
+    expect(new Set(times).size).toBe(times.length)
+  })
+
   it('starts at what is left, falls at the pace of use, and steps up when a week resets', () => {
     // Two subscriptions with half their week left each; one resets in a day.
     const g = poolGaps(
@@ -498,6 +528,7 @@ describe('gapsHeadline', () => {
     gaps: [],
     lasts: null,
     trace: [],
+    clock: NOW,
     capacity: 2,
     subscriptions: [],
     pace: { weekly: 0, fiveHour: 0 },
