@@ -7,7 +7,7 @@ The reference app (`apps/web`) deploys as the Cloudflare Worker `claude-master-d
 
 **This repository:** the Worker's code and its URL switches in `apps/web/wrangler.jsonc`.
 
-**`ejc3/aws` (Terraform, `claude-master-dashboard-site.tf`):**
+**`ejc3/aws` (Terraform, `claw-master-dashboard-site.tf`):**
 - **The Access application.** It has the Worker as its destination, so once the URLs are on it gates workers.dev and every preview URL. It signs people in with the account's existing Google and one-time-PIN providers (no new OAuth client), and its policy admits the dashboard's operators.
 - **The read-only AWS key.** It is limited to `cloudwatch:GetMetricData` and `cloudwatch:ListMetrics` in one region, and kept in Secrets Manager.
 

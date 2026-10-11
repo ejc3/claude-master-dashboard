@@ -51,7 +51,7 @@ and this one needs no Vercel project.
   Worker secrets from there, each on stdin: the read-only CloudWatch key from
   `claude-master-dashboard/aws-reader`, the allowlist from `people/addresses`, the account
   aliases built from `claude-master/account-labels`, and the Access values from
-  `terraform output claude_master_dashboard` in ejc3/aws. Never commit one, never print one.
+  `terraform output claw_master_dashboard` in ejc3/aws. Never commit one, never print one.
   The Cloudflare deploy token is not an app secret and stays with the deploy workflow.
 - **Public build-time values** (`NEXT_PUBLIC_*`) are Actions variables mapped into the build
   step of `.github/workflows/deploy.yml` (only the names mapped there reach the build).
