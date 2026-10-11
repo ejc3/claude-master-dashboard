@@ -1,9 +1,11 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   type AlarmStatus,
   burnRate,
+  type CapacityAdvice,
+  capacityAdvice,
   type EpochMs,
   formatCount,
   formatCountdown,
@@ -302,6 +304,14 @@ function DashboardBody(props: DashboardProps) {
     () => (profilesNow === null ? null : poolGaps(profilesNow, asOf, smoothed, gapsAt, true)),
     [profilesNow, asOf, smoothed, gapsAt],
   )
+  // What to buy or cancel: a few dozen runs of the same forecast, so worked out after the page is
+  // up and again only when a new snapshot or pace arrives, never on the clock's tick.
+  const [advice, setAdvice] = useState<CapacityAdvice | null>(null)
+  useEffect(() => {
+    if (profilesNow === null) return
+    const timer = setTimeout(() => setAdvice(capacityAdvice(profilesNow, asOf, smoothed, asOf)), 0)
+    return () => clearTimeout(timer)
+  }, [profilesNow, asOf, smoothed])
   const ready = (profilesNow ?? []).filter((p) => hasHeadroom(p, now)).length
   const outlookDetail =
     profilesNow === null
@@ -425,6 +435,7 @@ function DashboardBody(props: DashboardProps) {
           profiles={profilesNow}
           now={now}
           detail={outlookDetail}
+          advice={advice}
         />
 
         <section className="cmd-kpis" aria-label="Traffic">

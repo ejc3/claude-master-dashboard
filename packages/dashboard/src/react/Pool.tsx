@@ -3,6 +3,8 @@
 import { type CSSProperties, type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import {
   blocked,
+  type CapacityAdvice,
+  COVERAGE_TARGET,
   type EpochMs,
   fiveHourAt,
   formatCountdown,
@@ -504,6 +506,38 @@ export function CapacityOutlook(props: {
  * The top of the dashboard: when the pool runs out and for how long, the pace that assumes, each
  * subscription's use at a glance, and what is left over time.
  */
+/**
+ * The capacity advice in words, or null when there is none to give: how many subscriptions to add
+ * and by when, or which could be cancelled and after what. `clock` writes a time; without it the
+ * line says how long from now.
+ */
+export function adviceLine(
+  advice: CapacityAdvice | null,
+  names: ReadonlyMap<string, string>,
+  now: EpochMs,
+  clock: ((at: EpochMs) => string) | null,
+): string | null {
+  if (advice === null) return null
+  const at = (t: EpochMs) =>
+    t <= now + 60_000 ? 'now' : clock === null ? `in ${formatCountdown(t - now)}` : `by ${clock(t)}`
+  const target = formatPercent(COVERAGE_TARGET)
+  if (advice.kind === 'add') {
+    const subs = advice.count === 1 ? '1 subscription' : `${advice.count} subscriptions`
+    return `Add ${subs} ${at(advice.buyBy)} to have tokens ${target} of the week (${formatPercent(advice.now)} now)`
+  }
+  if (advice.kind === 'remove') {
+    const each = advice.remove.map((r) => {
+      const name = names.get(r.profile) ?? r.profile
+      if (r.after === null || r.after <= now) return name
+      return `${name} after its week resets${clock === null ? ` in ${formatCountdown(r.after - now)}` : ` ${clock(r.after)}`}`
+    })
+    const list =
+      each.length <= 1 ? each.join('') : `${each.slice(0, -1).join(', ')} and ${each.at(-1)}`
+    return `Could cancel ${list} and still have tokens ${formatPercent(advice.after)} of the week`
+  }
+  return null
+}
+
 export function PoolOutlook(props: {
   gaps: PoolGaps | null
   /** The same forecast with no more use (poolGaps' noMoreUse), for the weekly chart's other tab. */
@@ -511,6 +545,8 @@ export function PoolOutlook(props: {
   profiles: ProfileStatus[] | null
   now: EpochMs
   detail?: string | null
+  /** What to buy or cancel (capacityAdvice), when it has been worked out. */
+  advice?: CapacityAdvice | null
 }) {
   const { now } = props
   const when = useWhen()
@@ -551,7 +587,10 @@ export function PoolOutlook(props: {
         ? []
         : [pace.charAt(0).toUpperCase() + pace.slice(1)]
       : [pace === null ? props.detail : `${props.detail} · ${pace}`]
-  const lines = [...facts, ...status, ...unused]
+  const plan = forecasting
+    ? adviceLine(props.advice ?? null, names, now, when === null ? null : (t) => when(t, now))
+    : null
+  const lines = [...facts, ...status, ...unused, ...(plan === null ? [] : [plan])]
   return (
     <section className="cmd-pool" data-tone={tone} aria-labelledby="cmd-pool-headline">
       <div className="cmd-pool-head">

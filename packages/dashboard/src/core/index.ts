@@ -1,4 +1,12 @@
 export {
+  boughtAt,
+  type CapacityAdvice,
+  COVERAGE_TARGET,
+  capacityAdvice,
+  coverage,
+  MAX_ADDED,
+} from './advice'
+export {
   groupableBy,
   insightsQuery,
   type ResolvedMetric,

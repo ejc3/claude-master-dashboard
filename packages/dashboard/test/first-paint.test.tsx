@@ -1352,3 +1352,19 @@ describe('a subscription row', () => {
     expect(usedUp.textContent).not.toContain('Used up until the reset')
   })
 })
+
+describe('the capacity advice', () => {
+  it('appears in the banner once the page is up, not in the first paint', async () => {
+    // UTC, so the clock time reads the same on every machine.
+    const { container, serverText } = await hydrated('UTC')
+    expect(serverText).not.toMatch(/Could cancel|subscriptions? (by|now|in)/)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    const facts = [...container.querySelectorAll('.cmd-facts li')].map((e) => e.textContent ?? '')
+    // At the demo's pace the pool covers 89% of the week: one more subscription, by a clock time.
+    expect(facts).toContain(
+      'Add 1 subscription by Sat 9:57 PM to have tokens 95% of the week (89% now)',
+    )
+  })
+})
