@@ -8,7 +8,7 @@ import {
 } from '../src/core/index'
 
 // The attributes each metric carries, written out from claude-master's metrics.go
-// (internal/claudemaster/metrics.go, observeRequest and the routing/quota recorders), not from
+// (internal/clawmaster/metrics.go, observeRequest and the routing/quota recorders), not from
 // the catalog: a catalog change that accepts a split the proxy does not emit fails here.
 const EMITTED: Record<string, readonly Dimension[]> = {
   'claw_master.inference.requests': ['profile', 'client_account', 'status_class'],

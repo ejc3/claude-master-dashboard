@@ -23,7 +23,7 @@ interface Entry {
 }
 
 // claude-master never crosses its axes: each metric carries at most three attributes, and a
-// split by another axis is a separate metric (docs/claude-master.md in ejc3/CLIProxyAPI).
+// split by another axis is a separate metric (docs/claw-master.md in ejc3/CLIProxyAPI).
 const CATALOG: Record<SemanticMetric, Entry> = {
   requests: {
     name: 'claw_master.inference.requests',
