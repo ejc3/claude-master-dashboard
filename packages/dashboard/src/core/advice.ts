@@ -10,19 +10,25 @@ export const COVERAGE_TARGET = 0.95
 export const MAX_ADDED = 10
 
 /**
- * The share of the forecast's week (from `now`) with at least one subscription that can take work:
- * one minus the gaps' share of it, an open-ended gap running to the horizon.
+ * The share of the time from `now` to the forecast's end (`from` plus its week) with at least one
+ * subscription that can take work: one minus the gaps' share of it, an open-ended gap running to
+ * the end. A forecast with no reading, or no subscription that can work, covers nothing.
  */
-export function coverage(g: PoolGaps, now: EpochMs): number {
-  const end = now + GAPS_HORIZON_MS
+export function coverage(g: PoolGaps, now: EpochMs, from: EpochMs = now): number {
+  if (g.lasts === 'unknown' || g.lasts === 'logins') return 0
+  const end = from + GAPS_HORIZON_MS
+  if (end <= now) return 0
   let out = 0
   for (const gap of g.gaps) {
     const start = Math.max(gap.start, now)
     const stop = Math.min(gap.end ?? end, end)
     if (stop > start) out += stop - start
   }
-  return 1 - out / GAPS_HORIZON_MS
+  return 1 - out / (end - now)
 }
+
+/** How finely the latest purchase time is searched. */
+export const PURCHASE_STEP_MS = 2 * 3_600_000
 
 /**
  * A subscription bought at `at`: its week starts then, unused, and resets a week later; until it is
@@ -83,38 +89,29 @@ export function capacityAdvice(
   // Every what-if keeps today's pace: the people's use, which adding or cancelling a subscription
   // does not change, only where it lands.
   const run = (ps: ProfileStatus[]) => poolGaps(ps, from, smoothed, now, false, base.pace)
-  const current = coverage(base, now)
+  const cover = (g: PoolGaps) => coverage(g, now, from)
+  const current = cover(base)
 
   if (current < COVERAGE_TARGET) {
     const extra = (k: number, at: EpochMs) =>
       Array.from({ length: k }, (_, i) => boughtAt(`added-${i + 1}`, at))
     for (let k = 1; k <= MAX_ADDED; k++) {
-      const withNow = coverage(run([...profiles, ...extra(k, now)]), now)
+      const withNow = cover(run([...profiles, ...extra(k, now)]))
       if (withNow < COVERAGE_TARGET) continue
-      // The latest purchase that still reaches the target, between now and the first gap.
-      const firstGap = base.gaps.find((g) => (g.end ?? Number.POSITIVE_INFINITY) > now)
-      let lo = now
-      let hi = Math.max(now, firstGap?.start ?? now)
-      let after = withNow
-      const atGap = coverage(run([...profiles, ...extra(k, hi)]), now)
-      if (atGap >= COVERAGE_TARGET) {
-        lo = hi
-        after = atGap
-      } else {
-        // Coverage falls as the purchase moves later; ten halvings find the time to within a
-        // thousandth of the span (minutes over a week).
-        for (let i = 0; i < 10 && hi - lo > 60_000; i++) {
-          const mid = Math.floor((lo + hi) / 2)
-          const c = coverage(run([...profiles, ...extra(k, mid)]), now)
-          if (c >= COVERAGE_TARGET) {
-            lo = mid
-            after = c
-          } else {
-            hi = mid
-          }
-        }
+      // The latest purchase that still reaches the target. Coverage need not fall steadily as the
+      // purchase moves later (5-hour windows shift with it), so every step back from the end of the
+      // last gap is tried, latest first: buying during a gap still cuts it short, after it cannot.
+      const horizon = from + GAPS_HORIZON_MS
+      const lastGapEnd = base.gaps.reduce(
+        (t, g) => Math.max(t, Math.min(g.end ?? horizon, horizon)),
+        now,
+      )
+      for (let at = lastGapEnd; at > now; at -= PURCHASE_STEP_MS) {
+        const c = cover(run([...profiles, ...extra(k, at)]))
+        if (c >= COVERAGE_TARGET)
+          return { kind: 'add', count: k, buyBy: at, now: current, after: c }
       }
-      return { kind: 'add', count: k, buyBy: lo, now: current, after }
+      return { kind: 'add', count: k, buyBy: now, now: current, after: withNow }
     }
     return { kind: 'unknown', now: current }
   }
@@ -126,7 +123,7 @@ export function capacityAdvice(
   for (;;) {
     let best: { index: number; coverage: number } | null = null
     for (let i = 0; i < kept.length; i++) {
-      const c = coverage(run(kept.filter((_, j) => j !== i)), now)
+      const c = cover(run(kept.filter((_, j) => j !== i)))
       if (c >= COVERAGE_TARGET && (best === null || c > best.coverage))
         best = { index: i, coverage: c }
     }

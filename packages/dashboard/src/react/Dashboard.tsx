@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   type AlarmStatus,
   burnRate,
@@ -307,9 +307,16 @@ function DashboardBody(props: DashboardProps) {
   // What to buy or cancel: a few dozen runs of the same forecast, so worked out after the page is
   // up and again only when a new snapshot or pace arrives, never on the clock's tick.
   const [advice, setAdvice] = useState<CapacityAdvice | null>(null)
+  // The clock when it is worked out, not the snapshot's time: a late snapshot must not advise
+  // buying for a cooldown that has already ended. Read through a ref, so the tick does not rerun it.
+  const clock = useRef(now)
+  clock.current = now
   useEffect(() => {
     if (profilesNow === null) return
-    const timer = setTimeout(() => setAdvice(capacityAdvice(profilesNow, asOf, smoothed, asOf)), 0)
+    const timer = setTimeout(
+      () => setAdvice(capacityAdvice(profilesNow, asOf, smoothed, Math.max(asOf, clock.current))),
+      0,
+    )
     return () => clearTimeout(timer)
   }, [profilesNow, asOf, smoothed])
   const ready = (profilesNow ?? []).filter((p) => hasHeadroom(p, now)).length

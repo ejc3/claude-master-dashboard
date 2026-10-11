@@ -1355,16 +1355,53 @@ describe('a subscription row', () => {
 
 describe('the capacity advice', () => {
   it('appears in the banner once the page is up, not in the first paint', async () => {
-    // UTC, so the clock time reads the same on every machine.
-    const { container, serverText } = await hydrated('UTC')
+    const { container, serverText } = await hydrated(ZONE)
     expect(serverText).not.toMatch(/Could cancel|subscriptions? (by|now|in)/)
     await act(async () => {
       await vi.advanceTimersByTimeAsync(0)
     })
     const facts = [...container.querySelectorAll('.cmd-facts li')].map((e) => e.textContent ?? '')
-    // At the demo's pace the pool covers 89% of the week: one more subscription, by a clock time.
-    expect(facts).toContain(
-      'Add 1 subscription by Sat 9:57 PM to have tokens 95% of the week (89% now)',
-    )
+    // At the demo's pace the pool covers 89% of the week: one more subscription, by a clock time
+    // (in the browser's zone once it has taken over; adviceLine's tests check the times).
+    const plan = /^Add 1 subscription by .+ to have tokens 95% of the week \(89% now\)$/
+    expect(facts.some((f) => plan.test(f))).toBe(true)
+  })
+})
+
+describe('the capacity advice, from a late snapshot', () => {
+  it('is worked out at the clock, not the snapshot time: an ended cooldown is not a gap', async () => {
+    const demo = createDemoSource({ now: () => NOW })
+    // Read twelve hours ago, every subscription rate-limited until an hour ago; fresh weeks that
+    // reset in 60 hours, plenty at the demo's pace.
+    const source: MetricsSource = {
+      ...demo,
+      snapshot: async () => {
+        const s = await demo.snapshot()
+        return {
+          ...s,
+          asOf: NOW - 12 * HOUR_MS,
+          profiles: s.profiles.map((p) => ({
+            ...p,
+            band: 'ok' as const,
+            weekly: { usedFraction: 0, resetsAt: NOW + 60 * HOUR_MS, lengthMs: 168 * HOUR_MS },
+            fiveHour: null,
+            rateLimitedUntil: NOW - HOUR_MS,
+            tokenExpiresAt: null,
+          })),
+        }
+      },
+    }
+    const element = await serverPage(ZONE, source)
+    const container = document.createElement('div')
+    container.innerHTML = renderToString(element)
+    document.body.append(container)
+    act(() => {
+      roots.push(hydrateRoot(container, element))
+    })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    const facts = [...container.querySelectorAll('.cmd-facts li')].map((e) => e.textContent ?? '')
+    expect(facts.some((f) => f.startsWith('Add '))).toBe(false)
   })
 })

@@ -5,6 +5,7 @@ export {
   capacityAdvice,
   coverage,
   MAX_ADDED,
+  PURCHASE_STEP_MS,
 } from './advice'
 export {
   groupableBy,

@@ -8,6 +8,7 @@ import {
   HOUR_MS,
   type PoolGaps,
   type ProfileStatus,
+  PURCHASE_STEP_MS,
   poolGaps,
 } from '../src/core/index'
 import { adviceLine } from '../src/react/Pool'
@@ -44,6 +45,13 @@ describe('coverage', () => {
       9,
     )
     expect(coverage(g([{ start: NOW - 5 * H, end: NOW, endsWith: 'weekly' }]), NOW)).toBe(1)
+    // A forecast that cannot run covers nothing.
+    expect(coverage({ gaps: [], lasts: 'logins' } as unknown as PoolGaps, NOW)).toBe(0)
+    expect(coverage({ gaps: [], lasts: 'unknown' } as unknown as PoolGaps, NOW)).toBe(0)
+    // Only to the forecast's end: a day after its reading six days remain, and a gap over its last
+    // day is a sixth of them.
+    const lastDay = g([{ start: NOW + 6 * 24 * H, end: null, endsWith: null }])
+    expect(coverage(lastDay, NOW + 24 * H, NOW)).toBeCloseTo(5 / 6, 9)
     expect(GAPS_HORIZON_MS).toBe(WEEK)
   })
 })
@@ -66,12 +74,15 @@ describe('capacityAdvice', () => {
     const covered = (k: number, at: number) =>
       coverage(poolGaps(with_(k, at), NOW, smoothed, NOW, false, base.pace), NOW)
     if (advice.count > 1) expect(covered(advice.count - 1, NOW)).toBeLessThan(COVERAGE_TARGET)
-    // Buying by then works; an hour after it does not (unless it is the first gap's start).
+    // Buying by then works, even inside the gap when that still cuts it short enough; no later step,
+    // up to the gap's end, does.
     expect(covered(advice.count, advice.buyBy)).toBeGreaterThanOrEqual(COVERAGE_TARGET)
     const firstGap = base.gaps[0]?.start ?? NOW
-    expect(advice.buyBy).toBeLessThanOrEqual(firstGap)
-    if (advice.buyBy < firstGap)
-      expect(covered(advice.count, advice.buyBy + H)).toBeLessThan(COVERAGE_TARGET)
+    const lastGapEnd = Math.max(...base.gaps.map((x) => x.end ?? NOW + 168 * H))
+    expect(advice.buyBy).toBeGreaterThan(firstGap)
+    for (let at = lastGapEnd; at > advice.buyBy; at -= PURCHASE_STEP_MS) {
+      expect(covered(advice.count, at)).toBeLessThan(COVERAGE_TARGET)
+    }
   })
 
   it('drops what the pace does not need, cheapest loss first, keeping the target', () => {
@@ -100,6 +111,13 @@ describe('capacityAdvice', () => {
       ['b', 1 / 100],
     ])
     expect(capacityAdvice(profiles, NOW, smoothed, NOW)).toEqual({ kind: 'enough', now: 1 })
+  })
+
+  it('never cancels the last subscription that can work', () => {
+    const usable = sub('a', 0, 100 * H)
+    const expired = { ...sub('b', 0, 100 * H), tokenExpiresAt: NOW - H }
+    const advice = capacityAdvice([usable, expired], NOW, rates(0.001, 'a', 'b'), NOW)
+    expect(advice.kind === 'remove' && advice.remove.some((r) => r.profile === 'a')).toBe(false)
   })
 
   it('says enough when one subscription covers the week, and unknown with no readings', () => {
