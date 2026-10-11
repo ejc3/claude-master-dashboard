@@ -23,80 +23,80 @@ interface Entry {
 }
 
 // claude-master never crosses its axes: each metric carries at most three attributes, and a
-// split by another axis is a separate metric (docs/claude-master.md in ejc3/CLIProxyAPI).
+// split by another axis is a separate metric (docs/claw-master.md in ejc3/CLIProxyAPI).
 const CATALOG: Record<SemanticMetric, Entry> = {
   requests: {
-    name: 'claude_master.inference.requests',
+    name: 'claw_master.inference.requests',
     statistic: 'SUM',
     dimensions: ['profile', 'client_account', 'status_class'],
     projections: {
-      client: 'claude_master.inference.requests.by_client',
-      model: 'claude_master.inference.requests.by_model',
+      client: 'claw_master.inference.requests.by_client',
+      model: 'claw_master.inference.requests.by_model',
     },
   },
   errors: {
-    name: 'claude_master.inference.errors',
+    name: 'claw_master.inference.errors',
     statistic: 'SUM',
     dimensions: ['profile', 'status', 'client_account'],
   },
   switches: {
-    name: 'claude_master.routing.switches',
+    name: 'claw_master.routing.switches',
     statistic: 'SUM',
     dimensions: ['reason', 'from', 'to'],
   },
   rateLimited: {
-    name: 'claude_master.quota.rate_limited',
+    name: 'claw_master.quota.rate_limited',
     statistic: 'SUM',
     dimensions: ['profile'],
   },
   backupRequests: {
-    name: 'claude_master.routing.backup_requests',
+    name: 'claw_master.routing.backup_requests',
     statistic: 'SUM',
     dimensions: [],
   },
   ttfbMs: {
-    name: 'claude_master.inference.ttfb',
+    name: 'claw_master.inference.ttfb',
     statistic: 'AVG',
     dimensions: ['profile', 'status_class'],
-    projections: { model: 'claude_master.inference.ttfb.by_model' },
+    projections: { model: 'claw_master.inference.ttfb.by_model' },
   },
   durationMs: {
-    name: 'claude_master.inference.duration',
+    name: 'claw_master.inference.duration',
     statistic: 'AVG',
     dimensions: ['profile', 'status_class'],
-    projections: { model: 'claude_master.inference.duration.by_model' },
+    projections: { model: 'claw_master.inference.duration.by_model' },
   },
   upstreamTtfbMs: {
-    name: 'claude_master.inference.upstream_ttfb',
+    name: 'claw_master.inference.upstream_ttfb',
     statistic: 'AVG',
     dimensions: ['profile', 'status_class'],
   },
-  overheadMs: { name: 'claude_master.proxy.overhead', statistic: 'AVG', dimensions: ['profile'] },
+  overheadMs: { name: 'claw_master.proxy.overhead', statistic: 'AVG', dimensions: ['profile'] },
   weeklyUsed: {
-    name: 'claude_master.quota.used_fraction',
+    name: 'claw_master.quota.used_fraction',
     statistic: 'MAX',
     dimensions: ['profile'],
   },
   weeklyResetsInSeconds: {
-    name: 'claude_master.quota.resets_in_seconds',
+    name: 'claw_master.quota.resets_in_seconds',
     statistic: 'MAX',
     dimensions: ['profile'],
   },
   tokenExpiresInSeconds: {
-    name: 'claude_master.auth.token_expires_in_seconds',
+    name: 'claw_master.auth.token_expires_in_seconds',
     statistic: 'MIN',
     dimensions: ['profile'],
   },
   // Read from the usage in each response; every projection also carries the token type.
   tokens: {
-    name: 'claude_master.inference.tokens',
+    name: 'claw_master.inference.tokens',
     statistic: 'SUM',
     dimensions: ['profile', 'type'],
     projections: {
-      client_account: 'claude_master.inference.tokens.by_client_account',
-      client: 'claude_master.inference.tokens.by_client',
+      client_account: 'claw_master.inference.tokens.by_client_account',
+      client: 'claw_master.inference.tokens.by_client',
       // The project a launch was started in (claude-master releases that count it).
-      project: 'claude_master.inference.tokens.by_project',
+      project: 'claw_master.inference.tokens.by_project',
     },
   },
 }

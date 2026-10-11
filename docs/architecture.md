@@ -8,7 +8,7 @@ that deploys it. This document is the design; [Delivery](#delivery) lists which 
 ## Data path
 
 ```
-claude-master ──OTLP/HTTP──▶ CloudWatch agent ──▶ CloudWatch namespace "ClaudeMaster"
+claw-master ────OTLP/HTTP──▶ CloudWatch agent ──▶ CloudWatch namespace "ClawMaster"
                                                           │ GetMetricData (Metrics Insights)
                                   Next.js route handler ◀─┘  (server-only, read-only AWS key)
                                           │ JSON
@@ -17,16 +17,16 @@ claude-master ──OTLP/HTTP──▶ CloudWatch agent ──▶ CloudWatch nam
 
 claude-master splits each metric the dashboard reads by at most three attributes, with one
 projection per axis
-(`claude_master.inference.requests` by profile, account and status class;
+(`claw_master.inference.requests` by profile, account and status class;
 `…requests.by_client` by box; `…requests.by_model` by model). CloudWatch keeps the OpenTelemetry
 name as the metric name and every attribute as a dimension, plus the resource's `service.name`.
-(`claude_master.anthropic.ratelimit.state` carries a fourth attribute; the dashboard does not
+(`claw_master.anthropic.ratelimit.state` carries a fourth attribute; the dashboard does not
 read it.) Counters arrive as deltas, so a sum
 is a count. Histograms arrive as statistic sets without percentiles, so latency percentiles come
 from the proxy's own `duration_quantile` gauges.
 
 Tokens come from the `usage` Anthropic returns on every response, which claude-master reads on
-the way through and counts as `claude_master.inference.tokens` (by profile),
+the way through and counts as `claw_master.inference.tokens` (by profile),
 `…tokens.by_client_account` (by person) and `…tokens.by_client` (by box), each with a `type` of
 `input`, `output` (thinking included), `cache_read` or `cache_creation` (the page's "cache
 write"). A type is a `WHERE "type" = '…'` filter on the same query; no filter sums all four.
@@ -94,7 +94,7 @@ nobody.
 The Worker reads CloudWatch with an access key for an IAM user allowed only
 `cloudwatch:GetMetricData` and `cloudwatch:ListMetrics` in one region, stored as Worker secrets.
 CloudWatch read actions cannot be narrowed to one namespace, so the code, not IAM, limits reads to
-`ClaudeMaster`. GetMetricData is billed per metric read, so the handler caches each query per
+`ClawMaster`. GetMetricData is billed per metric read, so the handler caches each query per
 step-aligned time range and coalesces identical requests in flight; the snapshot refreshes every
 minute and charts every five, and only while the tab is visible.
 
