@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
+import { SPARKLE_MS } from '../src/react/Pool'
 
 // Contracts of the stylesheet that no runtime test reaches, checked on its source.
 const css = readFileSync(new URL('../src/react/dashboard.css', import.meta.url), 'utf8')
@@ -97,5 +98,16 @@ describe('dashboard.css', () => {
     expect(forced).toMatch(
       /\.cmd-account-bar\[data-level="unknown"\]\s*\{[^}]*border-style:\s*dashed/,
     )
+  })
+})
+
+describe('the sparkle', () => {
+  it('is kept until its last star has faded', () => {
+    const rules = css.slice(css.indexOf('.cmd-sparkle svg {'))
+    const duration = Number(/animation: cmd-sparkle ([\d.]+)s/.exec(rules)?.[1]) * 1000
+    const delays = [...rules.matchAll(/animation-delay: (\d+)ms/g)].map((m) => Number(m[1]))
+    expect(duration).toBeGreaterThan(0)
+    expect(delays.length).toBeGreaterThan(0)
+    expect(SPARKLE_MS).toBeGreaterThanOrEqual(duration + Math.max(...delays))
   })
 })

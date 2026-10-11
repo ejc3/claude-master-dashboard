@@ -489,22 +489,37 @@ export function poolGaps(
   // Samples of what is left, on their own grid, up to (not including) `until`. No work is done
   // between the last step and `until` (the steps are finer, or a gap or idleness holds), so each
   // sample applies the resets due by its time, as stepping there would.
+  // One more sample at `now`, in order, so what is left now is read at now and not up to a
+  // sample's step earlier: a reset since the last sample shows at once.
   let nextSample = from
+  let nowSampled = now < from
+  const sample = (at: EpochMs) => {
+    let weekly = 0
+    let fiveHour = 0
+    const weeklyBy: number[] = []
+    for (const s of slots) {
+      resetWeek(s, at)
+      closeIfOver(s.five, at)
+      weekly += 1 - s.weekly.used
+      weeklyBy.push(1 - s.weekly.used)
+      // A 5-hour window counts only while its week has room: with the week used up, it cannot
+      // be used however empty it is.
+      fiveHour += isFull(s.weekly) ? 0 : 1 - s.five.used
+    }
+    trace.push({ at, weekly, fiveHour, weeklyBy })
+  }
   const sampleUntil = (until: EpochMs) => {
     for (; nextSample < until; nextSample += TRACE_STEP_MS) {
-      let weekly = 0
-      let fiveHour = 0
-      const weeklyBy: number[] = []
-      for (const s of slots) {
-        resetWeek(s, nextSample)
-        closeIfOver(s.five, nextSample)
-        weekly += 1 - s.weekly.used
-        weeklyBy.push(1 - s.weekly.used)
-        // A 5-hour window counts only while its week has room: with the week used up, it cannot
-        // be used however empty it is.
-        fiveHour += isFull(s.weekly) ? 0 : 1 - s.five.used
+      if (!nowSampled && now < nextSample) {
+        sample(now)
+        nowSampled = true
       }
-      trace.push({ at: nextSample, weekly, fiveHour, weeklyBy })
+      sample(nextSample)
+      if (nextSample === now) nowSampled = true
+    }
+    if (!nowSampled && now < until) {
+      sample(now)
+      nowSampled = true
     }
   }
 

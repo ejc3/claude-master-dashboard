@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
+
 import { act, type ReactElement } from 'react'
 import { createRoot, hydrateRoot, type Root } from 'react-dom/client'
 import { renderToString } from 'react-dom/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { HOUR_MS, hasHeadroom, type ProfileStatus } from '../src/core/index'
 import { createResetScenarioSource, RESET_CYCLE_MS, scenarioResetAt } from '../src/demo/reset'
-import { createDashboardHandler, DashboardPage } from '../src/next/index'
+import { createDashboardHandler, DashboardPage, firstSegmentUnder } from '../src/next/index'
 import { forecastClock } from '../src/react/Dashboard'
 import { PoolAccounts, SPARKLE_MS } from '../src/react/Pool'
 
@@ -140,5 +141,45 @@ describe('the reset scenario', () => {
     })
     expect(headline()).not.toMatch(/^Out now/)
     expect(container.querySelectorAll('.cmd-sparkle')).toHaveLength(1)
+    // The 5-hour chart says what is left now: alpha's whole window, not the sample before.
+    const fiveHourTitle = [...container.querySelectorAll('figcaption')]
+      .map((e) => e.textContent ?? '')
+      .find((t) => t.startsWith('5-hour limit left'))
+    expect(fiveHourTitle).toBe('5-hour limit left, next 5h · 100%')
+  })
+})
+
+describe('firstSegmentUnder', () => {
+  it('names the dashboard a request is for, decoded, and nothing outside the mount', () => {
+    const base = '/api/claude-master'
+    const at = (path: string) => firstSegmentUnder(`https://dashboard.example${path}`, base)
+    expect(at('/api/claude-master/try-reset/snapshot')).toBe('try-reset')
+    // An escaped name is the same name: never the live data under the scenario's address.
+    expect(at('/api/claude-master/try%2Dreset/snapshot')).toBe('try-reset')
+    expect(at('/api/claude-master/snapshot')).toBe('snapshot')
+    expect(at('/api/claude-master/%E0%A4%A/snapshot')).toBe('')
+    expect(at('/api/claude-masterx/try-reset/snapshot')).toBe('')
+  })
+})
+
+describe('the sparkle, again', () => {
+  it('starts over when a subscription returns a second time while it plays', () => {
+    const container = document.createElement('div')
+    document.body.append(container)
+    const root = createRoot(container)
+    roots.push(root)
+    const out = [sub('alpha', 1, BEFORE + HOUR_MS)]
+    const back = [sub('alpha', 0.2, BEFORE + HOUR_MS)]
+    const render = (profiles: ProfileStatus[]) =>
+      act(() => root.render(<PoolAccounts profiles={profiles} now={BEFORE} />))
+    render(out)
+    render(back)
+    const first = container.querySelector('.cmd-sparkle')
+    expect(first).not.toBeNull()
+    render(out)
+    render(back)
+    const second = container.querySelector('.cmd-sparkle')
+    expect(second).not.toBeNull()
+    expect(second).not.toBe(first)
   })
 })
