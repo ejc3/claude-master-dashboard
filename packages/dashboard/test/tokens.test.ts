@@ -27,19 +27,19 @@ const at = (minutesAgo: number) => NOW - minutesAgo * 60_000
 
 describe('tokens in the catalog', () => {
   it('reads the token counters, filtered by type and split by subscription, person or machine', () => {
-    expect(insightsQuery('ClaudeMaster', resolveMetric('tokens', 'profile'))).toBe(
-      'SELECT SUM("claude_master.inference.tokens") FROM "ClaudeMaster" GROUP BY profile',
+    expect(insightsQuery('ClawMaster', resolveMetric('tokens', 'profile'))).toBe(
+      'SELECT SUM("claw_master.inference.tokens") FROM "ClawMaster" GROUP BY profile',
     )
-    expect(insightsQuery('ClaudeMaster', resolveMetric('tokens', 'type'))).toBe(
-      'SELECT SUM("claude_master.inference.tokens") FROM "ClaudeMaster" GROUP BY "type"',
+    expect(insightsQuery('ClawMaster', resolveMetric('tokens', 'type'))).toBe(
+      'SELECT SUM("claw_master.inference.tokens") FROM "ClawMaster" GROUP BY "type"',
     )
     expect(
-      insightsQuery('ClaudeMaster', resolveMetric('tokens', 'client_account', 'cache_read')),
+      insightsQuery('ClawMaster', resolveMetric('tokens', 'client_account', 'cache_read')),
     ).toBe(
-      `SELECT SUM("claude_master.inference.tokens.by_client_account") FROM "ClaudeMaster" WHERE "type" = 'cache_read' GROUP BY client_account`,
+      `SELECT SUM("claw_master.inference.tokens.by_client_account") FROM "ClawMaster" WHERE "type" = 'cache_read' GROUP BY client_account`,
     )
-    expect(insightsQuery('ClaudeMaster', resolveMetric('tokens', 'client', 'input'))).toBe(
-      `SELECT SUM("claude_master.inference.tokens.by_client") FROM "ClaudeMaster" WHERE "type" = 'input' GROUP BY client`,
+    expect(insightsQuery('ClawMaster', resolveMetric('tokens', 'client', 'input'))).toBe(
+      `SELECT SUM("claw_master.inference.tokens.by_client") FROM "ClawMaster" WHERE "type" = 'input' GROUP BY client`,
     )
   })
 
@@ -106,7 +106,7 @@ describe('the CloudWatch source asks for one token type', () => {
       stepSeconds: STEP,
     })
     expect(expressions).toEqual([
-      `SELECT SUM("claude_master.inference.tokens.by_client_account") FROM "ClaudeMaster" WHERE "type" = 'output' GROUP BY client_account`,
+      `SELECT SUM("claw_master.inference.tokens.by_client_account") FROM "ClawMaster" WHERE "type" = 'output' GROUP BY client_account`,
     ])
     expect(series).toEqual([{ key: 'alpha', points: [[at(10), 1500]] }])
   })

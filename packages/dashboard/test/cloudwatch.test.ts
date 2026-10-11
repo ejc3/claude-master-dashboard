@@ -139,7 +139,7 @@ describe('createCloudWatchSource', () => {
       {
         Id: 'q',
         Expression:
-          'SELECT SUM("claude_master.inference.requests") FROM "ClaudeMaster" GROUP BY profile',
+          'SELECT SUM("claw_master.inference.requests") FROM "ClawMaster" GROUP BY profile',
         Period: 300,
       },
     ])
@@ -271,17 +271,15 @@ describe('createCloudWatchSource', () => {
     expect(requests).toHaveLength(11)
     const expressions = requests.map((r) => r.expression)
     expect(expressions).toContain(
-      'SELECT MAX("claude_master.quota.used_fraction") FROM "ClaudeMaster" GROUP BY profile',
+      'SELECT MAX("claw_master.quota.used_fraction") FROM "ClawMaster" GROUP BY profile',
     )
     expect(expressions).toContain(
-      'SELECT MAX("claude_master.inference.duration_quantile") FROM "ClaudeMaster" GROUP BY profile, quantile',
+      'SELECT MAX("claw_master.inference.duration_quantile") FROM "ClawMaster" GROUP BY profile, quantile',
     )
     expect(expressions).toContain(
-      'SELECT MAX("claude_master.anthropic.ratelimit") FROM "ClaudeMaster" WHERE "window" = \'5h\' GROUP BY profile, measure',
+      'SELECT MAX("claw_master.anthropic.ratelimit") FROM "ClawMaster" WHERE "window" = \'5h\' GROUP BY profile, measure',
     )
-    expect(expressions).toContain(
-      'SELECT MAX("claude_master.sessions.tracked") FROM "ClaudeMaster"',
-    )
+    expect(expressions).toContain('SELECT MAX("claw_master.sessions.tracked") FROM "ClawMaster"')
     for (const { body, expression } of requests) {
       expect(body.EndTime).toBe(SEC(NOW + 60_000))
       // The 5-hour reading is looked for over its whole window; the rest over minutes.
@@ -473,15 +471,15 @@ describe('createCloudWatchSource', () => {
 describe('helpers', () => {
   it('quotes reserved identifiers and escapes the filter value', () => {
     expect(
-      gaugeQuery('ClaudeMaster', 'MAX', 'claude_master.anthropic.ratelimit', {
+      gaugeQuery('ClawMaster', 'MAX', 'claw_master.anthropic.ratelimit', {
         where: ['window', "5h'x"],
         groupBy: ['profile', 'measure'],
       }),
     ).toBe(
-      'SELECT MAX("claude_master.anthropic.ratelimit") FROM "ClaudeMaster" WHERE "window" = \'5h\'\'x\' GROUP BY profile, measure',
+      'SELECT MAX("claw_master.anthropic.ratelimit") FROM "ClawMaster" WHERE "window" = \'5h\'\'x\' GROUP BY profile, measure',
     )
-    expect(gaugeQuery('ClaudeMaster', 'MIN', 'claude_master.x')).toBe(
-      'SELECT MIN("claude_master.x") FROM "ClaudeMaster"',
+    expect(gaugeQuery('ClawMaster', 'MIN', 'claw_master.x')).toBe(
+      'SELECT MIN("claw_master.x") FROM "ClawMaster"',
     )
   })
 

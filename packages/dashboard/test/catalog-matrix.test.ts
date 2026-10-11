@@ -11,26 +11,26 @@ import {
 // (internal/claudemaster/metrics.go, observeRequest and the routing/quota recorders), not from
 // the catalog: a catalog change that accepts a split the proxy does not emit fails here.
 const EMITTED: Record<string, readonly Dimension[]> = {
-  'claude_master.inference.requests': ['profile', 'client_account', 'status_class'],
-  'claude_master.inference.requests.by_client': ['client', 'client_account'],
-  'claude_master.inference.requests.by_model': ['model', 'status_class'],
-  'claude_master.inference.errors': ['profile', 'status', 'client_account'],
-  'claude_master.routing.switches': ['from', 'to', 'reason'],
-  'claude_master.quota.rate_limited': ['profile'],
-  'claude_master.routing.backup_requests': [],
-  'claude_master.inference.ttfb': ['profile', 'status_class'],
-  'claude_master.inference.ttfb.by_model': ['model'],
-  'claude_master.inference.duration': ['profile', 'status_class'],
-  'claude_master.inference.duration.by_model': ['model'],
-  'claude_master.inference.upstream_ttfb': ['profile', 'status_class'],
-  'claude_master.proxy.overhead': ['profile'],
-  'claude_master.quota.used_fraction': ['profile'],
-  'claude_master.quota.resets_in_seconds': ['profile'],
-  'claude_master.auth.token_expires_in_seconds': ['profile'],
+  'claw_master.inference.requests': ['profile', 'client_account', 'status_class'],
+  'claw_master.inference.requests.by_client': ['client', 'client_account'],
+  'claw_master.inference.requests.by_model': ['model', 'status_class'],
+  'claw_master.inference.errors': ['profile', 'status', 'client_account'],
+  'claw_master.routing.switches': ['from', 'to', 'reason'],
+  'claw_master.quota.rate_limited': ['profile'],
+  'claw_master.routing.backup_requests': [],
+  'claw_master.inference.ttfb': ['profile', 'status_class'],
+  'claw_master.inference.ttfb.by_model': ['model'],
+  'claw_master.inference.duration': ['profile', 'status_class'],
+  'claw_master.inference.duration.by_model': ['model'],
+  'claw_master.inference.upstream_ttfb': ['profile', 'status_class'],
+  'claw_master.proxy.overhead': ['profile'],
+  'claw_master.quota.used_fraction': ['profile'],
+  'claw_master.quota.resets_in_seconds': ['profile'],
+  'claw_master.auth.token_expires_in_seconds': ['profile'],
   // tokens.go (CLIProxyAPI#14): one projection per axis, each with the token type.
-  'claude_master.inference.tokens': ['profile', 'type'],
-  'claude_master.inference.tokens.by_client_account': ['client_account', 'type'],
-  'claude_master.inference.tokens.by_client': ['client', 'type'],
+  'claw_master.inference.tokens': ['profile', 'type'],
+  'claw_master.inference.tokens.by_client_account': ['client_account', 'type'],
+  'claw_master.inference.tokens.by_client': ['client', 'type'],
 }
 
 const METRICS: SemanticMetric[] = [
@@ -89,13 +89,13 @@ describe('catalog against what claude-master emits', () => {
     expect(() => insightsQuery('Demo"Metrics', resolveMetric('requests'))).toThrow()
     expect(() => insightsQuery('', resolveMetric('requests'))).toThrow()
     expect(insightsQuery('Team/Claude-Master_1', resolveMetric('requests'))).toBe(
-      'SELECT SUM("claude_master.inference.requests") FROM "Team/Claude-Master_1"',
+      'SELECT SUM("claw_master.inference.requests") FROM "Team/Claude-Master_1"',
     )
   })
 
   it('quotes from and to, which are query keywords', () => {
-    expect(insightsQuery('ClaudeMaster', resolveMetric('switches', 'from'))).toBe(
-      'SELECT SUM("claude_master.routing.switches") FROM "ClaudeMaster" GROUP BY "from"',
+    expect(insightsQuery('ClawMaster', resolveMetric('switches', 'from'))).toBe(
+      'SELECT SUM("claw_master.routing.switches") FROM "ClawMaster" GROUP BY "from"',
     )
   })
 })

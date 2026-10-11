@@ -19,7 +19,7 @@ import {
 } from '../core/types'
 
 /**
- * The CloudWatch source: reads the `ClaudeMaster` namespace with GetMetricData (Metrics Insights)
+ * The CloudWatch source: reads the `ClawMaster` namespace with GetMetricData (Metrics Insights)
  * over CloudWatch's JSON protocol, signed with SigV4 by aws4fetch, so it runs on Workers as well as
  * Node. Each Metrics Insights query is its own call (the API allows one per GetMetricData), cached
  * and coalesced for about a minute, the export interval, so a page load with many viewers reads
@@ -135,7 +135,7 @@ export function foldAliases(
   }))
 }
 
-export const DEFAULT_NAMESPACE = 'ClaudeMaster'
+export const DEFAULT_NAMESPACE = 'ClawMaster'
 export const DEFAULT_CACHE_MS = 60_000
 /** How far back the snapshot looks for each gauge's latest reading. */
 export const SNAPSHOT_LOOKBACK_MS = 15 * 60_000
@@ -356,7 +356,7 @@ export function createCloudWatchSource(options: CloudWatchSourceOptions): Metric
 
   // The gauges the snapshot reads; one query each, all in flight together.
   const gauge = (statistic: 'MAX' | 'MIN', metric: string, groupBy: readonly string[]) =>
-    gaugeQuery(namespace, statistic, `claude_master.${metric}`, { groupBy })
+    gaugeQuery(namespace, statistic, `claw_master.${metric}`, { groupBy })
 
   // The alarms, read at most once a minute (an answer, not a request in flight, as `cached`).
   let alarmsCache: { expiresAt: EpochMs; alarms: AlarmStatus[] } | null = null
@@ -419,7 +419,7 @@ export function createCloudWatchSource(options: CloudWatchSourceOptions): Metric
         read(gauge('MIN', 'auth.token_expires_in_seconds', ['profile'])),
         read(gauge('MAX', 'inference.duration_quantile', ['profile', 'quantile'])),
         read(
-          gaugeQuery(namespace, 'MAX', 'claude_master.anthropic.ratelimit', {
+          gaugeQuery(namespace, 'MAX', 'claw_master.anthropic.ratelimit', {
             where: ['window', '5h'],
             groupBy: ['profile', 'measure'],
           }),
