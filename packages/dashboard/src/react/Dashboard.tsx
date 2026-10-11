@@ -11,6 +11,7 @@ import {
   fromFirstBucket,
   HOUR_MS,
   hasHeadroom,
+  type ProfileStatus,
   poolGaps,
   type Series,
   type SeriesQuery,
@@ -94,6 +95,20 @@ function hourly(points: Array<[EpochMs, number]>): Array<[EpochMs, number]> {
 }
 
 const data = <T,>(loaded: Loaded<T>): T | null => (loaded.state === 'ready' ? loaded.data : null)
+
+/**
+ * The time the forecast is worked out for: the start of the current minute, or a reset or rate
+ * limit that ended since then, whichever is later. It changes once a minute and at each such end.
+ */
+export function forecastClock(profiles: readonly ProfileStatus[] | null, now: EpochMs): EpochMs {
+  let at = Math.floor(now / 60_000) * 60_000
+  for (const p of profiles ?? []) {
+    for (const t of [p.weekly.resetsAt, p.fiveHour?.resetsAt ?? null, p.rateLimitedUntil]) {
+      if (t !== null && t > at && t <= now) at = t
+    }
+  }
+  return at
+}
 const failureOf = <T,>(loaded: Loaded<T>): PollFailure | null =>
   loaded.state === 'error' ? loaded.failure : loaded.state === 'ready' ? loaded.failure : null
 
@@ -273,8 +288,10 @@ function DashboardBody(props: DashboardProps) {
   }, [usedData, smoothingRange.end])
   const profilesNow = snapshot?.profiles ?? null
   // When no subscription can take work, from both windows at once: the headline.
-  // Once a minute, not every second: the simulation steps through a week.
-  const gapsAt = Math.floor(now / 60_000) * 60_000
+  // Once a minute, not every second: the simulation steps through a week. Also the moment a
+  // reset or a rate limit ends, so the headline turns the second quota comes back instead of
+  // saying "back in now" until the minute is up.
+  const gapsAt = forecastClock(profilesNow, now)
   const asOf = snapshot?.asOf ?? gapsAt
   const gaps = useMemo(
     () => (profilesNow === null ? null : poolGaps(profilesNow, asOf, smoothed, gapsAt)),

@@ -1326,4 +1326,105 @@
       fill: Highlight;
     }
   }
+  /* A subscription that just took work again: stars burst around its bars, which glow once. */
+  .cmd-account {
+    position: relative;
+  }
+
+  .cmd-sparkle {
+    position: absolute;
+    left: 50%;
+    top: 14px;
+    width: 0;
+    height: 0;
+    pointer-events: none;
+  }
+
+  .cmd-sparkle svg {
+    position: absolute;
+    width: 10px;
+    height: 10px;
+    margin: -5px 0 0 -5px;
+    opacity: 0;
+    animation: cmd-sparkle 1.6s ease-out forwards;
+  }
+
+  .cmd-sparkle svg[data-star="0"] {
+    --dx: -16px;
+    --dy: -14px;
+  }
+
+  .cmd-sparkle svg[data-star="1"] {
+    --dx: 15px;
+    --dy: -16px;
+    animation-delay: 120ms;
+    width: 8px;
+    height: 8px;
+  }
+
+  .cmd-sparkle svg[data-star="2"] {
+    --dx: -13px;
+    --dy: 10px;
+    animation-delay: 240ms;
+    width: 7px;
+    height: 7px;
+  }
+
+  .cmd-sparkle svg[data-star="3"] {
+    --dx: 16px;
+    --dy: 8px;
+    animation-delay: 360ms;
+  }
+
+  @keyframes cmd-sparkle {
+    0% {
+      opacity: 0;
+      transform: translate(0, 0) scale(0.2) rotate(0deg);
+    }
+    35% {
+      opacity: 1;
+      transform: translate(calc(var(--dx) * 0.8), calc(var(--dy) * 0.8)) scale(1.15) rotate(45deg);
+    }
+    100% {
+      opacity: 0;
+      transform: translate(var(--dx), var(--dy)) scale(0.4) rotate(90deg);
+    }
+  }
+
+  .cmd-account[data-returned] .cmd-account-bar > span {
+    animation: cmd-bar-glow 1.6s ease-out;
+  }
+
+  @keyframes cmd-bar-glow {
+    0%,
+    100% {
+      filter: none;
+    }
+    30% {
+      filter: brightness(1.35) drop-shadow(0 0 3px currentColor);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .cmd-sparkle svg {
+      animation-name: cmd-sparkle-still;
+    }
+
+    .cmd-account[data-returned] .cmd-account-bar > span {
+      animation: none;
+    }
+  }
+
+  /* With reduced motion the stars only fade in and out, in place. */
+  @keyframes cmd-sparkle-still {
+    0%,
+    100% {
+      opacity: 0;
+      transform: translate(var(--dx), var(--dy));
+    }
+    40% {
+      opacity: 1;
+      transform: translate(var(--dx), var(--dy));
+    }
+  }
 }

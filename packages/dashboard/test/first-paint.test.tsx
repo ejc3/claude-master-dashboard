@@ -592,7 +592,7 @@ describe('the account bars', () => {
     ...extra,
   })
 
-  it('shows each subscription by short name, its week and 5-hour use, and whether it can work', () => {
+  it('shows each subscription by short name, what its week and 5-hour limits have left, and whether it can work', () => {
     const container = document.createElement('div')
     container.innerHTML = renderToString(
       <PoolAccounts
@@ -635,11 +635,21 @@ describe('the account bars', () => {
       ['ok', 'unknown'],
       ['ok', 'ok'],
     ])
+    // Each bar fills with what is left, like the charts: a used-up window is an empty bar.
+    const fills = (e: Element) =>
+      [...e.querySelectorAll('.cmd-account-bar')].map(
+        (b) => (b.querySelector('span') as HTMLElement | null)?.style.height ?? 'empty',
+      )
+    expect(items.map(fills)).toEqual([
+      ['48%', '4%'],
+      ['empty', 'empty'],
+      ['73%', 'empty'],
+      ['60%', '100%'],
+    ])
+    expect(container.querySelector('.cmd-accounts-key-caption')?.textContent).toBe('left')
     // Read out in full for a screen reader.
-    expect(items[0]?.textContent).toContain('alpha: week 52% used, 5-hour 96% used')
-    expect(items[1]?.textContent).toContain(
-      'bravo: week 100% used, 5-hour no reading, not available',
-    )
+    expect(items[0]?.textContent).toContain('alpha: week 48% left, 5-hour 4.0% left')
+    expect(items[1]?.textContent).toContain('bravo: week 0% left, 5-hour no reading, not available')
   })
 
   it('shortens names only by a shared prefix ending at a separator', () => {

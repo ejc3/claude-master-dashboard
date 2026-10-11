@@ -8,6 +8,7 @@ import {
 } from '@ejc3/claude-master-dashboard/access'
 import { type SourceSelection, selectSource } from '@ejc3/claude-master-dashboard/cloudwatch'
 import { createDemoSource } from '@ejc3/claude-master-dashboard/demo'
+import { createResetScenarioSource } from '@ejc3/claude-master-dashboard/demo/reset'
 import { headers } from 'next/headers'
 
 export const API_BASE = '/api/claude-master'
@@ -26,6 +27,16 @@ function selected(): SourceSelection {
 
 export function source(): MetricsSource {
   return selected().source
+}
+
+/**
+ * The reset scenario, to try the countdown and the return of quota: /claude-master/try-reset, with
+ * its API under /api/claude-master/try-reset. Always made-up data, behind the same sign-in.
+ */
+export const TRY_RESET = 'try-reset'
+const scenario = createResetScenarioSource()
+export function resetScenarioSource(): MetricsSource {
+  return scenario
 }
 
 /** True when the page shows the demo fixture, so it can say so. */
