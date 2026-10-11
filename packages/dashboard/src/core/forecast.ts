@@ -429,6 +429,11 @@ export function poolGaps(
   now: EpochMs = from,
   /** With no more use: what is left only comes back as limits reset. */
   noMoreUse = false,
+  /**
+   * The pool's pace, when it should not come from these subscriptions: a what-if with one more or
+   * one fewer (capacityAdvice) keeps the people's pace, which no subscription change alters.
+   */
+  pace?: PoolGaps['pace'],
 ): PoolGaps {
   const slots: JointSlot[] = []
   let weeklyDemand = 0
@@ -457,6 +462,10 @@ export function poolGaps(
     const limitedUntil =
       p.rateLimitedUntil !== null && p.rateLimitedUntil > from ? p.rateLimitedUntil : null
     if (!loginExpired) slots.push({ quota: weekly, weekly, five, index, limitedUntil })
+  }
+  if (pace !== undefined) {
+    weeklyDemand = pace.weekly
+    fiveDemand = pace.fiveHour
   }
   if (noMoreUse) {
     weeklyDemand = 0
