@@ -1,5 +1,5 @@
-import { TIME_ZONE_COOKIE } from '@ejc3/claude-master-dashboard'
-import { DashboardPage } from '@ejc3/claude-master-dashboard/next'
+import { TIME_ZONE_COOKIE } from '@ejc3/claw-master-dashboard'
+import { DashboardPage } from '@ejc3/claw-master-dashboard/next'
 import { cookies } from 'next/headers'
 import {
   API_BASE,

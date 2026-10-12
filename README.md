@@ -10,17 +10,17 @@ Design and delivery plan: [docs/architecture.md](docs/architecture.md).
 
 ```ts
 // next.config.ts
-export default { transpilePackages: ['@ejc3/claude-master-dashboard'] }
+export default { transpilePackages: ['@ejc3/claw-master-dashboard'] }
 
 // app/layout.tsx
-import '@ejc3/claude-master-dashboard/styles.css'
+import '@ejc3/claw-master-dashboard/styles.css'
 
 // app/api/claw-master/[...path]/route.ts
-import { createDashboardHandler } from '@ejc3/claude-master-dashboard/next'
+import { createDashboardHandler } from '@ejc3/claw-master-dashboard/next'
 export const { GET } = createDashboardHandler({ source, authorize })
 
 // app/claw-master/page.tsx
-import { DashboardPage } from '@ejc3/claude-master-dashboard/next'
+import { DashboardPage } from '@ejc3/claw-master-dashboard/next'
 export default function Page() {
   return (
     <DashboardPage source={source} authorize={allowed} apiBase="/api/claw-master" unauthorized={<SignIn />} />
@@ -29,7 +29,7 @@ export default function Page() {
 ```
 
 `source` returns a `MetricsSource`: `selectSource(process.env, createDemoSource())` from
-`@ejc3/claude-master-dashboard/cloudwatch` picks the CloudWatch source when `AWS_ACCESS_KEY_ID`,
+`@ejc3/claw-master-dashboard/cloudwatch` picks the CloudWatch source when `AWS_ACCESS_KEY_ID`,
 `AWS_SECRET_ACCESS_KEY` and `AWS_REGION` are set and the demo fixture otherwise (pass its `kind`
 to `DashboardPage` as `demoData` so the page labels made-up numbers). `authorize` is required; nothing is served without it.
 
@@ -37,7 +37,7 @@ Behind Cloudflare Access, create one checker per process (it caches the team's k
 both places:
 
 ```ts
-import { ACCESS_ASSERTION_HEADER, cloudflareAccess } from '@ejc3/claude-master-dashboard/access'
+import { ACCESS_ASSERTION_HEADER, cloudflareAccess } from '@ejc3/claw-master-dashboard/access'
 import { headers } from 'next/headers'
 
 const access = cloudflareAccess({ teamDomain, audience, allowedEmails })

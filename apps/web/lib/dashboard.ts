@@ -1,14 +1,14 @@
 import 'server-only'
 
-import type { MetricsSource } from '@ejc3/claude-master-dashboard'
+import type { MetricsSource } from '@ejc3/claw-master-dashboard'
 import {
   ACCESS_ASSERTION_HEADER,
   accessOptionsFromEnv,
   cloudflareAccess,
-} from '@ejc3/claude-master-dashboard/access'
-import { type SourceSelection, selectSource } from '@ejc3/claude-master-dashboard/cloudwatch'
-import { createDemoSource } from '@ejc3/claude-master-dashboard/demo'
-import { createResetScenarioSource } from '@ejc3/claude-master-dashboard/demo/reset'
+} from '@ejc3/claw-master-dashboard/access'
+import { type SourceSelection, selectSource } from '@ejc3/claw-master-dashboard/cloudwatch'
+import { createDemoSource } from '@ejc3/claw-master-dashboard/demo'
+import { createResetScenarioSource } from '@ejc3/claw-master-dashboard/demo/reset'
 import { headers } from 'next/headers'
 
 export const API_BASE = '/api/claw-master'

@@ -1,6 +1,6 @@
 import 'server-only'
 
-import { createDashboardHandler, firstSegmentUnder } from '@ejc3/claude-master-dashboard/next'
+import { createDashboardHandler, firstSegmentUnder } from '@ejc3/claw-master-dashboard/next'
 import { authorizeRequest, resetScenarioSource, source, TRY_RESET } from './dashboard'
 
 const live = createDashboardHandler({ source, authorize: authorizeRequest })
