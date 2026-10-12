@@ -35,7 +35,7 @@ pnpm test        # vitest
 
 ## Cloudflare only, by design (standing rule)
 
-This app deploys to Cloudflare Workers only (the Worker `claude-master-dashboard`, from
+This app deploys to Cloudflare Workers only (the Worker `claw-master-dashboard`, from
 `.github/workflows/deploy.yml`), by design: Cloudflare is where the owner's web apps are going,
 and this one needs no Vercel project.
 

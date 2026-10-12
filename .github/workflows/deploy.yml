@@ -1,8 +1,8 @@
 name: Deploy
 
-# Builds apps/web as a Cloudflare Worker (OpenNext) and deploys it as claude-master-dashboard and,
-# while the address moves (ejc3/aws#415), as claw-master-dashboard too, whose URLs stay off until
-# its own Access application covers it.
+# Builds apps/web as a Cloudflare Worker (OpenNext) and deploys it as claw-master-dashboard. It also
+# deletes claude-master-dashboard, the Worker's name before the rename (ejc3/aws#415), once ejc3/aws
+# has turned that Worker's URL off.
 # Cloudflare Access gates the Worker (an Access application with the Worker as its destination,
 # managed in ejc3/aws), and the app refuses any request without a valid Access assertion.
 #
@@ -51,7 +51,7 @@ jobs:
       - name: Nothing from an env file is embedded
         run: |
           node -e "import('./apps/web/.open-next/cloudflare/next-env.mjs').then((m) => { const p = m.production ?? {}; if (Object.keys(p).length) { console.error('embedded env:', Object.keys(p)); process.exit(1) } })"
-      - name: Deploy claude-master-dashboard
+      - name: Deploy claw-master-dashboard
         working-directory: apps/web
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -62,15 +62,35 @@ jobs:
             echo "### Not deployed: no deploy credentials in the production environment yet" >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
-          pnpm exec wrangler deploy --env=""
-      - name: Deploy claw-master-dashboard
-        working-directory: apps/web
+          pnpm exec wrangler deploy
+      # The retired Worker goes only after ejc3/aws has turned its URL off and removed its Access
+      # application in the same apply: deleting it first would leave Terraform state naming a Worker
+      # that is gone. Until then this step says why it waits; after, it finds nothing to delete.
+      - name: Delete the retired claude-master-dashboard Worker
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          OLD: claude-master-dashboard
         run: |
           [ -n "$CLOUDFLARE_API_TOKEN" ] && [ -n "$CLOUDFLARE_ACCOUNT_ID" ] || exit 0
-          pnpm exec wrangler deploy --env claw
+          api="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$OLD"
+          auth() { printf 'Authorization: Bearer %s\n' "$CLOUDFLARE_API_TOKEN"; }
+          code=$(auth | curl -s -o subdomain.json -w '%{http_code}' -H @- "$api/subdomain")
+          if [ "$code" = 404 ]; then
+            echo "$OLD is already deleted."
+            exit 0
+          fi
+          if [ "$code" != 200 ]; then
+            echo "::error::Could not read $OLD's URL switches (HTTP $code)."
+            exit 1
+          fi
+          if [ "$(jq -r '.result.enabled or .result.previews_enabled' subdomain.json)" != false ]; then
+            echo "::notice::$OLD still has a URL on; it is deleted once ejc3/aws turns it off (#415)."
+            exit 0
+          fi
+          auth | curl -sf -X DELETE -H @- "$api?force=true" > /dev/null
+          echo "Deleted $OLD."
+          echo "### Deleted the retired Worker $OLD" >> "$GITHUB_STEP_SUMMARY"
       # The Worker's id (not its version) is what the Access application in ejc3/aws names; it
       # exists only after the first deploy. Metadata, not a credential: printed for that step.
       - name: Report the Worker id
@@ -81,9 +101,7 @@ jobs:
           [ -n "$CLOUDFLARE_API_TOKEN" ] && [ -n "$CLOUDFLARE_ACCOUNT_ID" ] || exit 0
           workers=$(printf 'Authorization: Bearer %s\n' "$CLOUDFLARE_API_TOKEN" |
             curl -sf -H @- "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/workers?per_page=100")
-          for name in claude-master-dashboard claw-master-dashboard; do
-            id=$(printf '%s' "$workers" | jq -r --arg n "$name" '.result[] | select(.name == $n) | .id')
-            echo "Worker $name id: ${id:-not found}"
-            echo "Worker $name id: \`${id:-not found}\`" >> "$GITHUB_STEP_SUMMARY"
-          done
+          id=$(printf '%s' "$workers" | jq -r '.result[] | select(.name == "claw-master-dashboard") | .id')
+          echo "Worker claw-master-dashboard id: ${id:-not found}"
+          echo "Worker claw-master-dashboard id: \`${id:-not found}\`" >> "$GITHUB_STEP_SUMMARY"
 

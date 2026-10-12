@@ -1,10 +1,10 @@
 # Deploying
 
 The reference app (`apps/web`) deploys as the Cloudflare Worker `claw-master-dashboard`, at
-https://claw-master-dashboard.cc-games.workers.dev/claw-master, and as `claude-master-dashboard`
-(the name before the rename) until that one is retired (ejc3/aws#415). The `Deploy` workflow checks,
-builds and deploys both on every push to `main`. Each Worker has its own Access application, so its
-own `CF_ACCESS_AUD`; the other secrets are the same.
+https://claw-master-dashboard.cc-games.workers.dev/claw-master. The `Deploy` workflow checks, builds
+and deploys it on every push to `main`. It also deletes `claude-master-dashboard`, the Worker's name
+before the rename, once ejc3/aws has turned that Worker's URL off and removed its Access application
+(ejc3/aws#415); until then the step says it is waiting.
 
 ## What lives where
 
