@@ -152,6 +152,11 @@ describe('headline', () => {
     }
     const back = poolGaps(forecastProfiles([nineHours]), NOW, new Map([['a', 0]]), NOW).gaps[0]
     expect(back?.end).toBe(NOW + 10 * 60_000)
+    // Refused through the reset: nothing of that week is left, so nothing is counted unused at it.
+    const throughReset = { ...nineHours, rateLimitedUntil: NOW + 9 * HOUR_MS }
+    expect(forecastProfiles([throughReset])[0]?.weekly.usedFraction).toBe(1)
+    const g = poolGaps(forecastProfiles([throughReset]), NOW, new Map([['a', 0]]), NOW)
+    expect(g.unusedAtReset).toEqual([])
     const half = profile('b')
     expect(forecastProfiles([half])[0]?.weekly).toBe(half.weekly)
   })

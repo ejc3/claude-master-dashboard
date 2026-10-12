@@ -519,7 +519,7 @@ describe('selectSource', () => {
     })
     expect(chosen).toEqual({ kind: 'demo', source: demo })
     expect(warn).toHaveBeenCalledWith(
-      'claude-master dashboard: AWS_SECRET_ACCESS_KEY, AWS_REGION not set; showing demo data',
+      'claw-master dashboard: AWS_SECRET_ACCESS_KEY, AWS_REGION not set; showing demo data',
     )
   })
 })
@@ -570,7 +570,7 @@ describe('account aliases', () => {
     expect(warn).toHaveBeenCalledTimes(1)
     const message = warn.mock.calls[0]?.[0] as string
     expect(message).toBe(
-      'claude-master dashboard: 3 malformed lines in DASHBOARD_ACCOUNT_ALIASES ignored',
+      'claw-master dashboard: 3 malformed lines in DASHBOARD_ACCOUNT_ALIASES ignored',
     )
     expect(message).not.toContain('not-a-code')
     expect(parseAccountAliases(undefined, warn).size).toBe(0)

@@ -63,19 +63,20 @@ export const POLL_FULL_LEFT = 0.01
 /**
  * The subscriptions as the forecast should see them: a window the poll reads as used up keeps
  * POLL_FULL_LEFT, so the forecast has it run out shortly instead of being out already. A refused
- * subscription is held by its refusal until that ends (claw-master asks Anthropic again then), not
- * by the poll's reading until the window resets.
+ * subscription whose refusal ends before the window resets gets it too (claw-master asks Anthropic
+ * again then); one refused through the reset has nothing left of that window, so it stays as read
+ * (else the forecast would count that percent as left unused at the reset).
  */
 export function forecastProfiles(profiles: ProfileStatus[]): ProfileStatus[] {
-  const cap = (w: QuotaWindow | null): QuotaWindow | null =>
-    w === null || w.usedFraction === null || w.usedFraction < 1
-      ? w
-      : { ...w, usedFraction: 1 - POLL_FULL_LEFT }
-  return profiles.map((p) => ({
-    ...p,
-    weekly: cap(p.weekly) ?? p.weekly,
-    fiveHour: cap(p.fiveHour),
-  }))
+  return profiles.map((p) => {
+    const cap = (w: QuotaWindow | null): QuotaWindow | null => {
+      if (w === null || w.usedFraction === null || w.usedFraction < 1) return w
+      const refusedThroughReset =
+        p.rateLimitedUntil !== null && w.resetsAt !== null && p.rateLimitedUntil >= w.resetsAt
+      return refusedThroughReset ? w : { ...w, usedFraction: 1 - POLL_FULL_LEFT }
+    }
+    return { ...p, weekly: cap(p.weekly) ?? p.weekly, fiveHour: cap(p.fiveHour) }
+  })
 }
 
 export function hasHeadroom(profile: ProfileStatus, now: EpochMs): boolean {

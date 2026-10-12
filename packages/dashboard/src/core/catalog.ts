@@ -118,7 +118,7 @@ const DIMENSIONS: readonly Dimension[] = [
 
 export class UnsupportedQueryError extends Error {
   constructor(metric: SemanticMetric, groupBy: Dimension) {
-    super(`claude-master does not emit ${metric} split by ${groupBy}`)
+    super(`claw-master does not emit ${metric} split by ${groupBy}`)
     this.name = 'UnsupportedQueryError'
   }
 }

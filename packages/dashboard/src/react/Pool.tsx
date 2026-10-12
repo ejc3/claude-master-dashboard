@@ -159,9 +159,9 @@ export function calendarHref(title: string, at: EpochMs): string {
   const ics = [
     'BEGIN:VCALENDAR',
     'VERSION:2.0',
-    'PRODID:-//claude-master//dashboard//EN',
+    'PRODID:-//claw-master//dashboard//EN',
     'BEGIN:VEVENT',
-    `UID:${at}-${title.replace(/[^A-Za-z0-9]/g, '')}@claude-master`,
+    `UID:${at}-${title.replace(/[^A-Za-z0-9]/g, '')}@claw-master`,
     `DTSTAMP:${stamp(at)}`,
     `DTSTART:${stamp(at)}`,
     `DTEND:${stamp(at + 15 * 60_000)}`,
@@ -258,18 +258,6 @@ export function PoolAccounts(props: {
   const shown = props.profiles.find((p) => p.profile === open) ?? null
   return (
     <div className="cmd-accounts" ref={ref}>
-      {/* A key in the row itself: a sample pair of bars, each named under it. */}
-      <div className="cmd-accounts-key" aria-hidden="true">
-        <span className="cmd-account-bars">
-          <span className="cmd-account-bar" data-level="key" />
-          <span className="cmd-account-bar" data-level="key" />
-        </span>
-        <span className="cmd-accounts-key-names">
-          <span>week</span>
-          <span>5h</span>
-        </span>
-        <span className="cmd-accounts-key-caption">left</span>
-      </div>
       <ul aria-label="What each subscription has left of its weekly and 5-hour limits">
         {props.profiles.map((p) => {
           const weekly = share(p.weekly.usedFraction)
@@ -310,6 +298,9 @@ export function PoolAccounts(props: {
           )
         })}
       </ul>
+      <p className="cmd-accounts-legend" aria-hidden="true">
+        Bars: week, 5h left
+      </p>
       {shown !== null && (
         <div id="cmd-account-detail" className="cmd-account-detail" role="status">
           <p>

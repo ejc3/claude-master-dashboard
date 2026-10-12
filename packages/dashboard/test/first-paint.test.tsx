@@ -618,12 +618,11 @@ describe('the account bars', () => {
     // bravo's poll reads its week used up, but Anthropic has not refused it: still open. charlie is
     // refused (rate-limited) and out.
     expect(items.map((e) => e.getAttribute('data-open'))).toEqual(['true', 'true', 'false', 'true'])
-    // The key sits in the row: a sample pair of bars, named week and 5h, left to right.
-    const key = container.querySelector('.cmd-accounts-key')
-    expect(key?.querySelectorAll('.cmd-account-bar')).toHaveLength(2)
-    expect(
-      [...(key?.querySelectorAll('.cmd-accounts-key-names span') ?? [])].map((e) => e.textContent),
-    ).toEqual(['week', '5h'])
+    // No key among the bars: one line under them says which is which.
+    expect(container.querySelector('.cmd-accounts-key')).toBeNull()
+    expect(container.querySelector('.cmd-accounts-legend')?.textContent?.trim()).toBe(
+      'Bars: week, 5h left',
+    )
     const levels = (e: Element) =>
       [...e.querySelectorAll('.cmd-account-bar')].map((b) => b.getAttribute('data-level'))
     expect(items.map(levels)).toEqual([
@@ -643,7 +642,6 @@ describe('the account bars', () => {
       ['73%', 'empty'],
       ['60%', '100%'],
     ])
-    expect(container.querySelector('.cmd-accounts-key-caption')?.textContent).toBe('left')
     // Read out in full for a screen reader.
     expect(items[0]?.textContent).toContain('alpha: week 48% left, 5-hour 4.0% left')
     expect(items[1]?.textContent).toContain('bravo: week 0% left, 5-hour no reading')
@@ -1508,5 +1506,15 @@ describe('out means refused', () => {
     }
     const { headline: text } = await headline(source)
     expect(text).not.toMatch(/^Out now/)
+  })
+})
+
+describe('the name', () => {
+  it('is claw-master', async () => {
+    const container = document.createElement('div')
+    container.innerHTML = renderToString(await serverPage(ZONE))
+    expect(container.querySelector('.cmd-title')?.firstChild?.textContent).toBe('claw-master')
+    // Nowhere on the first paint the old name (the alarms keep it in CloudWatch; the page strips it).
+    expect(container.textContent).not.toContain('claude-master')
   })
 })

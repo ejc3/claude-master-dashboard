@@ -59,9 +59,7 @@ function accessCheck(): ReturnType<typeof cloudflareAccess> | null {
   if (access !== undefined) return access
   const settings = accessOptionsFromEnv(process.env)
   if ('missing' in settings) {
-    console.error(
-      `claude-master dashboard: ${settings.missing.join(', ')} not set; admitting nobody`,
-    )
+    console.error(`claw-master dashboard: ${settings.missing.join(', ')} not set; admitting nobody`)
     access = null
     return access
   }
@@ -69,7 +67,7 @@ function accessCheck(): ReturnType<typeof cloudflareAccess> | null {
     access = cloudflareAccess(settings.options)
   } catch (error) {
     console.error(
-      'claude-master dashboard: invalid Access settings; admitting nobody:',
+      'claw-master dashboard: invalid Access settings; admitting nobody:',
       error instanceof Error ? error.message : String(error),
     )
     access = null

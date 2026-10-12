@@ -80,7 +80,7 @@ export function createDashboardHandler(config: DashboardHandlerConfig): {
       }
       // The message, not the error: an SDK error can carry request details.
       console.error(
-        'claude-master dashboard: the metrics source failed:',
+        'claw-master dashboard: the metrics source failed:',
         error instanceof Error ? error.message : String(error),
       )
       return json({ error: 'The metrics source did not answer. The page retries on its own.' }, 502)
@@ -118,7 +118,7 @@ export interface DashboardPageProps {
 
 const failed = (what: string, error: unknown) =>
   console.error(
-    `claude-master dashboard: ${what} failed:`,
+    `claw-master dashboard: ${what} failed:`,
     error instanceof Error ? error.message : String(error),
   )
 
@@ -143,7 +143,7 @@ async function withinBudget<T>(
   let timer: ReturnType<typeof setTimeout> | undefined
   const late = new Promise<null>((resolve) => {
     timer = setTimeout(() => {
-      console.warn(`claude-master dashboard: ${what} missed the page's budget; the browser asks`)
+      console.warn(`claw-master dashboard: ${what} missed the page's budget; the browser asks`)
       keepAlive(work)
       resolve(null)
     }, FIRST_QUERIES_BUDGET_MS)

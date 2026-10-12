@@ -12,8 +12,8 @@ const sans = Rubik({
 })
 
 export const metadata: Metadata = {
-  title: 'claude-master',
-  description: 'Subscription headroom, resets and traffic for a claude-master pool.',
+  title: 'claw-master',
+  description: 'Subscription headroom, resets and traffic for a claw-master pool.',
   robots: { index: false, follow: false },
 }
 
