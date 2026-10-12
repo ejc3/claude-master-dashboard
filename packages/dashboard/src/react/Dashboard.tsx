@@ -555,28 +555,6 @@ function DashboardBody(props: DashboardProps) {
           />
         </section>
 
-        <section className="cmd-panel cmd-stream" aria-labelledby="cmd-subscriptions">
-          <div className="cmd-panel-header cmd-stream-columns">
-            <h2 className="cmd-panel-label" id="cmd-subscriptions">
-              Subscriptions
-            </h2>
-            <span className="cmd-panel-label cmd-wide-only" aria-hidden="true">
-              Weekly allowance
-            </span>
-            <span className="cmd-panel-label cmd-wide-only" aria-hidden="true">
-              5-hour window
-            </span>
-          </div>
-          {(snapshot?.profiles ?? []).map((p) => (
-            <RunwayCard
-              key={p.profile}
-              status={p}
-              now={now}
-              color={subscriptionColors.get(p.profile)}
-            />
-          ))}
-        </section>
-
         {/* Above what they change: the charts and the table below. */}
         <div className="cmd-controls cmd-toolbar">
           {tokenControl}
@@ -644,6 +622,29 @@ function DashboardBody(props: DashboardProps) {
           now={now}
           colors={subscriptionColors}
         />
+
+        {/* Each subscription in detail, below the traffic: the outlook above already sums them up. */}
+        <section className="cmd-panel cmd-stream" aria-labelledby="cmd-subscriptions">
+          <div className="cmd-panel-header cmd-stream-columns">
+            <h2 className="cmd-panel-label" id="cmd-subscriptions">
+              Subscriptions
+            </h2>
+            <span className="cmd-panel-label cmd-wide-only" aria-hidden="true">
+              Weekly allowance
+            </span>
+            <span className="cmd-panel-label cmd-wide-only" aria-hidden="true">
+              5-hour window
+            </span>
+          </div>
+          {(snapshot?.profiles ?? []).map((p) => (
+            <RunwayCard
+              key={p.profile}
+              status={p}
+              now={now}
+              color={subscriptionColors.get(p.profile)}
+            />
+          ))}
+        </section>
       </div>
     </div>
   )
