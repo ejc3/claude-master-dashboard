@@ -16,6 +16,7 @@ import {
   POLL_FULL_LEFT,
   type ProfileStatus,
   pollSaysUsedUp,
+  poolGaps,
   type SeriesQuery,
   seriesQueryFromParams,
   seriesQueryToParams,
@@ -132,18 +133,27 @@ describe('headline', () => {
     expect(nextAvailable([expired], NOW)).toBeNull()
   })
 
-  it('gives the forecast the last percent of a window the poll calls used up, unless refused', () => {
+  it('gives the forecast the last percent of a window the poll calls used up', () => {
     const pollFull = profile('a', {
       weekly: { usedFraction: 1, resetsAt: NOW + HOUR_MS, lengthMs: WEEK_MS },
       fiveHour: { usedFraction: 1, resetsAt: NOW + HOUR_MS, lengthMs: FIVE_HOURS_MS },
     })
-    const [seen] = forecastProfiles([pollFull], NOW)
+    const [seen] = forecastProfiles([pollFull])
     expect(seen?.weekly.usedFraction).toBe(1 - POLL_FULL_LEFT)
     expect(seen?.fiveHour?.usedFraction).toBe(1 - POLL_FULL_LEFT)
-    const refused = { ...pollFull, rateLimitedUntil: NOW + HOUR_MS }
-    expect(forecastProfiles([refused], NOW)[0]).toBe(refused)
+    // A refused one too: its refusal holds it until it ends, then claw-master asks again.
+    const refused = { ...pollFull, rateLimitedUntil: NOW + 10 * 60_000 }
+    expect(forecastProfiles([refused])[0]?.weekly.usedFraction).toBe(1 - POLL_FULL_LEFT)
+    // So a 10-minute refusal on a poll-full week resetting in 9 hours is back in 10 minutes.
+    const nineHours = {
+      ...refused,
+      weekly: { usedFraction: 1, resetsAt: NOW + 9 * HOUR_MS, lengthMs: WEEK_MS },
+      fiveHour: null,
+    }
+    const back = poolGaps(forecastProfiles([nineHours]), NOW, new Map([['a', 0]]), NOW).gaps[0]
+    expect(back?.end).toBe(NOW + 10 * 60_000)
     const half = profile('b')
-    expect(forecastProfiles([half], NOW)[0]?.weekly).toBe(half.weekly)
+    expect(forecastProfiles([half])[0]?.weekly).toBe(half.weekly)
   })
 })
 

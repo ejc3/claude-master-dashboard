@@ -296,20 +296,24 @@ function DashboardBody(props: DashboardProps) {
   // saying "back in now" until the minute is up.
   const gapsAt = forecastClock(profilesNow, now)
   const asOf = snapshot?.asOf ?? gapsAt
-  // As the forecast should see them: the poll's 100% where Anthropic still takes work leaves a
-  // little (forecastProfiles), so the headline says it runs out shortly, not that it is out.
+  // As the forecast should see them: the poll's 100% leaves a little (forecastProfiles), so the
+  // headline says it runs out shortly, not that it is out; a refusal holds one until it ends.
   const forecastable = useMemo(
-    () => (profilesNow === null ? null : forecastProfiles(profilesNow, gapsAt)),
-    [profilesNow, gapsAt],
+    () => (profilesNow === null ? null : forecastProfiles(profilesNow)),
+    [profilesNow],
   )
+  // From the later of the readings and the clock: Anthropic has not refused what it has taken since
+  // the readings, so the last percent a full window keeps counts from now, not spent already.
+  const forecastFrom = Math.max(asOf, gapsAt)
   const gaps = useMemo(
-    () => (forecastable === null ? null : poolGaps(forecastable, asOf, smoothed, gapsAt)),
-    [forecastable, asOf, smoothed, gapsAt],
+    () => (forecastable === null ? null : poolGaps(forecastable, forecastFrom, smoothed, gapsAt)),
+    [forecastable, forecastFrom, smoothed, gapsAt],
   )
   // The same with no more use: what is left only comes back as limits reset.
   const gapsIfStopped = useMemo(
-    () => (forecastable === null ? null : poolGaps(forecastable, asOf, smoothed, gapsAt, true)),
-    [forecastable, asOf, smoothed, gapsAt],
+    () =>
+      forecastable === null ? null : poolGaps(forecastable, forecastFrom, smoothed, gapsAt, true),
+    [forecastable, forecastFrom, smoothed, gapsAt],
   )
   // What to buy or cancel: a few dozen runs of the same forecast, so worked out after the page is
   // up and again only when a new snapshot or pace arrives, never on the clock's tick.
@@ -322,7 +326,7 @@ function DashboardBody(props: DashboardProps) {
     if (profilesNow === null) return
     const timer = setTimeout(() => {
       const at = Math.max(asOf, clock.current)
-      setAdvice(capacityAdvice(forecastProfiles(profilesNow, at), asOf, smoothed, at))
+      setAdvice(capacityAdvice(forecastProfiles(profilesNow), at, smoothed, at))
     }, 0)
     return () => clearTimeout(timer)
   }, [profilesNow, asOf, smoothed])

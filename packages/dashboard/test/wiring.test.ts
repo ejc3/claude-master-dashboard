@@ -28,13 +28,15 @@ describe('Headline wiring', () => {
     expect(source).toMatch(/const asOf = snapshot\?\.asOf \?\? gapsAt/)
     // On the subscriptions as the forecast sees them: the poll's 100% leaves a little where
     // Anthropic has not refused (forecastProfiles).
-    expect(source).toMatch(/forecastProfiles\(profilesNow, gapsAt\)/)
-    expect(source).toMatch(/poolGaps\(forecastable, asOf, smoothed, gapsAt\)/)
+    expect(source).toMatch(/forecastProfiles\(profilesNow\)/)
+    // From the later of the readings and the clock: the last percent counts from now.
+    expect(source).toMatch(/const forecastFrom = Math\.max\(asOf, gapsAt\)/)
+    expect(source).toMatch(/poolGaps\(forecastable, forecastFrom, smoothed, gapsAt\)/)
     expect(source).toMatch(
       /<PoolOutlook\s+gaps=\{gaps\}\s+gapsIfStopped=\{gapsIfStopped\}\s+profiles=\{profilesNow\}/,
     )
     // The other tab: the same forecast with no more use.
-    expect(source).toMatch(/poolGaps\(forecastable, asOf, smoothed, gapsAt, true\)/)
+    expect(source).toMatch(/poolGaps\(forecastable, forecastFrom, smoothed, gapsAt, true\)/)
     expect(pool).toMatch(/gapsHeadline\(props\.gaps, now\)/)
     expect(pool).not.toMatch(/forecastHeadline\(/)
   })

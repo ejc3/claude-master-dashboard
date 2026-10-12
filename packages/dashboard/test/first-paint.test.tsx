@@ -1453,4 +1453,30 @@ describe('out means refused', () => {
     expect(notRefused.headline).toMatch(/^Runs out in/)
     expect(notRefused.out).toBe(0)
   })
+
+  it('counts the last percent from now, not from a reading minutes old', async () => {
+    // Every 5-hour window read full five minutes ago at a fast pace, none refused: the last percent
+    // would be spent by now if counted from the reading.
+    const demo = createDemoSource({ now: () => NOW })
+    const source: MetricsSource = {
+      ...demo,
+      snapshot: async () => {
+        const s = await demo.snapshot()
+        return {
+          ...s,
+          asOf: NOW - 5 * 60_000,
+          profiles: s.profiles.map((p) => ({
+            ...p,
+            band: 'ok' as const,
+            weekly: { usedFraction: 0.5, resetsAt: NOW + 100 * HOUR_MS, lengthMs: 168 * HOUR_MS },
+            fiveHour: { usedFraction: 1, resetsAt: NOW + HOUR_MS, lengthMs: 5 * HOUR_MS },
+            rateLimitedUntil: null,
+            tokenExpiresAt: null,
+          })),
+        }
+      },
+    }
+    const { headline: text } = await headline(source)
+    expect(text).not.toMatch(/^Out now/)
+  })
 })
