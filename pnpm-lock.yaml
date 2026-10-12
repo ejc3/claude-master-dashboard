@@ -38,7 +38,7 @@ importers:
 
   apps/web:
     dependencies:
-      '@ejc3/claude-master-dashboard':
+      '@ejc3/claw-master-dashboard':
         specifier: workspace:*
         version: link:../../packages/dashboard
       next:

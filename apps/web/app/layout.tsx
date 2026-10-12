@@ -1,4 +1,4 @@
-import '@ejc3/claude-master-dashboard/styles.css'
+import '@ejc3/claw-master-dashboard/styles.css'
 import './globals.css'
 
 import type { Metadata, Viewport } from 'next'

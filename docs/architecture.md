@@ -38,7 +38,7 @@ or response bytes is made.
 
 ## Package
 
-`packages/dashboard` (`@ejc3/claude-master-dashboard`):
+`packages/dashboard` (`@ejc3/claw-master-dashboard`):
 
 | Entry | Contents | Runs in | Step |
 |---|---|---|---|
