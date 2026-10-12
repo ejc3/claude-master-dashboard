@@ -11,7 +11,9 @@ import { createDemoSource } from '@ejc3/claude-master-dashboard/demo'
 import { createResetScenarioSource } from '@ejc3/claude-master-dashboard/demo/reset'
 import { headers } from 'next/headers'
 
-export const API_BASE = '/api/claude-master'
+export const API_BASE = '/api/claw-master'
+/** The API's address before the rename: pages opened then still poll it. */
+export const LEGACY_API_BASE = '/api/claude-master'
 
 let selection: SourceSelection | undefined
 
@@ -30,8 +32,8 @@ export function source(): MetricsSource {
 }
 
 /**
- * The reset scenario, to try the countdown and the return of quota: /claude-master/try-reset, with
- * its API under /api/claude-master/try-reset. Always made-up data, behind the same sign-in.
+ * The reset scenario, to try the countdown and the return of quota: /claw-master/try-reset, with
+ * its API under /api/claw-master/try-reset. Always made-up data, behind the same sign-in.
  */
 export const TRY_RESET = 'try-reset'
 const scenario = createResetScenarioSource()
