@@ -5,8 +5,6 @@ import {
   API_BASE,
   authorizePage,
   demoData,
-  pagePath,
-  redirectIfMoved,
   resetScenarioSource,
   source,
   TRY_RESET,
@@ -16,7 +14,6 @@ export const dynamic = 'force-dynamic'
 
 export default async function Page({ params }: { params: Promise<{ slug?: string[] }> }) {
   const { slug } = await params
-  redirectIfMoved(pagePath(slug))
   // The viewer's time zone, as the browser reported it, so times render on the server.
   const timeZone = (await cookies()).get(TIME_ZONE_COOKIE)?.value
   // /claw-master/try-reset: the reset scenario, to try the countdown and the return of quota.

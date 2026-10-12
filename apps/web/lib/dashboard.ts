@@ -10,8 +10,6 @@ import { type SourceSelection, selectSource } from '@ejc3/claw-master-dashboard/
 import { createDemoSource } from '@ejc3/claw-master-dashboard/demo'
 import { createResetScenarioSource } from '@ejc3/claw-master-dashboard/demo/reset'
 import { headers } from 'next/headers'
-import { redirect } from 'next/navigation'
-import { movedTo } from './moved'
 
 export const API_BASE = '/api/claw-master'
 
@@ -21,15 +19,6 @@ export function pagePath(slug: string[] | undefined): string {
   return rest === '' ? '/claw-master' : `/claw-master/${rest}`
 }
 
-/**
- * On the Worker the dashboard moved from, its pages go on to the same page at the new address
- * (DASHBOARD_MOVED_TO, set in wrangler.jsonc for that Worker only). The API stays, so a page opened
- * before the move keeps refreshing.
- */
-export function redirectIfMoved(path: string): void {
-  const target = movedTo(process.env.DASHBOARD_MOVED_TO, path)
-  if (target !== null) redirect(target)
-}
 /** The API's address before the rename: pages opened then still poll it. */
 export const LEGACY_API_BASE = '/api/claude-master'
 

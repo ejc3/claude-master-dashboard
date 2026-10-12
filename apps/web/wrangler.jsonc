@@ -1,6 +1,8 @@
 {
   "$schema": "../../node_modules/wrangler/config-schema.json",
-  "name": "claude-master-dashboard",
+  // The Worker's name after the rename (ejc3/aws#415); claude-master-dashboard, the name before, is
+  // retired and no longer deployed.
+  "name": "claw-master-dashboard",
   "main": ".open-next/worker.js",
   "compatibility_date": "2026-10-06",
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
@@ -11,21 +13,6 @@
   // deploy, so they change here and in ejc3/aws together.
   "workers_dev": true,
   "preview_urls": false,
-  "observability": { "enabled": true },
-  // This Worker is the address before the rename: its pages go on to the same page at the new one
-  // (the API stays for pages already open). Vars are not inherited, so env.claw has none.
-  "vars": { "DASHBOARD_MOVED_TO": "https://claw-master-dashboard.cc-games.workers.dev" },
+  "observability": { "enabled": true }
   // The Access settings and the AWS key are Worker secrets (docs/deploy.md); they survive deploys.
-  "env": {
-    // The same build as claw-master-dashboard, the Worker's name after the rename (ejc3/aws#415).
-    // Its own Access application covers it (ejc3/aws#417), so its workers.dev URL is on, as in
-    // ejc3/aws (#418): https://claw-master-dashboard.cc-games.workers.dev/claw-master.
-    "claw": {
-      "name": "claw-master-dashboard",
-      "workers_dev": true,
-      "preview_urls": false,
-      // The new address: nothing to send on.
-      "vars": {}
-    }
-  }
 }
