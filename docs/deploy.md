@@ -1,7 +1,10 @@
 # Deploying
 
-The reference app (`apps/web`) deploys as the Cloudflare Worker `claude-master-dashboard`. The
-`Deploy` workflow checks, builds and deploys it on every push to `main`.
+The reference app (`apps/web`) deploys as the Cloudflare Worker `claw-master-dashboard`, at
+https://claw-master-dashboard.cc-games.workers.dev/claw-master, and as `claude-master-dashboard`
+(the name before the rename) until that one is retired (ejc3/aws#415). The `Deploy` workflow checks,
+builds and deploys both on every push to `main`. Each Worker has its own Access application, so its
+own `CF_ACCESS_AUD`; the other secrets are the same.
 
 ## What lives where
 
@@ -48,6 +51,6 @@ Never put secrets in `apps/web/.env*`. OpenNext embeds those files in the Worker
 ## After the first deploy with the URL on
 
 - **Not signed in:** a request is redirected to the Access sign-in.
-- **Signed in as an operator:** `/api/claude-master/snapshot` answers 200.
+- **Signed in as an operator:** `/api/claw-master/snapshot` answers 200.
 - **Signed in with an address not on `DASHBOARD_ALLOWED_EMAILS`:** it answers 401, and the Worker logs that an address was not on the allowlist.
 - **Bypassing Access:** a request sent straight to the Worker with a made-up `Cf-Access-Jwt-Assertion` header answers 401.

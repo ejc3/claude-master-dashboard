@@ -15,11 +15,11 @@
   // The Access settings and the AWS key are Worker secrets (docs/deploy.md); they survive deploys.
   "env": {
     // The same build as claw-master-dashboard, the Worker's name after the rename (ejc3/aws#415).
-    // No URL of its own until its own Access application covers it (a new Worker, a new id): with
-    // no Access settings it admits nobody anyway. Its switches turn on here and in ejc3/aws together.
+    // Its own Access application covers it (ejc3/aws#417), so its workers.dev URL is on, as in
+    // ejc3/aws (#418): https://claw-master-dashboard.cc-games.workers.dev/claw-master.
     "claw": {
       "name": "claw-master-dashboard",
-      "workers_dev": false,
+      "workers_dev": true,
       "preview_urls": false
     }
   }
