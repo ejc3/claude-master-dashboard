@@ -11,6 +11,16 @@
   // deploy, so they change here and in ejc3/aws together.
   "workers_dev": true,
   "preview_urls": false,
-  "observability": { "enabled": true }
+  "observability": { "enabled": true },
   // The Access settings and the AWS key are Worker secrets (docs/deploy.md); they survive deploys.
+  "env": {
+    // The same build as claw-master-dashboard, the Worker's name after the rename (ejc3/aws#415).
+    // No URL of its own until its own Access application covers it (a new Worker, a new id): with
+    // no Access settings it admits nobody anyway. Its switches turn on here and in ejc3/aws together.
+    "claw": {
+      "name": "claw-master-dashboard",
+      "workers_dev": false,
+      "preview_urls": false
+    }
+  }
 }

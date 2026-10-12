@@ -1,6 +1,6 @@
 # Architecture
 
-A dashboard for [claude-master](https://github.com/ejc3/CLIProxyAPI/blob/main/docs/claude-master.md)
+A dashboard for [claw-master](https://github.com/ejc3/CLIProxyAPI/blob/feature/claude-master-inference/docs/claw-master.md)
 telemetry: which subscription has headroom, when each window resets, who uses the pool, and
 whether requests succeed. It ships as a package that any Next.js app mounts, plus a reference app
 that deploys it. This document is the design; [Delivery](#delivery) lists which parts exist.

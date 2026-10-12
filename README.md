@@ -1,7 +1,7 @@
 # claude-master dashboard
 
 Which subscription has headroom, when each window resets, who uses the pool, and whether
-requests succeed: a dashboard for [claude-master](https://github.com/ejc3/CLIProxyAPI/blob/main/docs/claude-master.md)
+requests succeed: a dashboard for [claw-master](https://github.com/ejc3/CLIProxyAPI/blob/feature/claude-master-inference/docs/claw-master.md)
 telemetry, packaged to mount in any Next.js app.
 
 Design and delivery plan: [docs/architecture.md](docs/architecture.md).
@@ -15,15 +15,15 @@ export default { transpilePackages: ['@ejc3/claude-master-dashboard'] }
 // app/layout.tsx
 import '@ejc3/claude-master-dashboard/styles.css'
 
-// app/api/claude-master/[...path]/route.ts
+// app/api/claw-master/[...path]/route.ts
 import { createDashboardHandler } from '@ejc3/claude-master-dashboard/next'
 export const { GET } = createDashboardHandler({ source, authorize })
 
-// app/claude-master/page.tsx
+// app/claw-master/page.tsx
 import { DashboardPage } from '@ejc3/claude-master-dashboard/next'
 export default function Page() {
   return (
-    <DashboardPage source={source} authorize={allowed} apiBase="/api/claude-master" unauthorized={<SignIn />} />
+    <DashboardPage source={source} authorize={allowed} apiBase="/api/claw-master" unauthorized={<SignIn />} />
   )
 }
 ```
