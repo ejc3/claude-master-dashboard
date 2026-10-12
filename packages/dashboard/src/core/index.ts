@@ -55,11 +55,14 @@ export {
   type Blocked,
   blocked,
   fiveHourAt,
+  forecastProfiles,
   hasHeadroom,
   LOGIN_OVERDUE_MS,
   loginOverdue,
   nextAvailable,
   nextRunOut,
+  POLL_FULL_LEFT,
+  pollSaysUsedUp,
   type RunOut,
 } from './headline'
 export {

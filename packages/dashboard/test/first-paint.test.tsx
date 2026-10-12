@@ -520,7 +520,7 @@ describe('answers shown together, while a moved range loads', () => {
 })
 
 describe('the status badge', () => {
-  it('says a subscription Anthropic is rate-limiting is rate limited, and when it is back', () => {
+  it('says a subscription Anthropic is refusing is out, and when it is back', () => {
     const status: ProfileStatus = {
       profile: 'alpha',
       band: 'ok',
@@ -533,8 +533,8 @@ describe('the status badge', () => {
     const container = document.createElement('div')
     container.innerHTML = renderToString(<RunwayCard status={status} now={NOW} />)
     const badge = container.querySelector('.cmd-status')
-    expect(badge?.textContent).toBe('Rate limited')
-    expect(badge?.getAttribute('data-status')).toBe('rate-limited')
+    expect(badge?.textContent).toBe('Out')
+    expect(badge?.getAttribute('data-status')).toBe('out')
     expect(container.textContent).toContain('Back in 1h 46m')
     expect(container.textContent).not.toMatch(/cool/i)
   })
@@ -615,12 +615,9 @@ describe('the account bars', () => {
       'charlie',
       'delta',
     ])
-    expect(items.map((e) => e.getAttribute('data-open'))).toEqual([
-      'true',
-      'false',
-      'false',
-      'true',
-    ])
+    // bravo's poll reads its week used up, but Anthropic has not refused it: still open. charlie is
+    // refused (rate-limited) and out.
+    expect(items.map((e) => e.getAttribute('data-open'))).toEqual(['true', 'true', 'false', 'true'])
     // The key sits in the row: a sample pair of bars, named week and 5h, left to right.
     const key = container.querySelector('.cmd-accounts-key')
     expect(key?.querySelectorAll('.cmd-account-bar')).toHaveLength(2)
@@ -649,7 +646,8 @@ describe('the account bars', () => {
     expect(container.querySelector('.cmd-accounts-key-caption')?.textContent).toBe('left')
     // Read out in full for a screen reader.
     expect(items[0]?.textContent).toContain('alpha: week 48% left, 5-hour 4.0% left')
-    expect(items[1]?.textContent).toContain('bravo: week 0% left, 5-hour no reading, not available')
+    expect(items[1]?.textContent).toContain('bravo: week 0% left, 5-hour no reading')
+    expect(items[1]?.textContent).not.toContain('not available')
   })
 
   it('shortens names only by a shared prefix ending at a separator', () => {
@@ -936,7 +934,7 @@ describe("a subscription's detail", () => {
     // Another subscription's tap shows its own.
     act(() => bravo.click())
     expect(container.querySelector('.cmd-account-detail')?.textContent).toContain(
-      'team-bravo · Used up · back in 2d',
+      'team-bravo · Nearly out · Anthropic still takes its work',
     )
     // A tap anywhere else closes it.
     act(() => {
@@ -1328,7 +1326,7 @@ describe('the breakdown table', () => {
 })
 
 describe('a subscription row', () => {
-  it('says Available, and nothing about latency or a used-up window twice', () => {
+  it("says Available, Nearly out at the poll's 100%, Out when refused, and no latency", () => {
     const base: ProfileStatus = {
       profile: 'alpha',
       band: 'ok',
@@ -1346,10 +1344,18 @@ describe('a subscription row', () => {
     const ok = render(base)
     expect(ok.querySelector('.cmd-status')?.textContent).toBe('Available')
     expect(ok.textContent).not.toMatch(/p95|headroom/)
-    const usedUp = render({ ...base, weekly: { ...base.weekly, usedFraction: 1 } })
-    expect(usedUp.querySelector('.cmd-status')?.textContent).toBe('Used up')
-    expect(usedUp.textContent).toContain('Back in 2d')
-    expect(usedUp.textContent).not.toContain('Used up until the reset')
+    // The poll's 100%: Anthropic still takes its work, so nearly out, not out, and no back time.
+    const nearlyOut = render({ ...base, weekly: { ...base.weekly, usedFraction: 1 } })
+    expect(nearlyOut.querySelector('.cmd-status')?.textContent).toBe('Nearly out')
+    expect(nearlyOut.textContent).not.toContain('Back in')
+    // Refused until the week resets: out, and back then.
+    const refused = render({
+      ...base,
+      weekly: { ...base.weekly, usedFraction: 1 },
+      rateLimitedUntil: base.weekly.resetsAt,
+    })
+    expect(refused.querySelector('.cmd-status')?.textContent).toBe('Out')
+    expect(refused.textContent).toContain('Back in 2d')
   })
 })
 
@@ -1403,5 +1409,48 @@ describe('the capacity advice, from a late snapshot', () => {
     })
     const facts = [...container.querySelectorAll('.cmd-facts li')].map((e) => e.textContent ?? '')
     expect(facts.some((f) => f.startsWith('Add '))).toBe(false)
+  })
+})
+
+describe('out means refused', () => {
+  // Every subscription's week read as used up by the poll; refused by Anthropic or not.
+  const pollFull = (refused: boolean): MetricsSource => {
+    const demo = createDemoSource({ now: () => NOW })
+    return {
+      ...demo,
+      snapshot: async () => {
+        const s = await demo.snapshot()
+        return {
+          ...s,
+          profiles: s.profiles.map((p) => ({
+            ...p,
+            band: 'exhausted' as const,
+            weekly: { usedFraction: 1, resetsAt: NOW + 30 * HOUR_MS, lengthMs: 168 * HOUR_MS },
+            fiveHour: null,
+            rateLimitedUntil: refused ? NOW + 30 * HOUR_MS : null,
+            tokenExpiresAt: null,
+          })),
+        }
+      },
+    }
+  }
+  const headline = async (source: MetricsSource) => {
+    const container = document.createElement('div')
+    container.innerHTML = renderToString(await serverPage(ZONE, source))
+    return {
+      headline: container.querySelector('#cmd-pool-headline')?.textContent ?? '',
+      out: container.querySelectorAll('.cmd-account[data-open="false"]').length,
+    }
+  }
+
+  it('says out now only when Anthropic refuses every subscription', async () => {
+    const refused = await headline(pollFull(true))
+    expect(refused.headline).toMatch(/^Out now/)
+    expect(refused.out).toBe(4)
+    // The poll's 100% with no refusal: nearly out, still taking work, so it runs out shortly.
+    const notRefused = await headline(pollFull(false))
+    expect(notRefused.headline).not.toMatch(/^Out now/)
+    expect(notRefused.headline).toMatch(/^Runs out in/)
+    expect(notRefused.out).toBe(0)
   })
 })

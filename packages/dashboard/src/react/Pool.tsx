@@ -15,6 +15,7 @@ import {
   type PoolGaps,
   type PoolTone,
   type ProfileStatus,
+  pollSaysUsedUp,
   TRACE_STEP_MS,
   type WindowKind,
 } from '../core'
@@ -210,11 +211,12 @@ function WindowDetail(props: {
 /** Whether a subscription can take work, or until when it cannot, in words. */
 function availability(p: ProfileStatus, now: EpochMs): string {
   const b = blocked(p, now)
-  if (b === null) return 'Available'
+  if (b === null) {
+    return pollSaysUsedUp(p, now) ? 'Nearly out · Anthropic still takes its work' : 'Available'
+  }
   if (b.reason === 'login-expired') return 'Login expired · log in again on the server'
   if (b.reason === 'no-reading') return 'No reading'
-  const back = b.until === null ? 'back time unknown' : `back in ${formatCountdown(b.until - now)}`
-  return b.reason === 'rate-limited' ? `Rate limited · ${back}` : `Used up · ${back}`
+  return `Out · ${b.until === null ? 'back time unknown' : `back in ${formatCountdown(b.until - now)}`}`
 }
 
 /**

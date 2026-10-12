@@ -619,16 +619,16 @@
   }
 
   .cmd-row[data-status="low"],
-  .cmd-row[data-status="rate-limited"] {
+  .cmd-row[data-status="nearly-out"] {
     --cmd-row-mark: var(--cmd-reserve-mark);
   }
 
-  .cmd-row[data-status="used-up"],
+  .cmd-row[data-status="out"],
   .cmd-row[data-status="login"] {
     --cmd-row-mark: var(--cmd-exhausted-mark);
   }
 
-  .cmd-row[data-status="used-up"] {
+  .cmd-row[data-status="out"] {
     --cmd-runway-fill: var(--cmd-exhausted-mark);
   }
 
@@ -742,13 +742,13 @@
   }
 
   .cmd-status[data-status="low"],
-  .cmd-status[data-status="rate-limited"] {
+  .cmd-status[data-status="nearly-out"] {
     color: var(--cmd-reserve);
     background: var(--cmd-reserve-soft);
     border-color: color-mix(in srgb, var(--cmd-reserve-mark) 45%, transparent);
   }
 
-  .cmd-status[data-status="used-up"],
+  .cmd-status[data-status="out"],
   .cmd-status[data-status="login"] {
     color: var(--cmd-exhausted);
     background: var(--cmd-exhausted-soft);

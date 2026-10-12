@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   BadQueryError,
   FIVE_HOURS_MS,
+  forecastProfiles,
   formatCount,
   formatCountdown,
   formatDuration,
@@ -12,7 +13,9 @@ import {
   MAX_POINTS,
   nextAvailable,
   nextRunOut,
+  POLL_FULL_LEFT,
   type ProfileStatus,
+  pollSaysUsedUp,
   type SeriesQuery,
   seriesQueryFromParams,
   seriesQueryToParams,
@@ -73,11 +76,19 @@ describe('wire format', () => {
 })
 
 describe('headline', () => {
-  it('counts a rate-limited or exhausted subscription as without headroom', () => {
+  it('counts only a subscription Anthropic is refusing as out, not one the poll calls used up', () => {
     expect(hasHeadroom(profile('a'), NOW)).toBe(true)
-    expect(hasHeadroom(profile('a', { band: 'exhausted' }), NOW)).toBe(false)
+    // The poll reads whole percents: its 100% can still be under Anthropic's, which keeps taking work.
+    const pollFull = profile('a', {
+      band: 'exhausted',
+      weekly: { usedFraction: 1, resetsAt: NOW + HOUR_MS, lengthMs: WEEK_MS },
+    })
+    expect(hasHeadroom(pollFull, NOW)).toBe(true)
+    expect(pollSaysUsedUp(pollFull, NOW)).toBe(true)
+    // Anthropic refused it (a 429): out until the refusal ends.
     expect(hasHeadroom(profile('a', { rateLimitedUntil: NOW + 60_000 }), NOW)).toBe(false)
     expect(hasHeadroom(profile('a', { rateLimitedUntil: NOW - 60_000 }), NOW)).toBe(true)
+    expect(pollSaysUsedUp({ ...pollFull, rateLimitedUntil: NOW + 60_000 }, NOW)).toBe(false)
   })
 
   it('finds the soonest projected run-out among subscriptions with headroom', () => {
@@ -85,52 +96,54 @@ describe('headline', () => {
     const fast = profile('fast', {
       fiveHour: { usedFraction: 0.8, resetsAt: NOW + 2.5 * HOUR_MS, lengthMs: FIVE_HOURS_MS },
     })
-    const spent = profile('spent', {
+    const refused = profile('refused', {
       band: 'exhausted',
       weekly: { usedFraction: 1, resetsAt: NOW + HOUR_MS, lengthMs: WEEK_MS },
+      rateLimitedUntil: NOW + HOUR_MS,
     })
-    const runOut = nextRunOut([profile('slow'), spent, fast], NOW)
+    const runOut = nextRunOut([profile('slow'), refused, fast], NOW)
     expect(runOut?.profile).toBe('fast')
     expect(runOut?.window).toBe('fiveHour')
     expect(((runOut?.at ?? 0) - NOW) / 60_000).toBeCloseTo(37.5, 0)
     expect(nextRunOut([profile('slow')], NOW)).toBeNull()
   })
 
-  it('counts no reading, an expired login and a used-up 5-hour window as without headroom', () => {
+  it('counts no reading and an expired login as out; a used-up 5-hour reading is nearly out', () => {
     expect(hasHeadroom(profile('a', { band: 'unknown' }), NOW)).toBe(false)
     expect(hasHeadroom(profile('a', { tokenExpiresAt: NOW - 1 }), NOW)).toBe(false)
     expect(hasHeadroom(profile('a', { tokenExpiresAt: NOW + HOUR_MS }), NOW)).toBe(true)
     const fiveHourSpent = { usedFraction: 1, resetsAt: NOW + HOUR_MS, lengthMs: FIVE_HOURS_MS }
-    expect(hasHeadroom(profile('a', { fiveHour: fiveHourSpent }), NOW)).toBe(false)
-    // Once that window has reset, the old reading no longer blocks.
+    expect(hasHeadroom(profile('a', { fiveHour: fiveHourSpent }), NOW)).toBe(true)
+    expect(pollSaysUsedUp(profile('a', { fiveHour: fiveHourSpent }), NOW)).toBe(true)
+    // Once that window has reset, the old reading says nothing.
     const reset = { ...fiveHourSpent, resetsAt: NOW - 1 }
-    expect(hasHeadroom(profile('a', { fiveHour: reset }), NOW)).toBe(true)
+    expect(pollSaysUsedUp(profile('a', { fiveHour: reset }), NOW)).toBe(false)
   })
 
-  it('says when the first blocked subscription takes work again, by its last blocker', () => {
-    // Used up weekly for 9 hours: its 5-hour reset in 30 minutes does not free it.
-    const weeklySpent = profile('weekly', {
-      band: 'exhausted',
-      weekly: { usedFraction: 1, resetsAt: NOW + 9 * HOUR_MS, lengthMs: WEEK_MS },
-      fiveHour: { usedFraction: 1, resetsAt: NOW + 0.5 * HOUR_MS, lengthMs: FIVE_HOURS_MS },
-    })
+  it('says when the first refused subscription takes work again', () => {
+    const later = profile('later', { rateLimitedUntil: NOW + 9 * HOUR_MS })
     const limited = profile('limited', { rateLimitedUntil: NOW + 2 * HOUR_MS })
     const expired = profile('expired', { tokenExpiresAt: NOW - 1 })
-    expect(nextAvailable([weeklySpent, limited, expired], NOW)).toEqual({
+    expect(nextAvailable([later, limited, expired], NOW)).toEqual({
       profile: 'limited',
       at: NOW + 2 * HOUR_MS,
     })
-    expect(nextAvailable([weeklySpent], NOW)?.at).toBe(NOW + 9 * HOUR_MS)
+    expect(nextAvailable([later], NOW)?.at).toBe(NOW + 9 * HOUR_MS)
     expect(nextAvailable([expired], NOW)).toBeNull()
-    // Used up with an unknown reset: a shorter rate limit does not make it available.
-    const unknownReset = profile('unknown', {
-      band: 'exhausted',
-      weekly: { usedFraction: 1, resetsAt: null, lengthMs: WEEK_MS },
-      fiveHour: null,
-      rateLimitedUntil: NOW + 10 * 60_000,
+  })
+
+  it('gives the forecast the last percent of a window the poll calls used up, unless refused', () => {
+    const pollFull = profile('a', {
+      weekly: { usedFraction: 1, resetsAt: NOW + HOUR_MS, lengthMs: WEEK_MS },
+      fiveHour: { usedFraction: 1, resetsAt: NOW + HOUR_MS, lengthMs: FIVE_HOURS_MS },
     })
-    expect(nextAvailable([unknownReset], NOW)).toBeNull()
-    expect(hasHeadroom(unknownReset, NOW)).toBe(false)
+    const [seen] = forecastProfiles([pollFull], NOW)
+    expect(seen?.weekly.usedFraction).toBe(1 - POLL_FULL_LEFT)
+    expect(seen?.fiveHour?.usedFraction).toBe(1 - POLL_FULL_LEFT)
+    const refused = { ...pollFull, rateLimitedUntil: NOW + HOUR_MS }
+    expect(forecastProfiles([refused], NOW)[0]).toBe(refused)
+    const half = profile('b')
+    expect(forecastProfiles([half], NOW)[0]?.weekly).toBe(half.weekly)
   })
 })
 

@@ -7,6 +7,7 @@ import {
   type CapacityAdvice,
   capacityAdvice,
   type EpochMs,
+  forecastProfiles,
   formatCount,
   formatCountdown,
   formatPercent,
@@ -295,14 +296,20 @@ function DashboardBody(props: DashboardProps) {
   // saying "back in now" until the minute is up.
   const gapsAt = forecastClock(profilesNow, now)
   const asOf = snapshot?.asOf ?? gapsAt
+  // As the forecast should see them: the poll's 100% where Anthropic still takes work leaves a
+  // little (forecastProfiles), so the headline says it runs out shortly, not that it is out.
+  const forecastable = useMemo(
+    () => (profilesNow === null ? null : forecastProfiles(profilesNow, gapsAt)),
+    [profilesNow, gapsAt],
+  )
   const gaps = useMemo(
-    () => (profilesNow === null ? null : poolGaps(profilesNow, asOf, smoothed, gapsAt)),
-    [profilesNow, asOf, smoothed, gapsAt],
+    () => (forecastable === null ? null : poolGaps(forecastable, asOf, smoothed, gapsAt)),
+    [forecastable, asOf, smoothed, gapsAt],
   )
   // The same with no more use: what is left only comes back as limits reset.
   const gapsIfStopped = useMemo(
-    () => (profilesNow === null ? null : poolGaps(profilesNow, asOf, smoothed, gapsAt, true)),
-    [profilesNow, asOf, smoothed, gapsAt],
+    () => (forecastable === null ? null : poolGaps(forecastable, asOf, smoothed, gapsAt, true)),
+    [forecastable, asOf, smoothed, gapsAt],
   )
   // What to buy or cancel: a few dozen runs of the same forecast, so worked out after the page is
   // up and again only when a new snapshot or pace arrives, never on the clock's tick.
@@ -313,10 +320,10 @@ function DashboardBody(props: DashboardProps) {
   clock.current = now
   useEffect(() => {
     if (profilesNow === null) return
-    const timer = setTimeout(
-      () => setAdvice(capacityAdvice(profilesNow, asOf, smoothed, Math.max(asOf, clock.current))),
-      0,
-    )
+    const timer = setTimeout(() => {
+      const at = Math.max(asOf, clock.current)
+      setAdvice(capacityAdvice(forecastProfiles(profilesNow, at), asOf, smoothed, at))
+    }, 0)
     return () => clearTimeout(timer)
   }, [profilesNow, asOf, smoothed])
   const ready = (profilesNow ?? []).filter((p) => hasHeadroom(p, now)).length
