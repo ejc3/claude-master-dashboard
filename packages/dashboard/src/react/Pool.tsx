@@ -335,6 +335,16 @@ export function PoolAccounts(props: {
 const asPercent = (v: number) => `${Math.round(v * 100)}%`
 
 /**
+ * A capacity chart's top: its highest point, up to the next whole subscription (100%), and never
+ * past the pool's. A 5-hour chart can never top what the weeks leave, so the pool's full height
+ * would flatten it.
+ */
+export function ceiling(points: Array<[EpochMs, number]>, capacity: number): number {
+  const peak = Math.max(0, ...points.map(([, v]) => v))
+  return Math.min(capacity, Math.max(1, Math.ceil(peak - 1e-9)))
+}
+
+/**
  * What is left of each limit across the pool, from now to the furthest weekly reset, if recent use
  * goes on (the same simulation as the headline), as a share of the whole pool: 100% is every
  * subscription unused. Shaded where no subscription is available.
@@ -357,17 +367,19 @@ function capacitySeries(gaps: PoolGaps | null, now: EpochMs, resets: EpochMs[]) 
     gaps.trace
       .filter((p) => shown(p.at, until, every))
       .map((p): [EpochMs, number] => [p.at, p[key]])
-  // Each subscription's week, for the stacked weekly chart.
-  const weeklyBy = gaps.subscriptions.map((name, k) => ({
-    name,
-    points: gaps.trace
-      .filter((p) => shown(p.at, weeklyUntil, HOUR_MS))
-      .map((p): [EpochMs, number] => [p.at, p.weeklyBy[k] ?? 0]),
-  }))
+  // Each subscription's share, for the stacked charts.
+  const by = (key: 'weeklyBy' | 'fiveHourBy', until: EpochMs, every: number) =>
+    gaps.subscriptions.map((name, k) => ({
+      name,
+      points: gaps.trace
+        .filter((p) => shown(p.at, until, every))
+        .map((p): [EpochMs, number] => [p.at, p[key][k] ?? 0]),
+    }))
   return {
     weekly: points('weekly', weeklyUntil, HOUR_MS),
-    weeklyBy,
+    weeklyBy: by('weeklyBy', weeklyUntil, HOUR_MS),
     fiveHour: points('fiveHour', fiveUntil, TRACE_STEP_MS),
+    fiveHourBy: by('fiveHourBy', fiveUntil, TRACE_STEP_MS),
     bands: gaps.gaps.map((g) => ({ start: g.start, end: g.end ?? horizonEnd })),
     capacity: gaps.capacity,
     subscriptionsShown: gaps.subscriptions,
@@ -412,29 +424,31 @@ export function CapacityOutlook(props: {
   // One toggle for both charts: use going on at the recent pace, or none from now (what is left
   // then only comes back as limits reset).
   const shown = weeklyView === 'stopped' && stopped !== null ? stopped : projected
-  const weekly = shown
-  const chart = (
-    key: 'weekly' | 'fiveHour',
-    series: NonNullable<typeof projected>,
-    title: string,
-    color: string,
-  ) => {
-    const points = series[key]
-    // The title carries what is left now: the point at or before now.
-    const current = points.filter(([t]) => t <= props.now).at(-1)?.[1] ?? points[0]?.[1]
-    const label = current === undefined ? title : `${title} · ${asPercent(current)}`
-    return points.length < 2 ? null : (
+  // Both charts stacked by subscription, in the colors of the bars: the top is the pool's total,
+  // each band one subscription's share. The title carries the total now: the point at or before now.
+  const names = (props.profiles ?? []).map((p) => p.profile)
+  const short = shortNames(names.length > 0 ? names : shown.subscriptionsShown)
+  const colors = accountColors(names.length > 0 ? names : shown.subscriptionsShown)
+  const chart = (key: 'weekly' | 'fiveHour', title: string, height: number) => {
+    const total = shown[key]
+    const current = total.filter(([t]) => t <= props.now).at(-1)?.[1] ?? total[0]?.[1]
+    return total.length < 2 ? null : (
       <LineChart
-        title={label}
-        series={[{ key, label: title, color, points }]}
+        title={`${title}${current === undefined ? '' : ` · ${asPercent(current)}`}`}
+        series={shown[key === 'weekly' ? 'weeklyBy' : 'fiveHourBy'].map((s) => ({
+          key: s.name,
+          label: short.get(s.name) ?? s.name,
+          color: colors.get(s.name) ?? 'var(--cmd-ink-3)',
+          points: s.points,
+        }))}
         format={asPercent}
-        max={series.capacity}
-        bands={series.bands}
+        max={ceiling(total, shown.capacity)}
+        bands={shown.bands}
         bandLabel="None available"
         table={false}
-        height={160}
+        height={height}
         now={now}
-        area
+        stacked
       />
     )
   }
@@ -459,36 +473,8 @@ export function CapacityOutlook(props: {
           </button>
         </fieldset>
       )}
-      <div className="cmd-capacity-weekly">
-        {(() => {
-          // Stacked by subscription: the top is the pool's total, each band one subscription's.
-          const current =
-            weekly.weekly.filter(([t]) => t <= props.now).at(-1)?.[1] ?? weekly.weekly[0]?.[1]
-          const names = (props.profiles ?? []).map((p) => p.profile)
-          const short = shortNames(names.length > 0 ? names : weekly.subscriptionsShown)
-          const colors = accountColors(names.length > 0 ? names : weekly.subscriptionsShown)
-          return weekly.weekly.length < 2 ? null : (
-            <LineChart
-              title={`Weekly limit left${current === undefined ? '' : ` · ${asPercent(current)}`}`}
-              series={weekly.weeklyBy.map((s) => ({
-                key: s.name,
-                label: short.get(s.name) ?? s.name,
-                color: colors.get(s.name) ?? 'var(--cmd-ink-3)',
-                points: s.points,
-              }))}
-              format={asPercent}
-              max={weekly.capacity}
-              bands={weekly.bands}
-              bandLabel="None available"
-              table={false}
-              height={180}
-              now={now}
-              stacked
-            />
-          )
-        })()}
-      </div>
-      {chart('fiveHour', shown, '5-hour limit left, next 5h', 'var(--cmd-series-2)')}
+      <div className="cmd-capacity-weekly">{chart('weekly', 'Weekly limit left', 180)}</div>
+      {chart('fiveHour', '5-hour limit left, next 5h', 160)}
       <p className="cmd-capacity-note">
         {weeklyView === 'stopped' ? 'If usage stops' : 'At the current pace'} · 100% per
         subscription · shaded: none available

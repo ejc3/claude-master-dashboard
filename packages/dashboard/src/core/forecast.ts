@@ -345,6 +345,8 @@ export interface CapacityPoint {
   fiveHour: number
   /** What is left of each subscription's week, in PoolGaps.subscriptions' order. */
   weeklyBy: number[]
+  /** What each subscription's 5-hour window can still take, in the same order (see fiveHour). */
+  fiveHourBy: number[]
 }
 
 /** How often the capacity trace is sampled. */
@@ -509,17 +511,21 @@ export function poolGaps(
     let weekly = 0
     let fiveHour = 0
     const weeklyBy: number[] = []
+    const fiveHourBy: number[] = []
     for (const s of slots) {
       resetWeek(s, at)
       closeIfOver(s.five, at)
       weekly += 1 - s.weekly.used
       weeklyBy.push(1 - s.weekly.used)
-      // A 5-hour window counts only while its week has room and Anthropic is not refusing the
-      // subscription: either way it cannot be used however empty it is.
+      // What a 5-hour window can still take: nothing while Anthropic refuses the subscription or
+      // its week is full, and never more than its week leaves, since work in the window spends the
+      // week too (as fiveHourLeft, for the bars).
       const refused = s.limitedUntil !== null && s.limitedUntil > at
-      fiveHour += isFull(s.weekly) || refused ? 0 : 1 - s.five.used
+      const five = isFull(s.weekly) || refused ? 0 : Math.min(1 - s.five.used, 1 - s.weekly.used)
+      fiveHour += five
+      fiveHourBy.push(five)
     }
-    trace.push({ at, weekly, fiveHour, weeklyBy })
+    trace.push({ at, weekly, fiveHour, weeklyBy, fiveHourBy })
   }
   const sampleUntil = (until: EpochMs) => {
     for (; nextSample < until; nextSample += TRACE_STEP_MS) {

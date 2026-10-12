@@ -142,11 +142,12 @@ describe('the reset scenario', () => {
     })
     expect(headline()).not.toMatch(/^Out now/)
     expect(container.querySelectorAll('.cmd-sparkle')).toHaveLength(1)
-    // The 5-hour chart says what is left now: alpha's whole window, not the sample before.
+    // The 5-hour chart says what is left now, not the sample before: alpha's whole window, as far
+    // as the 40% its week leaves.
     const fiveHourTitle = [...container.querySelectorAll('figcaption')]
       .map((e) => e.textContent ?? '')
       .find((t) => t.startsWith('5-hour limit left'))
-    expect(fiveHourTitle).toBe('5-hour limit left, next 5h · 100%')
+    expect(fiveHourTitle).toBe('5-hour limit left, next 5h · 40%')
   })
 })
 

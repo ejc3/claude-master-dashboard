@@ -435,8 +435,10 @@ describe('poolGaps capacity trace', () => {
     const g = poolGaps([sub('a', [0.5, 50 * H], [1, 2 * 60_000])], NOW, rates({ a: 0 }), now)
     expect(g.trace.map((p) => p.at).slice(0, 3)).toEqual([NOW, now, NOW + 10 * 60_000])
     expect(g.trace[0]?.fiveHour).toBe(0)
-    // Alpha's whole window, less the little simulated since the reset.
-    expect(g.trace[1]?.fiveHour).toBeGreaterThan(0.95)
+    // Alpha's whole window, less the little simulated since the reset, as far as its half-used
+    // week lets it be used.
+    expect(g.trace[1]?.fiveHour).toBeGreaterThan(0.45)
+    expect(g.trace[1]?.fiveHour).toBeLessThanOrEqual(0.5)
     // A reset due after now does not show at now, even inside the same simulation step: a
     // half-used window resetting 90 seconds in still reads about half left at 60 seconds.
     const early = poolGaps(
@@ -466,7 +468,14 @@ describe('poolGaps capacity trace', () => {
       rates({ a: 0.01, b: 0.01 }),
     )
     const at = (h: number) => g.trace.find((p) => p.at === NOW + h * H)
-    expect(g.trace[0]).toEqual({ at: NOW, weekly: 1, fiveHour: 2, weeklyBy: [0.5, 0.5] })
+    // Each 5-hour window is unused but can take only what its week leaves: half each.
+    expect(g.trace[0]).toEqual({
+      at: NOW,
+      weekly: 1,
+      fiveHour: 1,
+      weeklyBy: [0.5, 0.5],
+      fiveHourBy: [0.5, 0.5],
+    })
     expect(g.subscriptions).toEqual(['a', 'b'])
     // 2% of one subscription's week an hour: 0.98 left after an hour.
     expect(at(1)?.weekly).toBeCloseTo(0.98, 6)
@@ -500,9 +509,10 @@ describe('poolGaps capacity trace', () => {
     const bAlone = poolGaps([b], NOW, rates({ b: 0 }))
     const five = (g: PoolGaps, h: number) => g.trace.find((p) => p.at === NOW + h * H)?.fiveHour
     // Until a's week resets, the pool's 5-hour capacity is b's alone (b does the same work: the
-    // pool's 5-hour pace includes a's average, so compare at the start and before b fills).
-    expect(five(both, 0)).toBeCloseTo(0.8, 6)
-    expect(five(bAlone, 0)).toBeCloseTo(0.8, 6)
+    // pool's 5-hour pace includes a's average, so compare at the start and before b fills): its
+    // window's 80% left, as far as the half of its week that is left.
+    expect(five(both, 0)).toBeCloseTo(0.5, 6)
+    expect(five(bAlone, 0)).toBeCloseTo(0.5, 6)
     for (const h of [5, 20, 49]) expect(five(both, h)).toBeLessThanOrEqual(1)
     // Once a's week resets, its window counts again.
     expect(five(both, 50)).toBeGreaterThan(1)
