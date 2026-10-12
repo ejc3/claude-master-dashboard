@@ -139,7 +139,7 @@ export function Dashboard(props: DashboardProps) {
 }
 
 function DashboardBody(props: DashboardProps) {
-  const { initialSnapshot, apiBase, signInHref, title = 'claude-master', demoData = false } = props
+  const { initialSnapshot, apiBase, signInHref, title = 'claw-master', demoData = false } = props
   useReportTimeZone()
   const now = useNow(1000, props.renderedAt ?? initialSnapshot?.asOf ?? 0)
   const snapshotLoaded = useSnapshot(apiBase, initialSnapshot)

@@ -100,7 +100,7 @@ export function parseAccountAliases(
   }
   if (malformed > 0) {
     warn(
-      `claude-master dashboard: ${malformed} malformed line${malformed === 1 ? '' : 's'} in DASHBOARD_ACCOUNT_ALIASES ignored`,
+      `claw-master dashboard: ${malformed} malformed line${malformed === 1 ? '' : 's'} in DASHBOARD_ACCOUNT_ALIASES ignored`,
     )
   }
   return aliases
@@ -578,6 +578,6 @@ export function selectSource(
     secretAccessKey ? null : 'AWS_SECRET_ACCESS_KEY',
     region ? null : 'AWS_REGION',
   ].filter((name) => name !== null)
-  warn(`claude-master dashboard: ${missing.join(', ')} not set; showing demo data`)
+  warn(`claw-master dashboard: ${missing.join(', ')} not set; showing demo data`)
   return { kind: 'demo', source: demo }
 }

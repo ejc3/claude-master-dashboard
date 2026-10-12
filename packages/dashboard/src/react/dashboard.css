@@ -333,24 +333,16 @@
     list-style: none;
     display: flex;
     flex-wrap: wrap;
-    gap: 6px 12px;
+    gap: 6px 10px;
     min-width: 0;
   }
 
-  .cmd-accounts-key {
-    display: grid;
-    justify-items: center;
-    gap: 2px;
-    padding: 2px 4px;
+  /* One line under the bars: which is which. */
+  .cmd-accounts-legend {
+    flex-basis: 100%;
+    margin: 0;
     font-size: 0.625rem;
-    line-height: 1.1;
     color: var(--cmd-ink-3);
-  }
-
-  .cmd-accounts-key-names {
-    display: flex;
-    gap: 4px;
-    white-space: nowrap;
   }
 
   .cmd-account {
@@ -441,12 +433,6 @@
     border-radius: 2px;
     background: var(--cmd-track);
     overflow: hidden;
-  }
-
-  .cmd-accounts-key .cmd-account-bar {
-    background: none;
-    outline: 1px solid var(--cmd-ink-3);
-    outline-offset: -1px;
   }
 
   .cmd-account-bar > span {

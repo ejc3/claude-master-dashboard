@@ -92,7 +92,7 @@ export function cloudflareAccess(options: AccessOptions): {
       // visible in the logs, not look like one more stranger.
       const code = (error as { code?: unknown }).code
       console.warn(
-        'claude-master dashboard: Access assertion refused:',
+        'claw-master dashboard: Access assertion refused:',
         typeof code === 'string' ? code : 'unknown error',
       )
       return null
@@ -101,7 +101,7 @@ export function cloudflareAccess(options: AccessOptions): {
     if (email !== null && email !== '') {
       if (!allowed.includes(email)) {
         // Never the address: a typo in the list should be visible, a stranger's address not.
-        console.warn('claude-master dashboard: signed-in address is not on the allowlist')
+        console.warn('claw-master dashboard: signed-in address is not on the allowlist')
         return null
       }
       return { email, serviceToken: null }
