@@ -7,6 +7,7 @@ import {
   COVERAGE_TARGET,
   type EpochMs,
   fiveHourAt,
+  fiveHourLeft,
   formatCountdown,
   formatPercent,
   gapsHeadline,
@@ -261,8 +262,9 @@ export function PoolAccounts(props: {
       <ul aria-label="What each subscription has left of its weekly and 5-hour limits">
         {props.profiles.map((p) => {
           const weekly = share(p.weekly.usedFraction)
-          // As of now: a read window whose reset has passed is no window open.
-          const five = share(fiveHourAt(p.fiveHour, props.now)?.usedFraction)
+          // What the 5-hour window really leaves: nothing while refused, never more than the week.
+          const fiveLeft = fiveHourLeft(p, props.now)
+          const five = fiveLeft === null ? null : 1 - fiveLeft
           const available = hasHeadroom(p, props.now)
           return (
             <li
