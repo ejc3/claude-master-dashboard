@@ -11,19 +11,20 @@ import {
   loginOverdue,
   type ProfileStatus,
   pace,
+  pollSaysUsedUp,
   projectedExhaustion,
   type QuotaWindow,
 } from '../core'
 import { useWhen } from './hooks'
 
 /** What the card's badge says: the band, overridden by anything that stops work right now. */
-export type CardStatus = 'ok' | 'low' | 'used-up' | 'rate-limited' | 'login' | 'unknown'
+export type CardStatus = 'ok' | 'low' | 'nearly-out' | 'out' | 'login' | 'unknown'
 
 const STATUS_LABEL: Record<CardStatus, string> = {
   ok: 'Available',
   low: 'Running low',
-  'used-up': 'Used up',
-  'rate-limited': 'Rate limited',
+  'nearly-out': 'Nearly out',
+  out: 'Out',
   login: 'Login expired',
   unknown: 'No reading',
 }
@@ -32,12 +33,13 @@ export function cardStatus(profile: ProfileStatus, now: EpochMs): CardStatus {
   const b = blocked(profile, now)
   if (b?.reason === 'no-reading') return 'unknown'
   if (b?.reason === 'login-expired') return 'login'
-  if (b?.reason === 'used-up') return 'used-up'
-  if (b?.reason === 'rate-limited') return 'rate-limited'
+  // Out only when Anthropic refuses it; the poll's 100% is nearly out (pollSaysUsedUp).
+  if (b?.reason === 'rate-limited') return 'out'
+  if (pollSaysUsedUp(profile, now)) return 'nearly-out'
   return profile.band === 'reserve' ? 'low' : 'ok'
 }
 
-// Shape as well as color: check, half-full circle, cross, pause, key, dash.
+// Shape as well as color: check, half-full circle, a sliver left, cross, key, dash.
 const ICON: Record<CardStatus, ReactNode> = {
   ok: <path d="M3 8.5l3 3 7-7" fill="none" stroke="currentColor" strokeWidth="2" />,
   low: (
@@ -46,8 +48,13 @@ const ICON: Record<CardStatus, ReactNode> = {
       <path d="M8 2a6 6 0 0 1 0 12z" fill="currentColor" />
     </>
   ),
-  'used-up': <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="2" />,
-  'rate-limited': <path d="M5.5 3.5v9M10.5 3.5v9" stroke="currentColor" strokeWidth="2" />,
+  'nearly-out': (
+    <>
+      <circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" strokeWidth="2" />
+      <path d="M8 2a6 6 0 0 1 2.5 0.55L8 8z" fill="currentColor" />
+    </>
+  ),
+  out: <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="2" />,
   login: (
     <>
       <circle cx="5.5" cy="8" r="3" fill="none" stroke="currentColor" strokeWidth="2" />

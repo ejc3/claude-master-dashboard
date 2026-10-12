@@ -19,9 +19,9 @@ export function scenarioResetAt(now: EpochMs): EpochMs {
 
 /**
  * The demo, with the pool out of quota until a 5-hour window resets, on a four-minute loop by the
- * server's clock: for two and a half minutes every subscription is used up (alpha's 5-hour window,
- * the others' weeks) and the page counts down to alpha's reset; at zero alpha's window has reset
- * and it takes work again until the loop starts over. For trying the countdown and the return of
+ * server's clock: for two and a half minutes Anthropic refuses every subscription (alpha until
+ * its 5-hour window resets, the others until their weeks do) and the page counts down to alpha's
+ * reset; at zero alpha's window has reset and it takes work again until the loop starts over. For trying the countdown and the return of
  * quota on the real page; the charts and tables are the ordinary demo's.
  */
 export function createResetScenarioSource(options: DemoOptions = {}): MetricsSource {
@@ -35,11 +35,12 @@ export function createResetScenarioSource(options: DemoOptions = {}): MetricsSou
       const resetAt = scenarioResetAt(now)
       const reset = now >= resetAt
       const profiles = base.profiles.map((p, i): ProfileStatus => {
-        const common = { ...p, rateLimitedUntil: null }
         if (i === 0) {
           return {
-            ...common,
+            ...p,
             band: 'ok',
+            // Refused (a 429) until its 5-hour window resets; nothing after.
+            rateLimitedUntil: reset ? null : resetAt,
             weekly: { usedFraction: 0.6, resetsAt: now + 3 * 24 * HOUR_MS, lengthMs: WEEK_MS },
             // Used up until the reset; after it no window is open, as Anthropic reports it.
             fiveHour: reset
@@ -47,14 +48,13 @@ export function createResetScenarioSource(options: DemoOptions = {}): MetricsSou
               : { usedFraction: 1, resetsAt: resetAt, lengthMs: FIVE_HOURS_MS },
           }
         }
+        const weekEnds = now + (1 + i) * 24 * HOUR_MS
         return {
-          ...common,
+          ...p,
           band: 'exhausted',
-          weekly: {
-            usedFraction: 1,
-            resetsAt: now + (1 + i) * 24 * HOUR_MS,
-            lengthMs: WEEK_MS,
-          },
+          // Refused until its week resets.
+          rateLimitedUntil: weekEnds,
+          weekly: { usedFraction: 1, resetsAt: weekEnds, lengthMs: WEEK_MS },
           fiveHour: null,
         }
       })

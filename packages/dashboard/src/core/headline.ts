@@ -7,12 +7,10 @@ export interface RunOut {
   at: EpochMs
 }
 
-// A used-up window blocks work until its reset: 'unknown' when the reset time is unknown, null when
-// it does not block (not used up, or its reset has already passed).
-function blocksUntil(window: QuotaWindow | null, now: EpochMs): EpochMs | 'unknown' | null {
-  if (window === null || window.usedFraction === null || window.usedFraction < 1) return null
-  if (window.resetsAt === null) return 'unknown'
-  return window.resetsAt > now ? window.resetsAt : null
+// Whether the usage poll reads a window as used up, while its reset is still ahead (or unknown).
+function readFull(window: QuotaWindow | null, now: EpochMs): boolean {
+  if (window === null || window.usedFraction === null || window.usedFraction < 1) return false
+  return window.resetsAt === null || window.resetsAt > now
 }
 
 /**
@@ -26,12 +24,15 @@ export function fiveHourAt(window: QuotaWindow | null, at: EpochMs): QuotaWindow
 
 /**
  * Why a subscription cannot take work right now, and until when (null when unknown, e.g. a
- * login that has expired needs someone to fix it).
+ * login that has expired needs someone to fix it). Only Anthropic decides that a subscription is
+ * out: it refuses (a 429, which claw-master holds as rate-limited until Anthropic's reset). The
+ * usage poll does not: it reads whole percents, so its 100% can still be under Anthropic's, and
+ * claw-master keeps sending work until Anthropic refuses (see pollSaysUsedUp).
  */
 export type Blocked =
   | { reason: 'no-reading'; until: null }
   | { reason: 'login-expired'; until: null }
-  | { reason: 'used-up' | 'rate-limited'; until: EpochMs | null }
+  | { reason: 'rate-limited'; until: EpochMs | null }
 
 /** Null when the subscription can take work. */
 export function blocked(profile: ProfileStatus, now: EpochMs): Blocked | null {
@@ -39,24 +40,42 @@ export function blocked(profile: ProfileStatus, now: EpochMs): Blocked | null {
   if (profile.tokenExpiresAt !== null && profile.tokenExpiresAt <= now) {
     return { reason: 'login-expired', until: null }
   }
-  // Every reason that applies holds it back until the last of them ends; one with no known end
-  // makes the whole wait unknown.
-  const usedUp = [blocksUntil(profile.weekly, now), blocksUntil(profile.fiveHour, now)].filter(
-    (t): t is EpochMs | 'unknown' => t !== null,
-  )
-  const limited =
-    profile.rateLimitedUntil !== null && profile.rateLimitedUntil > now
-      ? profile.rateLimitedUntil
-      : null
-  if (usedUp.length > 0 || profile.band === 'exhausted') {
-    const known = usedUp.filter((t): t is EpochMs => t !== 'unknown')
-    // An exhausted band no window explains has no known end either.
-    const unknown = usedUp.includes('unknown') || usedUp.length === 0
-    const all = limited === null ? known : [...known, limited]
-    return { reason: 'used-up', until: unknown || all.length === 0 ? null : Math.max(...all) }
+  if (profile.rateLimitedUntil !== null && profile.rateLimitedUntil > now) {
+    return { reason: 'rate-limited', until: profile.rateLimitedUntil }
   }
-  if (limited !== null) return { reason: 'rate-limited', until: limited }
   return null
+}
+
+/**
+ * Whether the usage poll reads a subscription's week or open 5-hour window as used up while
+ * Anthropic has not refused it: nearly out, its last percent or so still taking work.
+ */
+export function pollSaysUsedUp(profile: ProfileStatus, now: EpochMs): boolean {
+  return (
+    blocked(profile, now) === null &&
+    (readFull(profile.weekly, now) || readFull(fiveHourAt(profile.fiveHour, now), now))
+  )
+}
+
+/** What a usage poll's 100% leaves, at most: it reads whole percents. */
+export const POLL_FULL_LEFT = 0.01
+
+/**
+ * The subscriptions as the forecast should see them: a window the poll reads as used up keeps
+ * POLL_FULL_LEFT, so the forecast has it run out shortly instead of being out already. A refused
+ * subscription is held by its refusal until that ends (claw-master asks Anthropic again then), not
+ * by the poll's reading until the window resets.
+ */
+export function forecastProfiles(profiles: ProfileStatus[]): ProfileStatus[] {
+  const cap = (w: QuotaWindow | null): QuotaWindow | null =>
+    w === null || w.usedFraction === null || w.usedFraction < 1
+      ? w
+      : { ...w, usedFraction: 1 - POLL_FULL_LEFT }
+  return profiles.map((p) => ({
+    ...p,
+    weekly: cap(p.weekly) ?? p.weekly,
+    fiveHour: cap(p.fiveHour),
+  }))
 }
 
 export function hasHeadroom(profile: ProfileStatus, now: EpochMs): boolean {

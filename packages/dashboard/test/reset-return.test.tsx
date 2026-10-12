@@ -41,7 +41,8 @@ const sub = (name: string, fiveUsed: number, resetsAt: number): ProfileStatus =>
   band: 'ok',
   weekly: { usedFraction: 0.5, resetsAt: BEFORE + 50 * HOUR_MS, lengthMs: 168 * HOUR_MS },
   fiveHour: { usedFraction: fiveUsed, resetsAt, lengthMs: 5 * HOUR_MS },
-  rateLimitedUntil: null,
+  // A used-up window is out only because Anthropic refuses it, until the window resets.
+  rateLimitedUntil: fiveUsed >= 1 ? resetsAt : null,
   tokenExpiresAt: null,
   latencyMs: { p50: null, p95: null, p99: null },
 })

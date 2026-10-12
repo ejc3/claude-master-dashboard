@@ -26,12 +26,19 @@ const pool = readFileSync(new URL('../src/react/Pool.tsx', import.meta.url), 'ut
 describe('Headline wiring', () => {
   it('reads the headline from one simulation of both windows, from the readings time', () => {
     expect(source).toMatch(/const asOf = snapshot\?\.asOf \?\? gapsAt/)
-    expect(source).toMatch(/poolGaps\(profilesNow, asOf, smoothed, gapsAt\)/)
+    // On the subscriptions as the forecast sees them: the poll's 100% leaves a little where
+    // Anthropic has not refused (forecastProfiles).
+    expect(source).toMatch(/forecastProfiles\(profilesNow\)/)
+    // From the later of the readings and the clock: the last percent counts from now.
+    expect(source).toMatch(/const forecastFrom = Math\.max\(asOf, gapsAt\)/)
+    // The pace measured at the readings, the forecast run from the clock.
+    expect(source).toMatch(/poolGaps\(forecastable, asOf, smoothed, gapsAt\)\.pace/)
+    expect(source).toMatch(/poolGaps\(forecastable, forecastFrom, smoothed, gapsAt, false, pace\)/)
     expect(source).toMatch(
       /<PoolOutlook\s+gaps=\{gaps\}\s+gapsIfStopped=\{gapsIfStopped\}\s+profiles=\{profilesNow\}/,
     )
     // The other tab: the same forecast with no more use.
-    expect(source).toMatch(/poolGaps\(profilesNow, asOf, smoothed, gapsAt, true\)/)
+    expect(source).toMatch(/poolGaps\(forecastable, forecastFrom, smoothed, gapsAt, true\)/)
     expect(pool).toMatch(/gapsHeadline\(props\.gaps, now\)/)
     expect(pool).not.toMatch(/forecastHeadline\(/)
   })

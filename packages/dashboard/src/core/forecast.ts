@@ -514,9 +514,10 @@ export function poolGaps(
       closeIfOver(s.five, at)
       weekly += 1 - s.weekly.used
       weeklyBy.push(1 - s.weekly.used)
-      // A 5-hour window counts only while its week has room: with the week used up, it cannot
-      // be used however empty it is.
-      fiveHour += isFull(s.weekly) ? 0 : 1 - s.five.used
+      // A 5-hour window counts only while its week has room and Anthropic is not refusing the
+      // subscription: either way it cannot be used however empty it is.
+      const refused = s.limitedUntil !== null && s.limitedUntil > at
+      fiveHour += isFull(s.weekly) || refused ? 0 : 1 - s.five.used
     }
     trace.push({ at, weekly, fiveHour, weeklyBy })
   }

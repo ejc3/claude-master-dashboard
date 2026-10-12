@@ -83,8 +83,10 @@ export function capacityAdvice(
   from: EpochMs,
   smoothed: ReadonlyMap<string, number | null>,
   now: EpochMs,
+  /** The pace, when measured elsewhere (at the readings, while the forecast runs from the clock). */
+  pace?: PoolGaps['pace'],
 ): CapacityAdvice {
-  const base = poolGaps(profiles, from, smoothed, now)
+  const base = poolGaps(profiles, from, smoothed, now, false, pace)
   if (base.counted === 0) return { kind: 'unknown', now: null }
   // Every what-if keeps today's pace: the people's use, which adding or cancelling a subscription
   // does not change, only where it lands.
