@@ -1514,5 +1514,7 @@ describe('the name', () => {
     const container = document.createElement('div')
     container.innerHTML = renderToString(await serverPage(ZONE))
     expect(container.querySelector('.cmd-title')?.firstChild?.textContent).toBe('claw-master')
+    // Nowhere on the first paint the old name (the alarms keep it in CloudWatch; the page strips it).
+    expect(container.textContent).not.toContain('claude-master')
   })
 })

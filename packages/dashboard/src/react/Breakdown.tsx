@@ -207,11 +207,11 @@ export function Breakdown(props: {
       : `${tokenChoiceLabel(props.tokenChoice)} tokens`
     : 'Requests'
   const note = !split.tokens
-    ? 'claude-master does not count tokens by model; this view counts requests.'
+    ? 'claw-master does not count tokens by model; this view counts requests.'
     : coverage === 'none'
       ? split.requests
         ? 'No token counts for this range yet; showing requests.'
-        : `No token counts by ${split.noun} yet: claude-master releases that count them send them.`
+        : `No token counts by ${split.noun} yet: claw-master releases that count them send them.`
       : null
   const loading = tokensPending || (!showTokens && split.requests && requests.state === 'loading')
   const requestsFailure =

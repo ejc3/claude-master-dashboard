@@ -28,7 +28,7 @@ export default async function Page({ params }: { params: Promise<{ slug?: string
       signInHref="/claude-master"
       unauthorized={
         <main className="signin">
-          <h1>claude-master</h1>
+          <h1>claw-master</h1>
           <p>
             This dashboard opens only through Cloudflare Access, which signs you in. Open it at its
             Access-protected address; if you just did, your address is not on its list.

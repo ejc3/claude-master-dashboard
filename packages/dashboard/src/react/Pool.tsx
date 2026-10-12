@@ -159,9 +159,9 @@ export function calendarHref(title: string, at: EpochMs): string {
   const ics = [
     'BEGIN:VCALENDAR',
     'VERSION:2.0',
-    'PRODID:-//claude-master//dashboard//EN',
+    'PRODID:-//claw-master//dashboard//EN',
     'BEGIN:VEVENT',
-    `UID:${at}-${title.replace(/[^A-Za-z0-9]/g, '')}@claude-master`,
+    `UID:${at}-${title.replace(/[^A-Za-z0-9]/g, '')}@claw-master`,
     `DTSTAMP:${stamp(at)}`,
     `DTSTART:${stamp(at)}`,
     `DTEND:${stamp(at + 15 * 60_000)}`,
