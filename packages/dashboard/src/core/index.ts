@@ -55,6 +55,7 @@ export {
   type Blocked,
   blocked,
   fiveHourAt,
+  fiveHourLeft,
   forecastProfiles,
   hasHeadroom,
   LOGIN_OVERDUE_MS,

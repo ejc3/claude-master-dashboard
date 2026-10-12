@@ -57,6 +57,23 @@ export function pollSaysUsedUp(profile: ProfileStatus, now: EpochMs): boolean {
   )
 }
 
+/**
+ * What the 5-hour window really leaves a subscription now, as a share of it (null with no
+ * reading): nothing while Anthropic refuses it, and never more than its week leaves, since work
+ * in the window also spends the week. A window with no reading still shows nothing left when the
+ * week is used up.
+ */
+export function fiveHourLeft(profile: ProfileStatus, now: EpochMs): number | null {
+  if (blocked(profile, now)?.reason === 'rate-limited') return 0
+  const clamp = (f: number | null | undefined) =>
+    f === null || f === undefined || !Number.isFinite(f) ? null : Math.min(1, Math.max(0, f))
+  const weekUsed = clamp(profile.weekly.usedFraction)
+  const weekLeft = weekUsed === null ? null : 1 - weekUsed
+  const fiveUsed = clamp(fiveHourAt(profile.fiveHour, now)?.usedFraction)
+  if (fiveUsed === null) return weekLeft === 0 ? 0 : null
+  return Math.min(1 - fiveUsed, weekLeft ?? 1)
+}
+
 /** What a usage poll's 100% leaves, at most: it reads whole percents. */
 export const POLL_FULL_LEFT = 0.01
 

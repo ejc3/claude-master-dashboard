@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   BadQueryError,
   FIVE_HOURS_MS,
+  fiveHourLeft,
   forecastProfiles,
   formatCount,
   formatCountdown,
@@ -193,5 +194,53 @@ describe('format', () => {
     expect(formatWhen(NOW + 2 * HOUR_MS, NOW, 'UTC')).toBe('2:00 PM')
     expect(formatWhen(Date.UTC(2026, 9, 12, 9, 30), NOW, 'UTC')).toBe('Mon 9:30 AM')
     expect(formatWhen(Date.UTC(2026, 9, 30, 9, 30), NOW, 'UTC')).toBe('Oct 30, 9:30 AM')
+  })
+})
+
+describe('fiveHourLeft', () => {
+  const five = (usedFraction: number | null, resetsAt = NOW + HOUR_MS) => ({
+    usedFraction,
+    resetsAt,
+    lengthMs: FIVE_HOURS_MS,
+  })
+  const week = (usedFraction: number | null) => ({
+    usedFraction,
+    resetsAt: NOW + 3 * 24 * HOUR_MS,
+    lengthMs: WEEK_MS,
+  })
+
+  it('is what the 5-hour window leaves while the week leaves more', () => {
+    expect(fiveHourLeft(profile('a', { weekly: week(0.2), fiveHour: five(0.7) }), NOW)).toBeCloseTo(
+      0.3,
+    )
+  })
+
+  it('is never more than the week leaves', () => {
+    expect(fiveHourLeft(profile('a', { weekly: week(0.9), fiveHour: five(0.2) }), NOW)).toBeCloseTo(
+      0.1,
+    )
+    // A window that has reset is unused, but the week still caps it.
+    expect(
+      fiveHourLeft(profile('a', { weekly: week(0.6), fiveHour: five(1, NOW - 1) }), NOW),
+    ).toBeCloseTo(0.4)
+  })
+
+  it('is nothing while Anthropic refuses the subscription', () => {
+    const refused = profile('a', {
+      weekly: week(0.3),
+      fiveHour: five(0.2),
+      rateLimitedUntil: NOW + HOUR_MS,
+    })
+    expect(fiveHourLeft(refused, NOW)).toBe(0)
+    // Once the refusal ends, the window counts again.
+    expect(fiveHourLeft(refused, NOW + HOUR_MS)).toBeCloseTo(0.7)
+  })
+
+  it('is unknown with no 5-hour reading, unless the week is used up', () => {
+    expect(fiveHourLeft(profile('a', { weekly: week(0.5), fiveHour: null }), NOW)).toBeNull()
+    expect(fiveHourLeft(profile('a', { weekly: week(1), fiveHour: null }), NOW)).toBe(0)
+    expect(
+      fiveHourLeft(profile('a', { weekly: week(null), fiveHour: five(0.25) }), NOW),
+    ).toBeCloseTo(0.75)
   })
 })
