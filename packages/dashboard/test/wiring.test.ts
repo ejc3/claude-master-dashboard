@@ -47,8 +47,14 @@ describe('Headline wiring', () => {
     const header = source.slice(source.indexOf('<header'), source.indexOf('</header>'))
     expect(header).not.toMatch(/tokenControl|rangeControl/)
     const toolbar = source.indexOf('cmd-toolbar')
-    expect(toolbar).toBeGreaterThan(source.indexOf('aria-labelledby="cmd-subscriptions"'))
+    expect(toolbar).toBeGreaterThan(source.indexOf('aria-label="Traffic"'))
     expect(toolbar).toBeLessThan(source.indexOf('<div className="cmd-charts">'))
+  })
+
+  it('puts the subscriptions in detail last, below the charts and the breakdown', () => {
+    const subscriptions = source.indexOf('aria-labelledby="cmd-subscriptions"')
+    expect(subscriptions).toBeGreaterThan(source.indexOf('<Breakdown'))
+    expect(subscriptions).toBeGreaterThan(source.indexOf('<div className="cmd-charts">'))
   })
 })
 
