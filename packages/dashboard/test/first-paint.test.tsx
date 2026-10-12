@@ -21,6 +21,7 @@ import {
   accountColors,
   CapacityOutlook,
   calendarHref,
+  ceiling,
   PoolAccounts,
   PoolOutlook,
   shortNames,
@@ -719,10 +720,10 @@ describe('the capacity charts', () => {
     roots.push(root)
     act(() => root.render(<CapacityOutlook gaps={gaps} profiles={profiles} now={NOW} />))
     const figures = [...container.querySelectorAll('figure')]
-    // What is left now, in each title.
+    // What is left now, in each title: each 5-hour window has 80% left, but its week only half.
     expect(figures.map((f) => f.querySelector('figcaption')?.textContent)).toEqual([
       'Weekly limit left · 100%',
-      '5-hour limit left, next 5h · 160%',
+      '5-hour limit left, next 5h · 100%',
     ])
     // No table view on these charts; the readout reads each point.
     expect(
@@ -748,7 +749,10 @@ describe('the capacity charts', () => {
     expect(readout(weekly, 'End').getAttribute('aria-valuetext')).toMatch(/b 100%, total 136%$/)
     // The first points: what is left now, in one subscription's limit (two half-used: 100%).
     expect(readout(weekly, 'Home').getAttribute('aria-valuetext')).toMatch(/100%$/)
-    expect(readout(five, 'Home').getAttribute('aria-valuetext')).toMatch(/160%$/)
+    // Each 5-hour window as far as its half-used week: a 50%, b 50%.
+    expect(readout(five, 'Home').getAttribute('aria-valuetext')).toMatch(
+      /: a 50%, b 50%, total 100%$/,
+    )
   })
 })
 
@@ -1027,8 +1031,9 @@ describe('the banner', () => {
     act(() => {
       five.dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true }))
     })
-    // No 5-hour readings: every window closed, so each week with room counts whole.
-    expect(five.getAttribute('aria-valuetext')).toMatch(/200%$/)
+    // No 5-hour readings: every window closed, so each counts as far as its week leaves, by
+    // subscription like the weekly chart.
+    expect(five.getAttribute('aria-valuetext')).toMatch(/: a 70%, b 20%, total 90%$/)
   })
 
   it("tells a subscription's unused share at its reset in its detail", () => {
@@ -1519,5 +1524,19 @@ describe('the name', () => {
     expect(container.querySelector('.cmd-title')?.firstChild?.textContent).toBe('claw-master')
     // Nowhere on the first paint the old name (the alarms keep it in CloudWatch; the page strips it).
     expect(container.textContent).not.toContain('claude-master')
+  })
+})
+
+describe("a capacity chart's top", () => {
+  it('is its peak up to the next whole subscription, within the pool', () => {
+    const at = (v: number): [number, number] => [NOW, v]
+    // A 5-hour chart under one subscription's worth: 100%, not the pool's 400%.
+    expect(ceiling([at(0.77), at(0.2)], 4)).toBe(1)
+    expect(ceiling([at(2.3)], 4)).toBe(3)
+    expect(ceiling([at(2)], 4)).toBe(2)
+    expect(ceiling([at(3.5)], 3)).toBe(3)
+    // Nothing left still draws a 100% axis.
+    expect(ceiling([at(0)], 4)).toBe(1)
+    expect(ceiling([], 4)).toBe(1)
   })
 })
