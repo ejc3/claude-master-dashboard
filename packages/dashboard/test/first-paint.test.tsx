@@ -1454,6 +1454,36 @@ describe('out means refused', () => {
     expect(notRefused.out).toBe(0)
   })
 
+  it('measures the pace at the readings, even when a window has reset since', async () => {
+    // Read two minutes ago: every 5-hour window half used, all resetting a minute ago.
+    const demo = createDemoSource({ now: () => NOW })
+    const source: MetricsSource = {
+      ...demo,
+      snapshot: async () => {
+        const s = await demo.snapshot()
+        return {
+          ...s,
+          asOf: NOW - 2 * 60_000,
+          profiles: s.profiles.map((p) => ({
+            ...p,
+            band: 'ok' as const,
+            weekly: { usedFraction: 0.5, resetsAt: NOW + 100 * HOUR_MS, lengthMs: 168 * HOUR_MS },
+            fiveHour: { usedFraction: 0.5, resetsAt: NOW - 60_000, lengthMs: 5 * HOUR_MS },
+            rateLimitedUntil: null,
+            tokenExpiresAt: null,
+          })),
+        }
+      },
+    }
+    const container = document.createElement('div')
+    container.innerHTML = renderToString(await serverPage(ZONE, source))
+    const pace = [...container.querySelectorAll('.cmd-facts li')]
+      .map((e) => e.textContent ?? '')
+      .find((t) => t.includes('of a 5-hour limit an hour'))
+    expect(pace).toBeDefined()
+    expect(pace).not.toMatch(/ 0% of a 5-hour limit an hour/)
+  })
+
   it('counts the last percent from now, not from a reading minutes old', async () => {
     // Every 5-hour window read full five minutes ago at a fast pace, none refused: the last percent
     // would be spent by now if counted from the reading.

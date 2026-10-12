@@ -305,9 +305,18 @@ function DashboardBody(props: DashboardProps) {
   // From the later of the readings and the clock: Anthropic has not refused what it has taken since
   // the readings, so the last percent a full window keeps counts from now, not spent already.
   const forecastFrom = Math.max(asOf, gapsAt)
+  // The pace, though, is measured at the readings: a 5-hour window that has reset since has no
+  // pace of its own left to measure from now.
+  const pace = useMemo(
+    () => (forecastable === null ? null : poolGaps(forecastable, asOf, smoothed, gapsAt).pace),
+    [forecastable, asOf, smoothed, gapsAt],
+  )
   const gaps = useMemo(
-    () => (forecastable === null ? null : poolGaps(forecastable, forecastFrom, smoothed, gapsAt)),
-    [forecastable, forecastFrom, smoothed, gapsAt],
+    () =>
+      forecastable === null || pace === null
+        ? null
+        : poolGaps(forecastable, forecastFrom, smoothed, gapsAt, false, pace),
+    [forecastable, forecastFrom, smoothed, gapsAt, pace],
   )
   // The same with no more use: what is left only comes back as limits reset.
   const gapsIfStopped = useMemo(
@@ -326,7 +335,10 @@ function DashboardBody(props: DashboardProps) {
     if (profilesNow === null) return
     const timer = setTimeout(() => {
       const at = Math.max(asOf, clock.current)
-      setAdvice(capacityAdvice(forecastProfiles(profilesNow), at, smoothed, at))
+      const profiles = forecastProfiles(profilesNow)
+      // The pace at the readings, the forecast from the clock (as the headline's).
+      const measured = poolGaps(profiles, asOf, smoothed, at).pace
+      setAdvice(capacityAdvice(profiles, at, smoothed, at, measured))
     }, 0)
     return () => clearTimeout(timer)
   }, [profilesNow, asOf, smoothed])
