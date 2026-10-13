@@ -558,7 +558,7 @@ describe('the 5-hour row', () => {
     expect(container.textContent).not.toContain('100%')
   })
 
-  it('says the reset time is unknown, not that no window is open, when none was read', () => {
+  it('says nothing of a reset time that was not read, nor that no window is open', () => {
     const status: ProfileStatus = {
       profile: 'alpha',
       band: 'ok',
@@ -571,7 +571,46 @@ describe('the 5-hour row', () => {
     const container = document.createElement('div')
     container.innerHTML = renderToString(<RunwayCard status={status} now={NOW} />)
     expect(container.textContent).not.toContain('No window open')
-    expect(container.textContent?.match(/Reset time unknown/g)).toHaveLength(2)
+    expect(container.textContent).not.toMatch(/unknown/i)
+    expect(container.querySelector('.cmd-window-reset')).toBeNull()
+  })
+
+  it('is gone while Anthropic refuses the subscription, and back after', () => {
+    const status: ProfileStatus = {
+      profile: 'alpha',
+      band: 'exhausted',
+      weekly: { usedFraction: 1, resetsAt: NOW + 50 * HOUR_MS, lengthMs: 168 * HOUR_MS },
+      fiveHour: { usedFraction: 0, resetsAt: null, lengthMs: 5 * HOUR_MS },
+      rateLimitedUntil: NOW + 50 * HOUR_MS,
+      tokenExpiresAt: null,
+      latencyMs: { p50: null, p95: null, p99: null },
+    }
+    const render = (now: number) => {
+      const container = document.createElement('div')
+      container.innerHTML = renderToString(<RunwayCard status={status} now={now} />)
+      return container
+    }
+    const out = render(NOW)
+    expect(out.querySelector('.cmd-status')?.textContent).toBe('Out')
+    expect(out.textContent).not.toContain('5-hour')
+    expect(out.querySelectorAll('.cmd-window')).toHaveLength(1)
+    // Once the refusal has ended, the 5-hour window shows again.
+    expect(render(NOW + 51 * HOUR_MS).textContent).toContain('5-hour')
+  })
+
+  it('is left out without a 5-hour reading', () => {
+    const status: ProfileStatus = {
+      profile: 'alpha',
+      band: 'ok',
+      weekly: { usedFraction: 0.3, resetsAt: NOW + 50 * HOUR_MS, lengthMs: 168 * HOUR_MS },
+      fiveHour: null,
+      rateLimitedUntil: null,
+      tokenExpiresAt: null,
+      latencyMs: { p50: null, p95: null, p99: null },
+    }
+    const container = document.createElement('div')
+    container.innerHTML = renderToString(<RunwayCard status={status} now={NOW} />)
+    expect(container.textContent).not.toContain('5-hour')
   })
 })
 

@@ -97,13 +97,14 @@ function WindowRow(props: {
   const p = pace(window, now)
   const note = paceNote(window, now)
   const resetsAt = window.resetsAt
-  // The wall-clock time needs the viewer's time zone; without it, only the countdown shows.
+  // The wall-clock time needs the viewer's time zone; without it, only the countdown shows. An
+  // unknown reset says nothing.
   const reset = props.closed
     ? 'No window open'
     : resetsAt === null || resetsAt <= now
-      ? 'Reset time unknown'
+      ? null
       : `Resets in ${formatCountdown(resetsAt - now)}${when === null ? '' : `, ${when(resetsAt, now)}`}`
-  const description = `${name}: ${formatPercent(used)} used, ${elapsed === null ? 'time elapsed unknown' : `${formatPercent(elapsed)} of the window elapsed`}. ${reset}.`
+  const description = `${name}: ${formatPercent(used)} used, ${elapsed === null ? 'time elapsed unknown' : `${formatPercent(elapsed)} of the window elapsed`}.${reset === null ? '' : ` ${reset}.`}`
   return (
     <div className="cmd-window">
       <div className="cmd-window-labels">
@@ -111,7 +112,7 @@ function WindowRow(props: {
           <span className="cmd-window-name">{name} </span>
           <span className="cmd-window-used">{formatPercent(used)}</span>
         </span>
-        <span className="cmd-window-reset">{reset}</span>
+        {reset !== null && <span className="cmd-window-reset">{reset}</span>}
       </div>
       <div className="cmd-runway" role="img" aria-label={description}>
         {elapsed !== null && (
@@ -173,9 +174,9 @@ export function RunwayCard({
         </p>
       </div>
       <WindowRow name="Weekly" window={status.weekly} now={now} />
-      {status.fiveHour === null ? (
-        <p className="cmd-window cmd-window-none">No 5-hour reading</p>
-      ) : (
+      {/* No 5-hour row while Anthropic refuses the subscription (nothing is left of it then), nor
+          without a reading. */}
+      {status.fiveHour !== null && b?.reason !== 'rate-limited' && (
         <WindowRow
           name="5-hour"
           window={fiveHourAt(status.fiveHour, now) ?? status.fiveHour}
