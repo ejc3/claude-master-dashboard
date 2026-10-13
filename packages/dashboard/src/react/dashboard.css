@@ -770,12 +770,6 @@
     text-align: right;
   }
 
-  .cmd-window-none {
-    margin: 0;
-    font-size: 0.8125rem;
-    color: var(--cmd-ink-3);
-  }
-
   /* A runway: the window from its start (left) to its reset (right). The pale band is time
      already gone, the solid bar is allowance used, the mark is now. Solid past the mark means
      the allowance goes faster than the window. */
