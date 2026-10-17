@@ -6,6 +6,7 @@ import {
   type SeriesQuery,
   seriesQueryToParams,
   type TimeRange,
+  TOKEN_CHOICES,
   TOKEN_TYPES,
   type TokenType,
   WEEKLY_SMOOTHING_MS,
@@ -204,6 +205,38 @@ export function firstQueries(now: EpochMs): SeriesQuery[] {
           ...Object.values(table.tokens ?? {}),
         ]),
   ]
+}
+
+/**
+ * Every query behind the page's tabs at `now`: each range (the one shown first), each token
+ * choice of the subscription chart, and each split of the breakdown table. Loaded in this order
+ * in the background, so switching to any of them shows its answer at once.
+ */
+export function tabQueries(now: EpochMs, shown: RangeName): SeriesQuery[] {
+  const names = [shown, ...(Object.keys(RANGES) as RangeName[]).filter((name) => name !== shown)]
+  return names.flatMap((rangeName) => {
+    const chart = RANGES[rangeName]
+    const range = rangeEnding(now, chart.ms, chart.stepSeconds)
+    return [
+      chartQuery(now, rangeName, { metric: 'requests', groupBy: 'profile' }),
+      ...TOKEN_CHOICES.map((choice) =>
+        chartQuery(now, rangeName, {
+          metric: 'tokens',
+          groupBy: 'profile',
+          ...(choice === 'all' ? {} : { tokenType: choice }),
+        }),
+      ),
+      chartQuery(now, rangeName, { metric: 'errors' }),
+      chartQuery(now, rangeName, { metric: 'weeklyUsed', groupBy: 'profile' }),
+      ...SPLITS.flatMap((split) => {
+        const table = breakdownQueries(range, chart.stepSeconds, split)
+        return [
+          ...(table.requests === null ? [] : [table.requests]),
+          ...Object.values(table.tokens ?? {}),
+        ]
+      }),
+    ]
+  })
 }
 
 /** A query's identity: the parameters of its request, which the browser polls under. */

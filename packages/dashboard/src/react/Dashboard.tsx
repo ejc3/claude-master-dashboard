@@ -37,10 +37,12 @@ import {
   type FirstPaint,
   FirstPaintContext,
   type Loaded,
+  SERIES_POLL_MS,
   useAlarms,
   useCountedSeries,
   useLastReady,
   useNow,
+  usePrefetch,
   useReadings,
   useReportTimeZone,
   useSeries,
@@ -49,6 +51,7 @@ import {
 import { type ChartSeries, foldSeries, LineChart, seriesColors } from './LineChart'
 import { accountColors, PoolOutlook } from './Pool'
 import type { PollFailure } from './poller'
+import { createPollStore, PollStoreContext } from './pollStore'
 import {
   backupOutputQuery,
   chartQuery,
@@ -58,9 +61,11 @@ import {
   kpiQuery,
   kpiTokensQuery,
   projectsQuery,
+  queryKey,
   RANGES,
   type RangeName,
   readingsQuery,
+  tabQueries,
 } from './queries'
 import { RunwayCard } from './Runway'
 
@@ -131,9 +136,13 @@ export function Dashboard(props: DashboardProps) {
     () => ({ series: firstSeries, timeZone }),
     [firstSeries, timeZone],
   )
+  // One poller per URL for the whole page, so a tab loaded in the background shows at once.
+  const [pollStore] = useState(createPollStore)
   return (
     <FirstPaintContext.Provider value={firstPaint}>
-      <DashboardBody {...props} />
+      <PollStoreContext.Provider value={pollStore}>
+        <DashboardBody {...props} />
+      </PollStoreContext.Provider>
     </FirstPaintContext.Provider>
   )
 }
@@ -165,6 +174,21 @@ function DashboardBody(props: DashboardProps) {
       ? tokenCoverage(tokensByProfile.firstAt, range, chosen.stepSeconds)
       : null
   const errors = useSeries(apiBase, inRange({ metric: 'errors' }))
+  // Every other tab (range, token choice, breakdown split) loads in the background once what is
+  // on screen has, and stays fresh on the same five minutes.
+  const shownLoaded = [byProfile, tokensByProfile.loaded, errors].every(
+    (l) => l.state !== 'loading',
+  )
+  // The URLs move once per step of each range, not every second.
+  const rangeEnds = (Object.keys(RANGES) as RangeName[])
+    .map((name) => chartQuery(now, name, { metric: 'requests' }).range.end)
+    .join(',')
+  // biome-ignore lint/correctness/useExhaustiveDependencies: keyed on the ranges' ends, not on now
+  const tabUrls = useMemo(
+    () => tabQueries(now, rangeName).map((q) => `${apiBase}/series?${queryKey(q)}`),
+    [apiBase, rangeName, rangeEnds],
+  )
+  usePrefetch(tabUrls, SERIES_POLL_MS, shownLoaded)
   // Each subscription's weekly readings over the range, as returned (not zero-filled): how many
   // subscriptions the pool had, so a step up in capacity shows when one was added.
   const subsQuery = inRange({ metric: 'weeklyUsed', groupBy: 'profile' })
