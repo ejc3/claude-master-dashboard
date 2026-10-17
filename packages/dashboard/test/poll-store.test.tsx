@@ -77,6 +77,10 @@ describe('the poll store', () => {
     // React swaps a subscription by unsubscribing first (the page hidden or shown again).
     stop()
     const again = store.subscribe('/a', () => {})
+    // After the update has settled, the answer is still there for the new subscription.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
     expect(store.get('/a')?.data).toEqual({ url: '/a' })
     again()
     await act(async () => {
@@ -138,6 +142,21 @@ describe('loading in the background', () => {
       await vi.advanceTimersByTimeAsync(PREFETCH_PATIENCE_MS + 1)
     })
     expect(asked).toEqual(['/stuck', '/next'])
+  })
+
+  it('advances once per URL, even when one answers after the queue moved on', async () => {
+    const { asked, fetchFn, release } = gatedFetch()
+    const store = createPollStore(fetchFn)
+    mount(store, ['/slow', '/b', '/c'], true)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(PREFETCH_PATIENCE_MS + 1)
+    })
+    expect(asked).toEqual(['/slow', '/b'])
+    // The slow one answers late: it must not start /c while /b is still waiting.
+    await release('/slow')
+    expect(asked).toEqual(['/slow', '/b'])
+    await release('/b')
+    expect(asked).toEqual(['/slow', '/b', '/c'])
   })
 
   it('starts only once enabled, then loads one URL at a time in order, and keeps them fresh', async () => {
