@@ -3,7 +3,7 @@
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { usePrefetch } from '../src/react/hooks'
+import { PREFETCH_PATIENCE_MS, usePrefetch } from '../src/react/hooks'
 import { createPollStore, type PollStore, PollStoreContext } from '../src/react/pollStore'
 
 const MINUTE = 60_000
@@ -66,6 +66,25 @@ describe('the poll store', () => {
     expect(store.get('/a')).toBeUndefined()
   })
 
+  it('keeps an answer when its reader resubscribes in the same update', async () => {
+    const { fetchFn, release } = gatedFetch()
+    const store = createPollStore(fetchFn)
+    const stop = store.subscribe('/a', () => {}, 5 * MINUTE)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    await release('/a')
+    // React swaps a subscription by unsubscribing first (the page hidden or shown again).
+    stop()
+    const again = store.subscribe('/a', () => {})
+    expect(store.get('/a')?.data).toEqual({ url: '/a' })
+    again()
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(store.get('/a')).toBeUndefined()
+  })
+
   it('waits a period before fetching an answer the server rendered', async () => {
     const { asked, fetchFn } = gatedFetch()
     const store = createPollStore(fetchFn)
@@ -89,23 +108,37 @@ function Prefetcher(props: { urls: string[]; enabled: boolean }) {
   return null
 }
 
+function mount(store: PollStore, urls: string[], enabled: boolean) {
+  const container = document.createElement('div')
+  document.body.append(container)
+  const root = createRoot(container)
+  roots.push(root)
+  const render = (on: boolean) =>
+    act(() =>
+      root.render(
+        <PollStoreContext.Provider value={store}>
+          <Prefetcher urls={urls} enabled={on} />
+        </PollStoreContext.Provider>,
+      ),
+    )
+  render(enabled)
+  return render
+}
+
 describe('loading in the background', () => {
-  function mount(store: PollStore, urls: string[], enabled: boolean) {
-    const container = document.createElement('div')
-    document.body.append(container)
-    const root = createRoot(container)
-    roots.push(root)
-    const render = (on: boolean) =>
-      act(() =>
-        root.render(
-          <PollStoreContext.Provider value={store}>
-            <Prefetcher urls={urls} enabled={on} />
-          </PollStoreContext.Provider>,
-        ),
-      )
-    render(enabled)
-    return render
-  }
+  it('moves on from a URL that does not answer', async () => {
+    const { asked, fetchFn } = gatedFetch()
+    const store = createPollStore(fetchFn)
+    mount(store, ['/stuck', '/next'], true)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(asked).toEqual(['/stuck'])
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(PREFETCH_PATIENCE_MS + 1)
+    })
+    expect(asked).toEqual(['/stuck', '/next'])
+  })
 
   it('starts only once enabled, then loads one URL at a time in order, and keeps them fresh', async () => {
     const { asked, fetchFn, release } = gatedFetch()

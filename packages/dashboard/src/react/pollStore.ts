@@ -50,8 +50,11 @@ export function createPollStore(
     return e
   }
   const release = (url: string, e: Entry) => {
-    // Nothing reads the URL and nothing polls it: forget it, so moved ranges do not pile up.
-    if (e.listeners.size === 0 && e.pollers === 0) entries.delete(url)
+    // Nothing reads the URL and nothing polls it: forget it, so moved ranges do not pile up. Not
+    // at once: React swaps a subscription by unsubscribing first, within the same update.
+    queueMicrotask(() => {
+      if (entries.get(url) === e && e.listeners.size === 0 && e.pollers === 0) entries.delete(url)
+    })
   }
   return {
     get: (url) => entries.get(url)?.state,

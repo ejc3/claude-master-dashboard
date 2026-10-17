@@ -179,6 +179,9 @@ function usePolled<T>(url: string | null, everyMs: number, initial?: T): Loaded<
     : { state: 'error', failure: poll.failure }
 }
 
+/** How long the background queue waits for one URL's answer before starting the next. */
+export const PREFETCH_PATIENCE_MS = 15_000
+
 /**
  * Keeps `urls` loaded and polled in the background while the page is shown, starting them one at
  * a time in order: the next starts when the one before has answered (or failed), so what is on
@@ -216,6 +219,7 @@ export function usePrefetch(urls: readonly string[], everyMs: number, enabled: b
     }
     if (!enabled) return
     let stopped = false
+    const timers = new Set<ReturnType<typeof setTimeout>>()
     const queue = urls.filter((url) => held.current.get(url)?.polled !== true)
     const next = () => {
       if (stopped) return
@@ -228,21 +232,29 @@ export function usePrefetch(urls: readonly string[], everyMs: number, enabled: b
         return
       }
       // Otherwise wait for this poll's own answer, even where an older one is kept (held while
-      // hidden), so the polls start one after another.
+      // hidden), so the polls start one after another; a URL that does not answer is left to
+      // its poller after PREFETCH_PATIENCE_MS.
       const before = store.get(url)
       let started = false
+      const go = () => {
+        if (started) return
+        started = true
+        clearTimeout(patience)
+        next()
+      }
+      const patience = setTimeout(go, PREFETCH_PATIENCE_MS)
+      timers.add(patience)
       const answered = () => {
         const state = store.get(url)
-        if (started || state === undefined || state === before) return
-        if (state.data === undefined && state.failure === undefined) return
-        started = true
-        next()
+        if (state === undefined || state === before) return
+        if (state.data !== undefined || state.failure !== undefined) go()
       }
       hold(url, true, answered)
     }
     next()
     return () => {
       stopped = true
+      for (const timer of timers) clearTimeout(timer)
     }
   }, [store, key, everyMs, enabled, visible])
   useEffect(
