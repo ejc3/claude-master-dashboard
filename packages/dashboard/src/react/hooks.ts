@@ -3,6 +3,7 @@
 import {
   createContext,
   type RefObject,
+  useCallback,
   useContext,
   useEffect,
   useLayoutEffect,
@@ -21,7 +22,8 @@ import {
   TIME_ZONE_COOKIE,
   type TimeRange,
 } from '../core'
-import { type PollFailure, type PollState, startPoller } from './poller'
+import type { PollFailure, PollState } from './poller'
+import { createPollStore, type PollStore, PollStoreContext } from './pollStore'
 import { type FirstSeries, queryKey, queryShape } from './queries'
 
 /**
@@ -154,35 +156,114 @@ export type Loaded<T> =
 
 /** Polls `url` while visible. Data from another URL never shows under this one. */
 function usePolled<T>(url: string | null, everyMs: number, initial?: T): Loaded<T> {
-  const [poll, setPoll] = useState<PollState<T> | null>(() =>
-    url !== null && initial !== undefined ? { url, data: initial, at: Date.now() } : null,
-  )
+  const shared = useContext(PollStoreContext)
+  const [own] = useState(() => (shared === null ? createPollStore() : null))
+  const store = (shared ?? own) as PollStore
   // The server rendered `initial`, so the first request waits one period.
-  const servedInitial = useRef(initial !== undefined)
-  const pollRef = useRef(poll)
-  pollRef.current = poll
+  if (url !== null && initial !== undefined) store.seed(url, initial, Date.now())
   const visible = useVisible()
-  useEffect(() => {
-    if (url === null || !visible) return
-    const delayFirst = servedInitial.current
-    servedInitial.current = false
-    return startPoller<T>({
-      url,
-      everyMs,
-      delayFirst,
-      fetch: (input, init) => fetch(input, init),
-      previous: pollRef.current ?? undefined,
-      onChange: setPoll,
-    })
-  }, [url, everyMs, visible])
+  const subscribe = useCallback(
+    (onChange: () => void) =>
+      url === null ? () => {} : store.subscribe(url, onChange, visible ? everyMs : undefined),
+    [store, url, everyMs, visible],
+  )
+  const read = () => (url === null ? undefined : store.get(url))
+  const poll = useSyncExternalStore(subscribe, read, read) as PollState<T> | undefined
 
-  if (poll === null || poll.url !== url) return { state: 'loading' }
+  if (poll === undefined || poll.url !== url) return { state: 'loading' }
   if (poll.data !== undefined) {
     return { state: 'ready', data: poll.data, at: poll.at ?? 0, failure: poll.failure ?? null }
   }
   return poll.failure === undefined
     ? { state: 'loading' }
     : { state: 'error', failure: poll.failure }
+}
+
+/** How long the background queue waits for one URL's answer before starting the next. */
+export const PREFETCH_PATIENCE_MS = 15_000
+
+/**
+ * Keeps `urls` loaded and polled in the background while the page is shown, starting them one at
+ * a time in order: the next starts when the one before has answered (or failed), so what is on
+ * screen is never queued behind them. Nothing new starts until `enabled`. A URL stays held while
+ * it is in `urls`, so a reordered list (another range shown first) keeps what was loaded. While
+ * the page is hidden the held answers are kept but not polled.
+ */
+export function usePrefetch(urls: readonly string[], everyMs: number, enabled: boolean): void {
+  const store = useContext(PollStoreContext)
+  const visible = useVisible()
+  const held = useRef(new Map<string, { off: () => void; polled: boolean }>())
+  const key = urls.join('\n')
+  // biome-ignore lint/correctness/useExhaustiveDependencies: urls are read through their key
+  useEffect(() => {
+    if (store === null) return
+    const want = new Set(urls)
+    for (const [url, h] of held.current) {
+      if (!want.has(url)) {
+        h.off()
+        held.current.delete(url)
+      }
+    }
+    // Subscribe anew before letting go of the old subscription, so the answer is never dropped.
+    const hold = (url: string, polled: boolean, listener: () => void) => {
+      const previous = held.current.get(url)
+      held.current.set(url, {
+        off: store.subscribe(url, listener, polled ? everyMs : undefined),
+        polled,
+      })
+      previous?.off()
+    }
+    if (!visible) {
+      for (const [url, h] of held.current) if (h.polled) hold(url, false, () => {})
+      return
+    }
+    if (!enabled) return
+    let stopped = false
+    const timers = new Set<ReturnType<typeof setTimeout>>()
+    const queue = urls.filter((url) => held.current.get(url)?.polled !== true)
+    const next = () => {
+      if (stopped) return
+      const url = queue.shift()
+      if (url === undefined) return
+      // Something already polls it (the view on screen): nothing to wait for.
+      if (store.polling(url)) {
+        hold(url, true, () => {})
+        next()
+        return
+      }
+      // Otherwise wait for this poll's own answer, even where an older one is kept (held while
+      // hidden), so the polls start one after another; a URL that does not answer is left to
+      // its poller after PREFETCH_PATIENCE_MS.
+      const before = store.get(url)
+      let started = false
+      const go = () => {
+        if (started) return
+        started = true
+        clearTimeout(patience)
+        next()
+      }
+      const patience = setTimeout(go, PREFETCH_PATIENCE_MS)
+      timers.add(patience)
+      const answered = () => {
+        const state = store.get(url)
+        if (state === undefined || state === before) return
+        if (state.data !== undefined || state.failure !== undefined) go()
+      }
+      hold(url, true, answered)
+    }
+    next()
+    return () => {
+      stopped = true
+      for (const timer of timers) clearTimeout(timer)
+    }
+  }, [store, key, everyMs, enabled, visible])
+  useEffect(
+    () => () => {
+      for (const h of held.current.values()) h.off()
+      held.current.clear()
+    },
+    [],
+  )
 }
 
 /** claude-master's alarms, read once a minute. */
@@ -226,11 +307,14 @@ export function keepWhileLoading<T>(
   return loaded
 }
 
+/** How often a series is fetched again. */
+export const SERIES_POLL_MS = 5 * 60_000
+
 function useSeriesPoll(apiBase: string, query: SeriesQuery | null): Loaded<Series[]> {
   const { series } = useContext(FirstPaintContext)
   const key = query === null ? null : queryKey(query)
   const url = key === null ? null : `${apiBase}/series?${key}`
-  return usePolled<Series[]>(url, 5 * 60_000, key === null ? undefined : series[key])
+  return usePolled<Series[]>(url, SERIES_POLL_MS, key === null ? undefined : series[key])
 }
 
 /** Series for `query`, filled onto its step grid so a missing bucket counts as zero. */

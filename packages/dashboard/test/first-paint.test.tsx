@@ -11,6 +11,7 @@ import {
   type ProfileStatus,
   poolGaps,
   seriesQueryFromParams,
+  TOKEN_TYPES,
   timeZoneOrNull,
 } from '../src/core/index'
 import { createDemoSource } from '../src/demo/index'
@@ -26,7 +27,7 @@ import {
   PoolOutlook,
   shortNames,
 } from '../src/react/Pool'
-import { chartQuery, firstQueries } from '../src/react/queries'
+import { chartQuery, FIRST_RANGE, firstQueries, RANGES } from '../src/react/queries'
 import { RunwayCard } from '../src/react/Runway'
 
 // A moment two minutes into a five-minute step, so a step boundary is near but not crossed.
@@ -438,6 +439,39 @@ describe('answers shown together, while a moved range loads', () => {
     return page
   }
 
+  it('has every breakdown tab loaded in the background, so switching shows it at once', async () => {
+    const page = await hydrated(ZONE)
+    answer(() => true)
+    // What is on screen has answered; the other tabs load one after another.
+    for (let i = 0; i < 80; i++) {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10)
+      })
+    }
+    // From here on nothing answers: a tab must already have its data to show it.
+    answer(() => false)
+    const table = page.container.querySelector(
+      'section[aria-labelledby="cmd-breakdown-title"]',
+    ) as HTMLElement
+    for (const name of ['Machines', 'Projects', 'Models', 'People']) {
+      const tab = [...table.querySelectorAll('button')].find((b) =>
+        (b.textContent ?? '').startsWith(name),
+      )
+      if (tab === undefined) throw new Error(`no ${name} tab`)
+      act(() => tab.click())
+      expect(table.textContent, name).not.toContain('Loading')
+      expect(table.querySelectorAll('tbody tr').length, name).toBeGreaterThan(0)
+    }
+    // The other range too: its charts and table.
+    const week = [...page.container.querySelectorAll('button')].find(
+      (b) => b.textContent === RANGES['7d'].label,
+    )
+    if (week === undefined) throw new Error('no 7-day range button')
+    act(() => week.click())
+    expect(page.container.textContent).not.toContain('Loading')
+    expect(table.querySelectorAll('tbody tr').length).toBeGreaterThan(0)
+  })
+
   it('splits tokens by project, and never asks for requests by project', async () => {
     const page = await hydrated(ZONE)
     answer(() => true)
@@ -457,7 +491,9 @@ describe('answers shown together, while a moved range loads', () => {
       .mocked(fetch)
       .mock.calls.map(([input]) => new URL(String(input), 'http://localhost').searchParams)
       .filter((p) => p.get('groupBy') === 'project')
-    expect(asked.length).toBe(4)
+    // Each range's split is asked once (the other range in the background), and only tokens.
+    const shown = asked.filter((p) => p.get('step') === String(RANGES[FIRST_RANGE].stepSeconds))
+    expect(shown.length).toBe(4)
     expect(asked.every((p) => p.get('metric') === 'tokens')).toBe(true)
   })
 
@@ -1324,16 +1360,22 @@ describe('the breakdown table', () => {
     const phoneTotal = cells.find((td) => td.classList.contains('cmd-phone'))?.textContent
     expect(cells.filter((td) => td.classList.contains('cmd-full'))).toHaveLength(4)
     const key = name?.querySelector('.cmd-full')?.textContent
-    const served = fetchMock.mock.calls
+    // The table's four queries, one per token type, over the range on screen. Not every one is
+    // fetched: output by subscription is also the paid backup's query, rendered with the page.
+    const asked = fetchMock.mock.calls
       .map(([url]) => new URL(url, 'https://dashboard.example'))
-      .filter((u) => u.searchParams.get('metric') === 'tokens')
-      .filter((u) => u.searchParams.get('groupBy') === 'profile')
-    expect(served.map((u) => u.searchParams.get('type')).sort()).toEqual([
-      'cache_creation',
-      'cache_read',
-      'input',
-      'output',
-    ])
+      .find(
+        (u) =>
+          u.searchParams.get('metric') === 'tokens' &&
+          u.searchParams.get('groupBy') === 'profile' &&
+          u.searchParams.get('type') === 'input' &&
+          u.searchParams.get('step') === String(RANGES[FIRST_RANGE].stepSeconds),
+      ) as URL
+    const served = TOKEN_TYPES.map((type) => {
+      const u = new URL(asked)
+      u.searchParams.set('type', type)
+      return u
+    })
     let sum = 0
     // Every subscription's tokens in the last bucket, which the stacked chart's readout totals.
     const lastBucket = new Map<number, number>()
