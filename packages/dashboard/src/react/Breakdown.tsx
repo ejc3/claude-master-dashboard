@@ -18,7 +18,7 @@ import {
   tokenRows,
 } from '../core/index'
 import { useSharedAnswers } from './answers'
-import { useCountedSeries, useSeries, useWhen } from './hooks'
+import { useCountedSeries, useHeldHeight, useSeries, useWhen } from './hooks'
 import { type ChartSeries, foldSeries, LineChart, seriesColors } from './LineChart'
 import { shortNames } from './Pool'
 import { breakdownQueries, SPLITS } from './queries'
@@ -217,6 +217,7 @@ export function Breakdown(props: {
   const requestsFailure =
     !showTokens && tokenError === null && requests.state === 'error' ? requests.failure : null
   const failure = tokenError ?? requestsFailure
+  const [bodyRef, heldHeight] = useHeldHeight<HTMLDivElement>(loading)
 
   return (
     <section className="cmd-panel cmd-panel-flush" aria-labelledby="cmd-breakdown-title">
@@ -254,100 +255,107 @@ export function Breakdown(props: {
         </fieldset>
         {note !== null && <p className="cmd-note">{note}</p>}
       </div>
-      {loading && <p className="cmd-empty cmd-panel-pad">Loading…</p>}
-      {failure !== null && <p className="cmd-error cmd-panel-pad">{failure.message}</p>}
-      {!loading && rows.length === 0 && failure === null && (
-        <p className="cmd-empty cmd-panel-pad">Nothing in this range.</p>
-      )}
-      {rows.length > 0 && (
-        <div className="cmd-panel-pad cmd-breakdown-chart">
-          <LineChart
-            title={`${what} ${props.per}, by ${split.noun}`}
-            series={stacked}
-            format={formatCount}
-            integer
-            height={180}
-            now={props.now}
-            stacked
-          />
-        </div>
-      )}
-      {rows.length > 0 && (
-        <div className="cmd-table-wrap">
-          <table className="cmd-table">
-            <thead>
-              <tr>
-                <th scope="col">
-                  {split.shortColumn === split.column ? (
-                    split.column
-                  ) : (
-                    <>
-                      <span className="cmd-full">{split.column}</span>
-                      <span className="cmd-phone">{split.shortColumn}</span>
-                    </>
-                  )}
-                </th>
-                {showTokens ? (
-                  <>
-                    {TOKEN_TYPES.map((t) => (
-                      <th scope="col" className="cmd-num cmd-full" key={t}>
-                        {TOKEN_LABELS[t]}
-                      </th>
-                    ))}
-                    <th scope="col" className="cmd-num cmd-phone">
-                      {what}
-                    </th>
-                  </>
-                ) : (
-                  <th scope="col" className="cmd-num">
-                    Requests
+      {/* While another split or range loads, its body keeps the height the last one had. */}
+      <div
+        ref={bodyRef}
+        className="cmd-breakdown-body"
+        style={heldHeight === undefined ? undefined : { minHeight: heldHeight }}
+      >
+        {loading && <p className="cmd-empty cmd-panel-pad">Loading…</p>}
+        {failure !== null && <p className="cmd-error cmd-panel-pad">{failure.message}</p>}
+        {!loading && rows.length === 0 && failure === null && (
+          <p className="cmd-empty cmd-panel-pad">Nothing in this range.</p>
+        )}
+        {rows.length > 0 && (
+          <div className="cmd-panel-pad cmd-breakdown-chart">
+            <LineChart
+              title={`${what} ${props.per}, by ${split.noun}`}
+              series={stacked}
+              format={formatCount}
+              integer
+              height={180}
+              now={props.now}
+              stacked
+            />
+          </div>
+        )}
+        {rows.length > 0 && (
+          <div className="cmd-table-wrap">
+            <table className="cmd-table">
+              <thead>
+                <tr>
+                  <th scope="col">
+                    {split.shortColumn === split.column ? (
+                      split.column
+                    ) : (
+                      <>
+                        <span className="cmd-full">{split.column}</span>
+                        <span className="cmd-phone">{split.shortColumn}</span>
+                      </>
+                    )}
                   </th>
-                )}
-                <th scope="col">Share</th>
-                <th scope="col" className="cmd-full">
-                  Trend
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {showTokens
-                ? tokenTable.map((r) => (
-                    <tr key={r.key}>
-                      <RowHead
-                        name={r.key}
-                        short={short.get(r.key) ?? r.key}
-                        color={color(r.key)}
-                      />
+                  {showTokens ? (
+                    <>
                       {TOKEN_TYPES.map((t) => (
-                        <td className="cmd-num cmd-full" key={t}>
-                          {formatCount(r.byType[t])}
-                        </td>
+                        <th scope="col" className="cmd-num cmd-full" key={t}>
+                          {TOKEN_LABELS[t]}
+                        </th>
                       ))}
-                      <td className="cmd-num cmd-phone">{formatCount(r.total)}</td>
-                      <ShareCell share={all === 0 ? 0 : r.total / all} />
-                      <td className="cmd-trend cmd-full">
-                        <Sparkline points={r.points} maxBar={peak} />
-                      </td>
-                    </tr>
-                  ))
-                : requestRows.map((r) => (
-                    <tr key={r.key}>
-                      <RowHead
-                        name={r.key}
-                        short={short.get(r.key) ?? r.key}
-                        color={color(r.key)}
-                      />
-                      <td className="cmd-num">{formatCount(r.total)}</td>
-                      <ShareCell share={all === 0 ? 0 : r.total / all} />
-                      <td className="cmd-trend cmd-full">
-                        <Sparkline points={r.points} maxBar={peak} />
-                      </td>
-                    </tr>
-                  ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+                      <th scope="col" className="cmd-num cmd-phone">
+                        {what}
+                      </th>
+                    </>
+                  ) : (
+                    <th scope="col" className="cmd-num">
+                      Requests
+                    </th>
+                  )}
+                  <th scope="col">Share</th>
+                  <th scope="col" className="cmd-full">
+                    Trend
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {showTokens
+                  ? tokenTable.map((r) => (
+                      <tr key={r.key}>
+                        <RowHead
+                          name={r.key}
+                          short={short.get(r.key) ?? r.key}
+                          color={color(r.key)}
+                        />
+                        {TOKEN_TYPES.map((t) => (
+                          <td className="cmd-num cmd-full" key={t}>
+                            {formatCount(r.byType[t])}
+                          </td>
+                        ))}
+                        <td className="cmd-num cmd-phone">{formatCount(r.total)}</td>
+                        <ShareCell share={all === 0 ? 0 : r.total / all} />
+                        <td className="cmd-trend cmd-full">
+                          <Sparkline points={r.points} maxBar={peak} />
+                        </td>
+                      </tr>
+                    ))
+                  : requestRows.map((r) => (
+                      <tr key={r.key}>
+                        <RowHead
+                          name={r.key}
+                          short={short.get(r.key) ?? r.key}
+                          color={color(r.key)}
+                        />
+                        <td className="cmd-num">{formatCount(r.total)}</td>
+                        <ShareCell share={all === 0 ? 0 : r.total / all} />
+                        <td className="cmd-trend cmd-full">
+                          <Sparkline points={r.points} maxBar={peak} />
+                        </td>
+                      </tr>
+                    ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </section>
   )
 }

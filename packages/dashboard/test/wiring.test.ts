@@ -79,4 +79,14 @@ describe('Token wiring', () => {
     // The title names the range the token totals cover.
     expect(breakdown).toMatch(/\{tableRangeWords\(\s*showTokens \? coverage : null,/)
   })
+
+  it('keeps the breakdown body at its last height while another split or range loads', () => {
+    expect(breakdown).toMatch(/useHeldHeight<HTMLDivElement>\(loading\)/)
+    // The loading note, the chart and the table are all inside the held body.
+    const body = breakdown.slice(breakdown.indexOf('ref={bodyRef}'))
+    expect(body).toMatch(/minHeight: heldHeight/)
+    for (const part of ['Loading…', 'cmd-breakdown-chart', '<table']) {
+      expect(body.indexOf(part)).toBeGreaterThan(-1)
+    }
+  })
 })

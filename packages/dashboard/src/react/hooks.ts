@@ -5,6 +5,7 @@ import {
   type RefObject,
   useContext,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   useSyncExternalStore,
@@ -49,6 +50,23 @@ export function useWidth<T extends HTMLElement>(): [RefObject<T | null>, number]
     return () => observer.disconnect()
   }, [])
   return [ref, width]
+}
+
+/**
+ * Holds an element at the height it last had while not loading, for as long as `loading` is
+ * true: switching a view swaps its content for a loading note without the panel shrinking and
+ * the page jumping. The first load holds nothing (there is no height yet).
+ */
+export function useHeldHeight<T extends HTMLElement>(
+  loading: boolean,
+): [RefObject<T | null>, number | undefined] {
+  const ref = useRef<T>(null)
+  const last = useRef<number | undefined>(undefined)
+  // Measured after each render that shows content, before the browser paints.
+  useLayoutEffect(() => {
+    if (!loading && ref.current !== null) last.current = ref.current.offsetHeight
+  })
+  return [ref, loading ? last.current : undefined]
 }
 
 /** True while the page is shown; polling stops while it is hidden. */
